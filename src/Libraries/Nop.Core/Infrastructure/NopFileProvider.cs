@@ -476,6 +476,10 @@ namespace Nop.Core.Infrastructure
         /// <returns>The physical path. E.g. "c:\inetpub\wwwroot\bin"</returns>
         public virtual string MapPath(string path)
         {
+            if(Path.IsPathRooted(path))
+            {
+                return path;
+            }
             path = path.Replace("~/", string.Empty).TrimStart('/');
 
             //if virtual path has slash on the end, it should be after transform the virtual path to physical path too
