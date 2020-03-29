@@ -7,11 +7,9 @@ COPY ./src ./
 # restore solution
 RUN dotnet restore NopCommerce.sln
 
-WORKDIR /src/Presentation/Nop.Web   
-
-# build and publish project   
-RUN dotnet build Nop.Web.csproj -c Release -o /app                                         
-RUN dotnet publish Nop.Web.csproj -c Release -o /app/published
+# build and publish solution 
+RUN dotnet build NopCommerce.sln -c Release -o /app
+RUN dotnet publish NopCommerce.sln -c Release -o /app/published
 
 # create the runtime instance 
 FROM microsoft/dotnet:2.2-aspnetcore-runtime-alpine AS runtime 
