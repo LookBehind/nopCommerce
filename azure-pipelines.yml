@@ -9,6 +9,7 @@ resources:
 - repo: self
 
 variables:
+  repository: nopcommerce
   tag: '$(Build.BuildId)'
 
 stages:
@@ -25,13 +26,13 @@ stages:
       inputs:
         command: build
         dockerfile: '$(Build.SourcesDirectory)/Dockerfile'
-        repository: 'qwe'
+        repository: '$(repository)'
         tags: |
           $(tag)
     - task: Bash@3
       inputs:
         targetType: 'inline'
-        script: 'docker save -o $(Build.ArtifactStagingDirectory)/drop.tar '
+        script: 'docker save -o $(Build.ArtifactStagingDirectory)/drop.tar $(repository):$(tag)'
     - task: PublishBuildArtifacts@1
       inputs:
         PathtoPublish: '$(Build.ArtifactStagingDirectory)'
