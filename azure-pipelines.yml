@@ -3,7 +3,7 @@
 # https://docs.microsoft.com/azure/devops/pipelines/languages/docker
 
 trigger:
-- develop
+- staging
 
 resources:
 - repo: self
@@ -22,20 +22,17 @@ stages:
       vmImage: ubuntu-latest
     steps:
     - task: Docker@2
-      displayName: Build an image
       inputs:
-        command: build
-        dockerfile: '$(Build.SourcesDirectory)/Dockerfile'
-        repository: '$(repository)'
+        containerRegistry: 'eisajanyan dockerhub'
+        repository: 'eisajanyan/nopcommerce'
+        command: 'buildAndPush'
+        Dockerfile: '**/Dockerfile'
         tags: |
           $(tag)
-    - task: Bash@3
+    - task: KubernetesManifest@0
       inputs:
-        targetType: 'inline'
-        script: 'docker save -o $(Build.ArtifactStagingDirectory)/drop.tar $(repository):$(tag)'
-    - task: PublishBuildArtifacts@1
-      inputs:
-        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-        ArtifactName: 'drop'
-        publishLocation: 'Container'
-    
+        action: 'deploy'
+        kubernetesServiceConnection: 'hetzner microk8s mysnacks namespace'
+        namespace: 'mysnacks'
+        manifests: 'manifests/service.yml|manifests/deployment.yml'
+        containers: 'eisajanyan/nopcommerce:$(tag)'
