@@ -27,8 +27,7 @@ stages:
         repository: 'eisajanyan/nopcommerce'
         command: 'buildAndPush'
         Dockerfile: '**/Dockerfile'
-        tags: |
-          $(tag)
+        tags: $(tag)
     - task: KubernetesManifest@0
       inputs:
         action: 'deploy'
