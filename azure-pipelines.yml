@@ -10,7 +10,7 @@ resources:
 
 variables:
   repository: nopcommerce
-  tag: '$(Build.BuildId)'
+  tag: '$(Build.BuildNumber)'
 
 stages:
 - stage: Build
