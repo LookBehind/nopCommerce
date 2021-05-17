@@ -2,7 +2,6 @@
 using System.Net.Http;
 using System.Threading.Tasks;
 using Nop.Core;
-using Nop.Services.Defaults;
 
 namespace Nop.Services.Common
 {
@@ -35,7 +34,10 @@ namespace Nop.Services.Common
         /// <summary>
         /// Keep the current store site alive
         /// </summary>
-        /// <returns>The asynchronous task whose result determines that request completed</returns>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the asynchronous task whose result determines that request completed
+        /// </returns>
         public virtual async Task KeepAliveAsync()
         {
             await _httpClient.GetStringAsync(NopCommonDefaults.KeepAlivePath);
