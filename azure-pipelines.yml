@@ -4,6 +4,7 @@
 
 trigger:
 - staging
+- products
 
 resources:
 - repo: self
