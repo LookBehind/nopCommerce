@@ -585,19 +585,19 @@ namespace Nop.Web.Factories
             string message;
             if(now < new DateTime(now.Year, now.Month, now.Day, 12, 30, 0))
             {
-                message = "Your lunch will be delivered at 1 PM.";
+                message = "Your order will be delivered at 1 PM.";
             }
             else if(now < new DateTime(now.Year, now.Month, now.Day, 13, 30, 0))
             {
-                message = "Your lunch will be delivered at 2 PM.";
+                message = "Your order will be delivered at 2 PM.";
             }
             else if(now < new DateTime(now.Year, now.Month, now.Day, 15, 30, 0))
             {
-                message = "Your lunch will be delivered at 4 PM.";
+                message = "Your order will be delivered at 4 PM.";
             }
             else
             {
-                message = "Your lunch will be delivered TOMORROW at 1 PM.";
+                message = "Your order will be delivered TOMORROW at 1 PM.";
             }
 
             var model = new CheckoutCompletedModel
