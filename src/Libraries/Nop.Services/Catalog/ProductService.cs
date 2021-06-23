@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LinqToDB.DataProvider.SqlServer;
 using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
@@ -19,6 +20,7 @@ using Nop.Services.Messages;
 using Nop.Services.Security;
 using Nop.Services.Shipping.Date;
 using Nop.Services.Stores;
+using static LinqToDB.DataProvider.SqlServer.SqlServerTools;
 
 namespace Nop.Services.Catalog
 {
@@ -849,10 +851,10 @@ namespace Nop.Services.Catalog
                 var searchLocalizedValue = languageId > 0 && langs.Count >= 2 && (showHidden || langs.Count(l => l.Published) >= 2);
 
                 IQueryable<int> productsByKeywords;
-
+                ;
                 productsByKeywords =
                         from p in _productRepository.Table
-                        where p.Name.Contains(keywords) ||
+                        where LinqToDB.Sql.Ext.SqlServer().Contains(keywords, p.Name) ||
                             (searchDescriptions &&
                                 (p.ShortDescription.Contains(keywords) || p.FullDescription.Contains(keywords))) ||
                             (searchManufacturerPartNumber && p.ManufacturerPartNumber == keywords) ||

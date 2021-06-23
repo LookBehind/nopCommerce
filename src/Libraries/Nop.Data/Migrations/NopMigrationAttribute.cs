@@ -53,5 +53,10 @@ namespace Nop.Data.Migrations
             base(GetVersion(dateTime, migrationType), GetDescription(nopVersion, migrationType))
         {
         }
+
+        public NopMigrationAttribute(string dateTime, string nopVersion, UpdateMigrationType migrationType, TransactionBehavior transactionBehavior) :
+            base(GetVersion(dateTime, migrationType), transactionBehavior, GetDescription(nopVersion, migrationType))
+        {
+        }
     }
 }
