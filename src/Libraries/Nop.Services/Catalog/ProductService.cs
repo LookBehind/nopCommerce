@@ -851,10 +851,10 @@ namespace Nop.Services.Catalog
                 var searchLocalizedValue = languageId > 0 && langs.Count >= 2 && (showHidden || langs.Count(l => l.Published) >= 2);
 
                 IQueryable<int> productsByKeywords;
-                ;
+                
                 productsByKeywords =
                         from p in _productRepository.Table
-                        where LinqToDB.Sql.Ext.SqlServer().Contains(keywords, p.Name) ||
+                        where LinqToDB.Sql.Ext.SqlServer().Contains(string.Join(" NEAR ", keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries)), p.Name) ||
                             (searchDescriptions &&
                                 (p.ShortDescription.Contains(keywords) || p.FullDescription.Contains(keywords))) ||
                             (searchManufacturerPartNumber && p.ManufacturerPartNumber == keywords) ||

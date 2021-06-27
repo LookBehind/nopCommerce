@@ -27,8 +27,8 @@ namespace Nop.Data.Migrations.FulltextSearchOnProduct
             var productTableName = NameCompatibilityManager.GetTableName(typeof(Product));
             var productNameColumnName = NameCompatibilityManager.GetColumnName(typeof(Product), "Name");
             IfDatabase("SqlServer")
-                .Execute.Sql("CREATE FULLTEXT CATALOG ft AS DEFAULT;" + 
-                    $"CREATE FULLTEXT INDEX ON [dbo].[{productTableName}]" + 
+                .Execute.Sql("IF NOT EXISTS(SELECT 1 FROM sys.fulltext_catalogs WHERE name = 'ft') CREATE FULLTEXT CATALOG ft AS DEFAULT;" + 
+                    $"IF NOT EXISTS (SELECT 1 FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID('[dbo].[{productTableName}]')) CREATE FULLTEXT INDEX ON [dbo].[{productTableName}]" + 
                     $"([{productNameColumnName}])" +
                     "KEY INDEX PK_Product;"
                 );
