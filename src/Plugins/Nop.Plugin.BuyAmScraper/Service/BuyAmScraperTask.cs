@@ -54,18 +54,18 @@ namespace Nop.Plugin.BuyAmScraper.Service
             IUrlRecordService urlRecordService)
         {
             this._categoryUrlsToScrape = new string[] {
-                "https://buy.am/hy/carrefour/bakery-pastry",
-                "https://buy.am/hy/carrefour/fresh-fruit-vegetable",
-                "https://buy.am/hy/carrefour/dairy-eggs",
-                "https://buy.am/hy/carrefour/frozen-products",
-                "https://buy.am/hy/carrefour/breakfast-coffee-tea",
-                "https://buy.am/hy/carrefour/bio-organic",
-                "https://buy.am/hy/carrefour/sweets-snacks",
+                //"https://buy.am/hy/carrefour/bakery-pastry",
+                //"https://buy.am/hy/carrefour/fresh-fruit-vegetable",
+                //"https://buy.am/hy/carrefour/dairy-eggs",
+                //"https://buy.am/hy/carrefour/frozen-products",
+                //"https://buy.am/hy/carrefour/breakfast-coffee-tea",
+                //"https://buy.am/hy/carrefour/bio-organic",
+                //"https://buy.am/hy/carrefour/sweets-snacks",
                 "https://buy.am/hy/carrefour/juices-drinks",
-                "https://buy.am/hy/carrefour/alcoholic-beverages-cigarettes",
+                //"https://buy.am/hy/carrefour/alcoholic-beverages-cigarettes",
                 
-                "https://buy.am/hy/carrefour/shop-in-shop",
-                "https://buy.am/hy/carrefour/household-goods",
+                //"https://buy.am/hy/carrefour/shop-in-shop",
+                //"https://buy.am/hy/carrefour/household-goods",
             };
             this._logger = logger;
             this._productService = productService;
@@ -351,7 +351,12 @@ namespace Nop.Plugin.BuyAmScraper.Service
                     Published = true,
                     CreatedOnUtc = DateTime.Now,
                     UpdatedOnUtc = DateTime.Now,
-                    RibbonEnable = false
+                    RibbonEnable = false,
+                    ProductType = Core.Domain.Catalog.ProductType.SimpleProduct,
+                    VisibleIndividually = true,
+                    ProductTemplateId = 1,
+                    OrderMinimumQuantity = 1,
+                    OrderMaximumQuantity = 10_000
                 };
 
                 await _productService.InsertProductAsync(product);
