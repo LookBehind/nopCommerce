@@ -32,9 +32,7 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuth.Infrastructure.Cache
         private readonly IOrderService _orderService;
 
         static private readonly List<VendorToChatMap> _vendorToChat = new List<VendorToChatMap>{
-            new VendorToChatMap{ VendorId = 1, ChatGroupId = -408158341 },  // StrEat Kitchen
-            new VendorToChatMap{ VendorId = 2, ChatGroupId = -407631866 },  // Root
-            new VendorToChatMap{ VendorId = 4, ChatGroupId = -558910079 }   // 33 Pizzas
+            new VendorToChatMap{ VendorId = 0, ChatGroupId = -580079767 },  // All Vendors
         };
 
         public OrderPlacedEventConsumer(Lazy<ITelegramBotClient> telegramBotClient,
@@ -56,7 +54,7 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuth.Infrastructure.Cache
                 return;
 
             var chatGroupsToNotify =
-                await _vendorToChat.WhereAwait(async x => (await _orderService.GetOrderItemsAsync(eventMessage.Order.Id, vendorId: x.VendorId)).Any())
+                await _vendorToChat.WhereAwait(async x => (x.VendorId == 0) || (await _orderService.GetOrderItemsAsync(eventMessage.Order.Id, vendorId: x.VendorId)).Any())
                     .Select(x => x.ChatGroupId)
                     .ToListAsync();
 
