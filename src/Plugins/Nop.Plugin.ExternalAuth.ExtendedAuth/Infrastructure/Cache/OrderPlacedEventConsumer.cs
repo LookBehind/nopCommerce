@@ -38,6 +38,7 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuth.Infrastructure.Cache
             new VendorToChatMap{ VendorId = 6, ChatGroupId = -1001378455507 },  // Kaufmann
             new VendorToChatMap{ VendorId = 7, ChatGroupId = -575045194     },  // Barbq
             new VendorToChatMap{ VendorId = 8, ChatGroupId = -521639273     },  // Artvill
+            new VendorToChatMap{ VendorId = 9, ChatGroupId = -561705966     },  // Aries
         };
 
         public OrderPlacedEventConsumer(Lazy<ITelegramBotClient> telegramBotClient,
