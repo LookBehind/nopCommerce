@@ -66,4 +66,13 @@
             <span asp-validation-for="ExternalAuthenticationSettings.AllowCustomersToRemoveAssociations"></span>
         </div>
     </div>
+    <div class="form-group row advanced-setting">
+        <div class="col-md-3">
+            <nop-label asp-for="CustomerSettings.DisplayCustomerSpendings" />
+        </div>
+        <div class="col-md-9">
+            <nop-editor asp-for="CustomerSettings.DisplayCustomerSpendings" />
+            <span asp-validation-for="CustomerSettings.DisplayCustomerSpendings"></span>
+        </div>
+    </div>
 </div>
