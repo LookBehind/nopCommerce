@@ -29,6 +29,7 @@ using Nop.Services.Common;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Forums;
+using Nop.Services.Helpers;
 using Nop.Services.Localization;
 using Nop.Services.Media;
 using Nop.Services.News;
@@ -41,6 +42,7 @@ using Nop.Web.Framework.Themes;
 using Nop.Web.Framework.UI;
 using Nop.Web.Infrastructure.Cache;
 using Nop.Web.Models.Common;
+using OfficeOpenXml.FormulaParsing.Excel.Functions.DateTime;
 
 namespace Nop.Web.Factories
 {
@@ -94,6 +96,8 @@ namespace Nop.Web.Factories
         private readonly SitemapXmlSettings _sitemapXmlSettings;
         private readonly StoreInformationSettings _storeInformationSettings;
         private readonly VendorSettings _vendorSettings;
+        private readonly ICustomerOrderService _customerOrderService;
+        private readonly IDateTimeHelper _dateTimeHelper;
 
         #endregion
 
@@ -141,7 +145,9 @@ namespace Nop.Web.Factories
             SitemapSettings sitemapSettings,
             SitemapXmlSettings sitemapXmlSettings,
             StoreInformationSettings storeInformationSettings,
-            VendorSettings vendorSettings)
+            VendorSettings vendorSettings,
+            ICustomerOrderService customerOrderService,
+            IDateTimeHelper dateTimeHelper)
         {
             _blogSettings = blogSettings;
             _captchaSettings = captchaSettings;
@@ -186,6 +192,8 @@ namespace Nop.Web.Factories
             _sitemapXmlSettings = sitemapXmlSettings;
             _storeInformationSettings = storeInformationSettings;
             _vendorSettings = vendorSettings;
+            _customerOrderService = customerOrderService;
+            _dateTimeHelper = dateTimeHelper;
         }
 
         #endregion
@@ -217,6 +225,24 @@ namespace Nop.Web.Factories
             return result;
         }
 
+        protected async Task<CustomerSpendingsDetailsModel> GetCustomerSpendingsDetails(int customerId)
+        {
+            var to = DateTime.UtcNow;
+            var from = to.AddDays(-(int)to.DayOfWeek + (int)DayOfWeek.Monday);
+
+            return new CustomerSpendingsDetailsModel()
+            {
+                FromDate = await _dateTimeHelper.ConvertToUserTimeAsync(from),
+                Amount = await _customerOrderService.GetCoustomerOrdersTotalAmount(customerId, from, to),
+                CurrencyCode = (await _workContext.GetWorkingCurrencyAsync()).CurrencyCode,
+            };
+        }
+
+        protected async Task<bool> ShouldDisplayCustomerSpendings(Customer customer)
+        {
+            var isRegisterd = await _customerService.IsRegisteredAsync(customer);
+            return isRegisterd && _customerSettings.DisplayCustomerSpendings;
+        }
         #endregion
 
         #region Methods
@@ -369,7 +395,7 @@ namespace Nop.Web.Factories
                 }
             }
 
-            var registrationDisabledCases = new UserRegistrationType[] { UserRegistrationType.Disabled, 
+            var registrationDisabledCases = new UserRegistrationType[] { UserRegistrationType.Disabled,
                 UserRegistrationType.OnlyExternalAuthentication };
             var model = new HeaderLinksModel
             {
@@ -406,13 +432,17 @@ namespace Nop.Web.Factories
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
 
-            var model = new AdminHeaderLinksModel
+            var model = new AdminHeaderLinksModel();
+            model.ImpersonatedCustomerName = await _customerService.IsRegisteredAsync(customer) ? await _customerService.FormatUsernameAsync(customer) : string.Empty;
+            model.IsCustomerImpersonated = _workContext.OriginalCustomerIfImpersonated != null;
+            model.DisplayAdminLink = await _permissionService.AuthorizeAsync(StandardPermissionProvider.AccessAdminPanel);
+            model.EditPageUrl = _pageHeadBuilder.GetEditPageUrl();
+
+            model.DisplayCustomerSpendings = await ShouldDisplayCustomerSpendings(customer);
+            if (model.DisplayCustomerSpendings)
             {
-                ImpersonatedCustomerName = await _customerService.IsRegisteredAsync(customer) ? await _customerService.FormatUsernameAsync(customer) : string.Empty,
-                IsCustomerImpersonated = _workContext.OriginalCustomerIfImpersonated != null,
-                DisplayAdminLink = await _permissionService.AuthorizeAsync(StandardPermissionProvider.AccessAdminPanel),
-                EditPageUrl = _pageHeadBuilder.GetEditPageUrl()
-            };
+                model.CustomerSpendingsDetails = await GetCustomerSpendingsDetails(customer.Id);
+            }
 
             return model;
         }

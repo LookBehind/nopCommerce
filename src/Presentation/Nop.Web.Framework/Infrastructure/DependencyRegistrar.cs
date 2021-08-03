@@ -145,6 +145,7 @@ namespace Nop.Web.Framework.Infrastructure
             services.AddScoped<ICustomerService, CustomerService>();
             services.AddScoped<ICustomerRegistrationService, CustomerRegistrationService>();
             services.AddScoped<ICustomerReportService, CustomerReportService>();
+            services.AddScoped<ICustomerOrderService, CustomerOrderService>();
             services.AddScoped<IPermissionService, PermissionService>();
             services.AddScoped<IAclService, AclService>();
             services.AddScoped<IPriceCalculationService, PriceCalculationService>();

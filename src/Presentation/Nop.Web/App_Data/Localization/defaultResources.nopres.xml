@@ -6621,6 +6621,12 @@
   <LocaleResource Name="Admin.Configuration.Settings.CustomerUser.ShowCustomersLocation.Hint">
     <Value>A value indicating whether customer's location is shown.</Value>
   </LocaleResource>
+  <LocaleResource Name="Admin.Configuration.Settings.CustomerUser.DisplayCustomerSpendings">
+    <Value>Show information about customer's spending</Value>
+  </LocaleResource>
+  <LocaleResource Name="Admin.Configuration.Settings.CustomerUser.DisplayCustomerSpendings.Hint">
+    <Value>A value indicating whether customer's spendings details is shown.</Value>
+  </LocaleResource>
   <LocaleResource Name="Admin.Configuration.Settings.CustomerUser.StateProvinceEnabled">
     <Value>'State/province' enabled</Value>
   </LocaleResource>

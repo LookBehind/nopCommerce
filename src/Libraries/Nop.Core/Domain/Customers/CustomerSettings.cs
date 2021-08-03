@@ -8,6 +8,11 @@ namespace Nop.Core.Domain.Customers
     public class CustomerSettings : ISettings
     {
         /// <summary>
+        ///  Gets or sets a value indicating whether customers spendings is shown
+        /// </summary>
+        public bool DisplayCustomerSpendings { get; set; }
+
+        /// <summary>
         /// Gets or sets a value indicating whether usernames are used instead of emails
         /// </summary>
         public bool UsernamesEnabled { get; set; }
