@@ -227,13 +227,16 @@ namespace Nop.Web.Factories
 
         protected async Task<CustomerSpendingsDetailsModel> GetCustomerSpendingsDetails(int customerId)
         {
-            var to = DateTime.UtcNow;
-            var from = to.AddDays(-(int)to.DayOfWeek + (int)DayOfWeek.Monday);
+            var utcTo = DateTime.UtcNow;
+            var to = await _dateTimeHelper.ConvertToUserTimeAsync(utcTo);
+            var monday = to.AddDays(-(int)to.DayOfWeek + (int)DayOfWeek.Monday);
+            var from = new DateTime(monday.Year, monday.Month, monday.Day, 0, 0, 0, 0, 0);
+            var utcFrom = _dateTimeHelper.ConvertToUtcTime(from);
 
             return new CustomerSpendingsDetailsModel()
             {
-                FromDate = await _dateTimeHelper.ConvertToUserTimeAsync(from),
-                Amount = await _customerOrderService.GetCoustomerOrdersTotalAmount(customerId, from, to),
+                FromDate = from,
+                Amount = await _customerOrderService.GetCoustomerOrdersTotalAmount(customerId, utcFrom, utcTo),
                 CurrencyCode = (await _workContext.GetWorkingCurrencyAsync()).CurrencyCode,
             };
         }
