@@ -19,7 +19,7 @@ namespace Nop.Web.Areas.Admin.Models.Reports
         public string ManageInventoryMethod { get; set; }
 
         [NopResourceDisplayName("Admin.Catalog.Products.Fields.StockQuantity")]
-        public int StockQuantity { get; set; }
+        public decimal StockQuantity { get; set; }
 
         [NopResourceDisplayName("Admin.Catalog.Products.Fields.Published")]
         public bool Published { get; set; }

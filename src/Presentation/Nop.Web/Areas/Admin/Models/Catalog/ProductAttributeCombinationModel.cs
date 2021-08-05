@@ -30,7 +30,7 @@ namespace Nop.Web.Areas.Admin.Models.Catalog
         public string AttributesXml { get; set; }
 
         [NopResourceDisplayName("Admin.Catalog.Products.ProductAttributes.AttributeCombinations.Fields.StockQuantity")]
-        public int StockQuantity { get; set; }
+        public decimal StockQuantity { get; set; }
 
         [NopResourceDisplayName("Admin.Catalog.Products.ProductAttributes.AttributeCombinations.Fields.AllowOutOfStockOrders")]
         public bool AllowOutOfStockOrders { get; set; }

@@ -308,7 +308,7 @@ namespace Nop.Services.Catalog
         /// </summary>
         /// <param name="product">Product</param>
         /// <returns>Result</returns>
-        int[] ParseAllowedQuantities(Product product);
+        decimal[] ParseAllowedQuantities(Product product);
 
         /// <summary>
         /// Get total quantity
@@ -326,7 +326,7 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the result
         /// </returns>
-        Task<int> GetTotalStockQuantityAsync(Product product, bool useReservedQuantity = true, int warehouseId = 0);
+        Task<decimal> GetTotalStockQuantityAsync(Product product, bool useReservedQuantity = true, int warehouseId = 0);
 
         //TODO: migrate to an extension method
         /// <summary>
@@ -444,7 +444,7 @@ namespace Nop.Services.Catalog
         /// <param name="attributesXml">Attributes in XML format</param>
         /// <param name="message">Message for the stock quantity history</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        Task AdjustInventoryAsync(Product product, int quantityToChange, string attributesXml = "", string message = "");
+        Task AdjustInventoryAsync(Product product, decimal quantityToChange, string attributesXml = "", string message = "");
 
         /// <summary>
         /// Book the reserved quantity
@@ -454,7 +454,7 @@ namespace Nop.Services.Catalog
         /// <param name="quantity">Quantity, must be negative</param>
         /// <param name="message">Message for the stock quantity history</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        Task BookReservedInventoryAsync(Product product, int warehouseId, int quantity, string message = "");
+        Task BookReservedInventoryAsync(Product product, int warehouseId, decimal quantity, string message = "");
 
         /// <summary>
         /// Reverse booked inventory (if acceptable)
@@ -464,7 +464,7 @@ namespace Nop.Services.Catalog
         /// <returns>Quantity reversed</returns>
         /// <param name="message">Message for the stock quantity history</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        Task<int> ReverseBookedInventoryAsync(Product product, ShipmentItem shipmentItem, string message = "");
+        Task<decimal> ReverseBookedInventoryAsync(Product product, ShipmentItem shipmentItem, string message = "");
 
         #endregion
 
@@ -644,7 +644,7 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the ier price
         /// </returns>
-        Task<TierPrice> GetPreferredTierPriceAsync(Product product, Customer customer, int storeId, int quantity);
+        Task<TierPrice> GetPreferredTierPriceAsync(Product product, Customer customer, int storeId, decimal quantity);
 
         #endregion
 
@@ -875,7 +875,7 @@ namespace Nop.Services.Catalog
         /// <param name="message">Message</param>
         /// <param name="combinationId">Product attribute combination identifier</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        Task AddStockQuantityHistoryEntryAsync(Product product, int quantityAdjustment, int stockQuantity,
+        Task AddStockQuantityHistoryEntryAsync(Product product, decimal quantityAdjustment, decimal stockQuantity,
             int warehouseId = 0, string message = "", int? combinationId = null);
 
         /// <summary>

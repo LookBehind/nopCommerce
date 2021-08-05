@@ -231,7 +231,7 @@ namespace Nop.Services.Orders
         /// A task that represents the asynchronous operation
         /// The task result contains the otal number of items in all shipments
         /// </returns>
-        Task<int> GetTotalNumberOfItemsInAllShipmentAsync(OrderItem orderItem);
+        Task<decimal> GetTotalNumberOfItemsInAllShipmentAsync(OrderItem orderItem);
 
         /// <summary>
         /// Gets a total number of already items which can be added to new shipments
@@ -241,7 +241,7 @@ namespace Nop.Services.Orders
         /// A task that represents the asynchronous operation
         /// The task result contains the otal number of already delivered items which can be added to new shipments
         /// </returns>
-        Task<int> GetTotalNumberOfItemsCanBeAddedToShipmentAsync(OrderItem orderItem);
+        Task<decimal> GetTotalNumberOfItemsCanBeAddedToShipmentAsync(OrderItem orderItem);
 
         /// <summary>
         /// Gets a value indicating whether download is allowed

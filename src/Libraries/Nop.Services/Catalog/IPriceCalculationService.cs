@@ -29,7 +29,7 @@ namespace Nop.Services.Catalog
             Customer customer,
             decimal additionalCharge = 0,
             bool includeDiscounts = true,
-            int quantity = 1);
+            decimal quantity = 1);
 
         /// <summary>
         /// Gets the final price
@@ -49,7 +49,7 @@ namespace Nop.Services.Catalog
             Customer customer,
             decimal additionalCharge,
             bool includeDiscounts,
-            int quantity,
+            decimal quantity,
             DateTime? rentalStartDate,
             DateTime? rentalEndDate);
 
@@ -73,7 +73,7 @@ namespace Nop.Services.Catalog
             decimal? overriddenProductPrice,
             decimal additionalCharge,
             bool includeDiscounts,
-            int quantity,
+            decimal quantity,
             DateTime? rentalStartDate,
             DateTime? rentalEndDate);
 

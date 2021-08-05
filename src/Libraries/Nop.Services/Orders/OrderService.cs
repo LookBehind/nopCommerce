@@ -78,12 +78,12 @@ namespace Nop.Services.Orders
         /// A task that represents the asynchronous operation
         /// The task result contains the otal number of not yet shipped items (but added to shipments)
         /// </returns>
-        protected virtual async Task<int> GetTotalNumberOfNotYetShippedItemsAsync(OrderItem orderItem)
+        protected virtual async Task<decimal> GetTotalNumberOfNotYetShippedItemsAsync(OrderItem orderItem)
         {
             if (orderItem == null)
                 throw new ArgumentNullException(nameof(orderItem));
 
-            var result = 0;
+            decimal result = 0;
             var shipments = await _shipmentService.GetShipmentsByOrderIdAsync(orderItem.OrderId);
             for (var i = 0; i < shipments.Count; i++)
             {
@@ -111,12 +111,12 @@ namespace Nop.Services.Orders
         /// A task that represents the asynchronous operation
         /// The task result contains the otal number of already shipped items
         /// </returns>
-        protected virtual async Task<int> GetTotalNumberOfShippedItemsAsync(OrderItem orderItem)
+        protected virtual async Task<decimal> GetTotalNumberOfShippedItemsAsync(OrderItem orderItem)
         {
             if (orderItem == null)
                 throw new ArgumentNullException(nameof(orderItem));
 
-            var result = 0;
+            decimal result = 0;
             var shipments = await _shipmentService.GetShipmentsByOrderIdAsync(orderItem.OrderId);
             for (var i = 0; i < shipments.Count; i++)
             {
@@ -144,12 +144,12 @@ namespace Nop.Services.Orders
         /// A task that represents the asynchronous operation
         /// The task result contains the otal number of already delivered items
         /// </returns>
-        protected virtual async Task<int> GetTotalNumberOfDeliveredItemsAsync(OrderItem orderItem)
+        protected virtual async Task<decimal> GetTotalNumberOfDeliveredItemsAsync(OrderItem orderItem)
         {
             if (orderItem == null)
                 throw new ArgumentNullException(nameof(orderItem));
 
-            var result = 0;
+            decimal result = 0;
             var shipments = await _shipmentService.GetShipmentsByOrderIdAsync(orderItem.OrderId);
 
             for (var i = 0; i < shipments.Count; i++)
@@ -661,12 +661,12 @@ namespace Nop.Services.Orders
         /// A task that represents the asynchronous operation
         /// The task result contains the otal number of items in all shipments
         /// </returns>
-        public virtual async Task<int> GetTotalNumberOfItemsInAllShipmentAsync(OrderItem orderItem)
+        public virtual async Task<decimal> GetTotalNumberOfItemsInAllShipmentAsync(OrderItem orderItem)
         {
             if (orderItem == null)
                 throw new ArgumentNullException(nameof(orderItem));
 
-            var totalInShipments = 0;
+            decimal totalInShipments = 0;
             var shipments = await _shipmentService.GetShipmentsByOrderIdAsync(orderItem.OrderId);
 
             for (var i = 0; i < shipments.Count; i++)
@@ -691,7 +691,7 @@ namespace Nop.Services.Orders
         /// A task that represents the asynchronous operation
         /// The task result contains the otal number of already delivered items which can be added to new shipments
         /// </returns>
-        public virtual async Task<int> GetTotalNumberOfItemsCanBeAddedToShipmentAsync(OrderItem orderItem)
+        public virtual async Task<decimal> GetTotalNumberOfItemsCanBeAddedToShipmentAsync(OrderItem orderItem)
         {
             if (orderItem == null)
                 throw new ArgumentNullException(nameof(orderItem));

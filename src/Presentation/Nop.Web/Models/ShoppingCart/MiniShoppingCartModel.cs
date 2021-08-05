@@ -12,7 +12,7 @@ namespace Nop.Web.Models.ShoppingCart
         }
 
         public IList<ShoppingCartItemModel> Items { get; set; }
-        public int TotalProducts { get; set; }
+        public decimal TotalProducts { get; set; }
         public string SubTotal { get; set; }
         public bool DisplayShoppingCartButton { get; set; }
         public bool DisplayCheckoutButton { get; set; }
@@ -35,7 +35,7 @@ namespace Nop.Web.Models.ShoppingCart
 
             public string ProductSeName { get; set; }
 
-            public int Quantity { get; set; }
+            public decimal Quantity { get; set; }
 
             public string UnitPrice { get; set; }
 

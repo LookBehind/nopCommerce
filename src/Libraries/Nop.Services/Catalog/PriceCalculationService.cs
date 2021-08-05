@@ -275,7 +275,7 @@ namespace Nop.Services.Catalog
             Customer customer,
             decimal additionalCharge = 0,
             bool includeDiscounts = true,
-            int quantity=1)
+            decimal quantity=1)
         {
             return await GetFinalPriceAsync(product, customer,
                 additionalCharge, includeDiscounts, quantity,
@@ -300,7 +300,7 @@ namespace Nop.Services.Catalog
             Customer customer,
             decimal additionalCharge,
             bool includeDiscounts,
-            int quantity,
+            decimal quantity,
             DateTime? rentalStartDate,
             DateTime? rentalEndDate)
         {
@@ -328,7 +328,7 @@ namespace Nop.Services.Catalog
             decimal? overriddenProductPrice,
             decimal additionalCharge,
             bool includeDiscounts,
-            int quantity,
+            decimal quantity,
             DateTime? rentalStartDate,
             DateTime? rentalEndDate)
         {

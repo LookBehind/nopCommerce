@@ -87,7 +87,7 @@ namespace Nop.Services.Orders
         Task<IList<string>> GetShoppingCartItemAttributeWarningsAsync(Customer customer,
             ShoppingCartType shoppingCartType,
             Product product,
-            int quantity = 1,
+            decimal quantity = 1,
             string attributesXml = "",
             bool ignoreNonCombinableAttributes = false,
             bool ignoreConditionMet = false);
@@ -145,7 +145,7 @@ namespace Nop.Services.Orders
             Product product, int storeId,
             string attributesXml, decimal customerEnteredPrice,
             DateTime? rentalStartDate = null, DateTime? rentalEndDate = null,
-            int quantity = 1, bool addRequiredProducts = true, int shoppingCartItemId = 0,
+            decimal quantity = 1, bool addRequiredProducts = true, int shoppingCartItemId = 0,
             bool getStandardWarnings = true, bool getAttributesWarnings = true,
             bool getGiftCardWarnings = true, bool getRequiredProductWarnings = true,
             bool getRentalWarnings = true);
@@ -194,7 +194,7 @@ namespace Nop.Services.Orders
         Task<(decimal unitPrice, decimal discountAmount, List<Discount> appliedDiscounts)> GetUnitPriceAsync(Product product,
             Customer customer,
             ShoppingCartType shoppingCartType,
-            int quantity,
+            decimal quantity,
             string attributesXml,
             decimal customerEnteredPrice,
             DateTime? rentalStartDate, DateTime? rentalEndDate,
@@ -256,7 +256,7 @@ namespace Nop.Services.Orders
             ShoppingCartType shoppingCartType, int storeId, string attributesXml = null,
             decimal customerEnteredPrice = decimal.Zero,
             DateTime? rentalStartDate = null, DateTime? rentalEndDate = null,
-            int quantity = 1, bool addRequiredProducts = true);
+            decimal quantity = 1, bool addRequiredProducts = true);
 
         /// <summary>
         /// Updates the shopping cart item
@@ -277,7 +277,7 @@ namespace Nop.Services.Orders
             int shoppingCartItemId, string attributesXml,
             decimal customerEnteredPrice,
             DateTime? rentalStartDate = null, DateTime? rentalEndDate = null,
-            int quantity = 1, bool resetCheckoutData = true);
+            decimal quantity = 1, bool resetCheckoutData = true);
 
         /// <summary>
         /// Migrate shopping cart

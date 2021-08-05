@@ -42,14 +42,14 @@ namespace Nop.Web.Areas.Admin.Models.Orders
         [NopResourceDisplayName("Admin.Orders.Shipments.Products.ItemDimensions")]
         public string ItemDimensions { get; set; }
 
-        public int QuantityToAdd { get; set; }
+        public decimal QuantityToAdd { get; set; }
 
-        public int QuantityOrdered { get; set; }
+        public decimal QuantityOrdered { get; set; }
 
         [NopResourceDisplayName("Admin.Orders.Shipments.Products.QtyShipped")]
-        public int QuantityInThisShipment { get; set; }
+        public decimal QuantityInThisShipment { get; set; }
 
-        public int QuantityInAllShipments { get; set; }
+        public decimal QuantityInAllShipments { get; set; }
 
 
         public string ShippedFromWarehouse { get; set; }
@@ -67,8 +67,8 @@ namespace Nop.Web.Areas.Admin.Models.Orders
         {
             public int WarehouseId { get; set; }
             public string WarehouseName { get; set; }
-            public int StockQuantity { get; set; }
-            public int ReservedQuantity { get; set; }
+            public decimal StockQuantity { get; set; }
+            public decimal ReservedQuantity { get; set; }
             public int PlannedQuantity { get; set; }
         }
 

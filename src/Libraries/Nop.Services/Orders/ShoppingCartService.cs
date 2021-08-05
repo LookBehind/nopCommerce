@@ -211,7 +211,7 @@ namespace Nop.Services.Orders
         /// The task result contains the warnings
         /// </returns>
         protected virtual async Task<IList<string>> GetRequiredProductWarningsAsync(Customer customer, ShoppingCartType shoppingCartType, Product product,
-            int storeId, int quantity, bool addRequiredProducts, int shoppingCartItemId)
+            int storeId, decimal quantity, bool addRequiredProducts, int shoppingCartItemId)
         {
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));
@@ -303,7 +303,7 @@ namespace Nop.Services.Orders
         /// The task result contains the warnings
         /// </returns>
         protected virtual async Task<IList<string>> GetStandardWarningsAsync(Customer customer, ShoppingCartType shoppingCartType, Product product,
-            string attributesXml, decimal customerEnteredPrice, int quantity, int shoppingCartItemId, int storeId)
+            string attributesXml, decimal customerEnteredPrice, decimal quantity, int shoppingCartItemId, int storeId)
         {
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));
@@ -736,7 +736,7 @@ namespace Nop.Services.Orders
         public virtual async Task<IList<string>> GetShoppingCartItemAttributeWarningsAsync(Customer customer,
             ShoppingCartType shoppingCartType,
             Product product,
-            int quantity = 1,
+            decimal quantity = 1,
             string attributesXml = "",
             bool ignoreNonCombinableAttributes = false,
             bool ignoreConditionMet = false)
@@ -1060,7 +1060,7 @@ namespace Nop.Services.Orders
             Product product, int storeId,
             string attributesXml, decimal customerEnteredPrice,
             DateTime? rentalStartDate = null, DateTime? rentalEndDate = null,
-            int quantity = 1, bool addRequiredProducts = true, int shoppingCartItemId = 0,
+            decimal quantity = 1, bool addRequiredProducts = true, int shoppingCartItemId = 0,
             bool getStandardWarnings = true, bool getAttributesWarnings = true,
             bool getGiftCardWarnings = true, bool getRequiredProductWarnings = true,
             bool getRentalWarnings = true)
@@ -1341,7 +1341,7 @@ namespace Nop.Services.Orders
         public virtual async Task<(decimal unitPrice, decimal discountAmount, List<Discount> appliedDiscounts)> GetUnitPriceAsync(Product product,
             Customer customer,
             ShoppingCartType shoppingCartType,
-            int quantity,
+            decimal quantity,
             string attributesXml,
             decimal customerEnteredPrice,
             DateTime? rentalStartDate, DateTime? rentalEndDate,
@@ -1390,7 +1390,7 @@ namespace Nop.Services.Orders
                 }
                 else
                 {
-                    int qty;
+                    decimal qty;
                     if (_shoppingCartSettings.GroupTierPricesForDistinctShoppingCartItems)
                     {
                         //the same products with distinct product attributes could be stored as distinct "ShoppingCartItem" records
@@ -1478,7 +1478,7 @@ namespace Nop.Services.Orders
             ShoppingCartType shoppingCartType, int storeId, string attributesXml = null,
             decimal customerEnteredPrice = decimal.Zero,
             DateTime? rentalStartDate = null, DateTime? rentalEndDate = null,
-            int quantity = 1, bool addRequiredProducts = true)
+            decimal quantity = 1, bool addRequiredProducts = true)
         {
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));
@@ -1618,7 +1618,7 @@ namespace Nop.Services.Orders
             int shoppingCartItemId, string attributesXml,
             decimal customerEnteredPrice,
             DateTime? rentalStartDate = null, DateTime? rentalEndDate = null,
-            int quantity = 1, bool resetCheckoutData = true)
+            decimal quantity = 1, bool resetCheckoutData = true)
         {
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));

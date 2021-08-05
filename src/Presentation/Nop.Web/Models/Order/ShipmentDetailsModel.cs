@@ -33,8 +33,8 @@ namespace Nop.Web.Models.Order
             public string AttributeInfo { get; set; }
             public string RentalInfo { get; set; }
 
-            public int QuantityOrdered { get; set; }
-            public int QuantityShipped { get; set; }
+            public decimal QuantityOrdered { get; set; }
+            public decimal QuantityShipped { get; set; }
         }
 
         public partial record ShipmentStatusEventModel : BaseNopModel

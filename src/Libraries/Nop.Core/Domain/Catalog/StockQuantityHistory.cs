@@ -10,12 +10,12 @@ namespace Nop.Core.Domain.Catalog
         /// <summary>
         /// Gets or sets the stock quantity adjustment
         /// </summary>
-        public int QuantityAdjustment { get; set; }
+        public decimal QuantityAdjustment { get; set; }
         
         /// <summary>
         /// Gets or sets current stock quantity
         /// </summary>
-        public int StockQuantity { get; set; }
+        public decimal StockQuantity { get; set; }
 
         /// <summary>
         /// Gets or sets the message

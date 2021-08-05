@@ -308,7 +308,7 @@ namespace Nop.Core.Domain.Catalog
         /// <summary>
         /// Gets or sets the stock quantity
         /// </summary>
-        public int StockQuantity { get; set; }
+        public decimal StockQuantity { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether to display stock availability

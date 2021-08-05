@@ -143,7 +143,7 @@ namespace Nop.Web.Models.Catalog
 
             //qty
             [NopResourceDisplayName("Products.Qty")]
-            public int EnteredQuantity { get; set; }
+            public decimal EnteredQuantity { get; set; }
             public string MinimumQuantityNotification { get; set; }
             public List<SelectListItem> AllowedQuantities { get; set; }
 

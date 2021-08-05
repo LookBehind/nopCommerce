@@ -167,7 +167,7 @@ namespace Nop.Web.Controllers.Api.Security
         {
             public bool Success { get; set; }
             public int Id { get; set; }
-            public int Quantity { get; set; }
+            public decimal Quantity { get; set; }
             public string Message { get; set; }
         }
         public class CartErrorModel

@@ -40,7 +40,7 @@ namespace Nop.Web.Areas.Admin.Models.Orders
 
         public decimal UnitPriceExclTaxValue { get; set; }
 
-        public int Quantity { get; set; }
+        public decimal Quantity { get; set; }
 
         public string DiscountInclTax { get; set; }
 

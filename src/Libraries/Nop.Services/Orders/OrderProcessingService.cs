@@ -1374,7 +1374,7 @@ namespace Nop.Services.Orders
         /// <param name="unitPriceExclTax">Unit price exclude tax, it set as amount if not set specific amount and product.OverriddenGiftCardAmount isn't set to</param>
         /// <param name="amount">Amount</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task AddGiftCardsAsync(Product product, string attributesXml, int quantity, OrderItem orderItem, decimal? unitPriceExclTax = null, decimal? amount = null)
+        protected virtual async Task AddGiftCardsAsync(Product product, string attributesXml, decimal quantity, OrderItem orderItem, decimal? unitPriceExclTax = null, decimal? amount = null)
         {
             if (!product.IsGiftCard)
                 return;

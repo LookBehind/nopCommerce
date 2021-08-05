@@ -151,7 +151,7 @@ namespace Nop.Services.Catalog
         /// <param name="product">Product</param>
         /// <param name="totalStock">Total stock</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task ApplyLowStockActivityAsync(Product product, int totalStock)
+        protected virtual async Task ApplyLowStockActivityAsync(Product product, decimal totalStock)
         {
             var stockDec = product.MinStockQuantity >= totalStock;
             var stockInc = _catalogSettings.PublishBackProductWhenCancellingOrders && product.MinStockQuantity < totalStock;
@@ -356,7 +356,7 @@ namespace Nop.Services.Catalog
         /// <param name="product">Product</param>
         /// <param name="quantity">Quantity, must be negative</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task ReserveInventoryAsync(Product product, int quantity)
+        protected virtual async Task ReserveInventoryAsync(Product product, decimal quantity)
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
@@ -400,7 +400,7 @@ namespace Nop.Services.Catalog
         /// <param name="product">Product</param>
         /// <param name="quantity">Quantity, must be positive</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task UnblockReservedInventoryAsync(Product product, int quantity)
+        protected virtual async Task UnblockReservedInventoryAsync(Product product, decimal quantity)
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
@@ -1334,19 +1334,19 @@ namespace Nop.Services.Catalog
         /// </summary>
         /// <param name="product">Product</param>
         /// <returns>Result</returns>
-        public virtual int[] ParseAllowedQuantities(Product product)
+        public virtual decimal[] ParseAllowedQuantities(Product product)
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
 
-            var result = new List<int>();
+            var result = new List<decimal>();
             if (!string.IsNullOrWhiteSpace(product.AllowedQuantities))
                 product.AllowedQuantities
                     .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                     .ToList()
                     .ForEach(qtyStr =>
                     {
-                        if (int.TryParse(qtyStr.Trim(), out var qty))
+                        if (decimal.TryParse(qtyStr.Trim(), out var qty))
                             result.Add(qty);
                     });
 
@@ -1369,7 +1369,7 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the result
         /// </returns>
-        public virtual async Task<int> GetTotalStockQuantityAsync(Product product, bool useReservedQuantity = true, int warehouseId = 0)
+        public virtual async Task<decimal> GetTotalStockQuantityAsync(Product product, bool useReservedQuantity = true, int warehouseId = 0)
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
@@ -1645,7 +1645,7 @@ namespace Nop.Services.Catalog
         /// <param name="attributesXml">Attributes in XML format</param>
         /// <param name="message">Message for the stock quantity history</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public virtual async Task AdjustInventoryAsync(Product product, int quantityToChange, string attributesXml = "", string message = "")
+        public virtual async Task AdjustInventoryAsync(Product product, decimal quantityToChange, string attributesXml = "", string message = "")
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
@@ -1740,7 +1740,7 @@ namespace Nop.Services.Catalog
         /// <param name="quantity">Quantity, must be negative</param>
         /// <param name="message">Message for the stock quantity history</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public virtual async Task BookReservedInventoryAsync(Product product, int warehouseId, int quantity, string message = "")
+        public virtual async Task BookReservedInventoryAsync(Product product, int warehouseId, decimal quantity, string message = "")
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
@@ -1777,7 +1777,7 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the quantity reversed
         /// </returns>
-        public virtual async Task<int> ReverseBookedInventoryAsync(Product product, ShipmentItem shipmentItem, string message = "")
+        public virtual async Task<decimal> ReverseBookedInventoryAsync(Product product, ShipmentItem shipmentItem, string message = "")
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
@@ -2114,7 +2114,7 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the ier price
         /// </returns>
-        public virtual async Task<TierPrice> GetPreferredTierPriceAsync(Product product, Customer customer, int storeId, int quantity)
+        public virtual async Task<TierPrice> GetPreferredTierPriceAsync(Product product, Customer customer, int storeId, decimal quantity)
         {
             if (product is null)
                 throw new ArgumentNullException(nameof(product));
@@ -2536,7 +2536,7 @@ namespace Nop.Services.Catalog
         /// <param name="message">Message</param>
         /// <param name="combinationId">Product attribute combination identifier</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public virtual async Task AddStockQuantityHistoryEntryAsync(Product product, int quantityAdjustment, int stockQuantity,
+        public virtual async Task AddStockQuantityHistoryEntryAsync(Product product, decimal quantityAdjustment, decimal stockQuantity,
             int warehouseId = 0, string message = "", int? combinationId = null)
         {
             if (product == null)

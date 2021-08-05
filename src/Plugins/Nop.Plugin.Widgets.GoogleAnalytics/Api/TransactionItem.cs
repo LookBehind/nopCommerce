@@ -24,7 +24,7 @@ namespace Nop.Plugin.Widgets.GoogleAnalytics.Api
         /// <param name="productPrice">Unit price</param>
         /// <param name="quantity">Quantity</param>
         /// <param name="category">The product category</param>
-        public TransactionItem(string orderId, string productCode, string productName, decimal productPrice, int quantity, string category)
+        public TransactionItem(string orderId, string productCode, string productName, decimal productPrice, decimal quantity, string category)
         {
             var usCulture = new CultureInfo("en-US");
 

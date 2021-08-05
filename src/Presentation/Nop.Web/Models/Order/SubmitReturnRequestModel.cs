@@ -50,7 +50,7 @@ namespace Nop.Web.Models.Order
 
             public string UnitPrice { get; set; }
 
-            public int Quantity { get; set; }
+            public decimal Quantity { get; set; }
         }
 
         public partial record ReturnRequestReasonModel : BaseNopEntityModel

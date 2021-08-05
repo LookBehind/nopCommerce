@@ -17,7 +17,7 @@ namespace Nop.Web.Areas.Admin.Models.ShoppingCart
         public string CustomerEmail { get; set; }
 
         [NopResourceDisplayName("Admin.CurrentCarts.TotalItems")]
-        public int TotalItems { get; set; }
+        public decimal TotalItems { get; set; }
 
         #endregion
     }

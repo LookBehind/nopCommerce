@@ -61,7 +61,7 @@ namespace Nop.Web.Models.ShoppingCart
             public string Discount { get; set; }
             public int? MaximumDiscountedQty { get; set; }
 
-            public int Quantity { get; set; }
+            public decimal Quantity { get; set; }
             public List<SelectListItem> AllowedQuantities { get; set; }
 
             public string AttributeInfo { get; set; }
