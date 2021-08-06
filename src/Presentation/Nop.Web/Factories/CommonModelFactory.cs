@@ -229,9 +229,9 @@ namespace Nop.Web.Factories
         {
             var utcTo = DateTime.UtcNow;
             var to = await _dateTimeHelper.ConvertToUserTimeAsync(utcTo);
-            var monday = to.AddDays(-(int)to.DayOfWeek + (int)DayOfWeek.Monday);
-            var from = new DateTime(monday.Year, monday.Month, monday.Day, 0, 0, 0, 0, 0);
-            var utcFrom = _dateTimeHelper.ConvertToUtcTime(from);
+            var thursday = to.AddDays(-(int)to.DayOfWeek + (int)DayOfWeek.Thursday);
+            var from = new DateTime(thursday.Year, thursday.Month, thursday.Day, 0, 0, 0, 0, 0);
+            var utcFrom = _dateTimeHelper.ConvertToUtcTime(from.AddMinutes(-1));
 
             return new CustomerSpendingsDetailsModel()
             {
