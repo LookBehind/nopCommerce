@@ -78,7 +78,8 @@ namespace Nop.Web.Models.Order
         public IList<OrderNote> OrderNotes { get; set; }
 
         public bool ShowVendorName { get; set; }
-        
+
+        public bool IsFavorite { get; set; }
 
         #region Nested Classes
 

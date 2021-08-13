@@ -3800,6 +3800,12 @@ label, label + * {
   color: #444;
 }
 
+.order-list-page .favorite-button {
+  background: inherit;
+  font-size: inherit;
+  padding: 0;
+}
+
 .edit-address-button {
   background: url('../images/edit.png') left center no-repeat;
 }
@@ -3816,6 +3822,8 @@ label, label + * {
 .return-items-button {
   background: url('../images/return.png') left center no-repeat;
 }
+
+
 
 .order-details-button {
   background: url('../images/details.png') left center no-repeat;

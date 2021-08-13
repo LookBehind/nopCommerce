@@ -145,8 +145,11 @@ namespace Nop.Web.Factories
         public virtual async Task<CustomerOrderListModel> PrepareCustomerOrderListModelAsync()
         {
             var model = new CustomerOrderListModel();
-            var orders = await _orderService.SearchOrdersAsync(storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
-                customerId: (await _workContext.GetCurrentCustomerAsync()).Id);
+            var currentStoreId = (await _storeContext.GetCurrentStoreAsync()).Id;
+            var customerId = (await _workContext.GetCurrentCustomerAsync()).Id;
+            var orders = (await _orderService.SearchOrdersAsync(storeId: currentStoreId, customerId: customerId))
+                .OrderByDescending(o => o.IsFavorite);
+
             foreach (var order in orders)
             {
                 var orderModel = new CustomerOrderListModel.OrderDetailsModel
@@ -158,7 +161,9 @@ namespace Nop.Web.Factories
                     PaymentStatus = await _localizationService.GetLocalizedEnumAsync(order.PaymentStatus),
                     ShippingStatus = await _localizationService.GetLocalizedEnumAsync(order.ShippingStatus),
                     IsReturnRequestAllowed = await _orderProcessingService.IsReturnRequestAllowedAsync(order),
-                    CustomOrderNumber = order.CustomOrderNumber
+                    CustomOrderNumber = order.CustomOrderNumber,
+                    IsFavorite = order.IsFavorite,
+                    OrderNotes = (await _orderService.GetOrderNoteByIdAsync(order.Id))?.Note ?? string.Empty
                 };
                 var orderTotalInCustomerCurrency = _currencyService.ConvertCurrency(order.OrderTotal, order.CurrencyRate);
                 orderModel.OrderTotal = await _priceFormatter.FormatPriceAsync(orderTotalInCustomerCurrency, true, order.CustomerCurrencyCode, false, (await _workContext.GetWorkingLanguageAsync()).Id);
@@ -213,6 +218,8 @@ namespace Nop.Web.Factories
                 IsReturnRequestAllowed = await _orderProcessingService.IsReturnRequestAllowedAsync(order),
                 PdfInvoiceDisabled = _pdfSettings.DisablePdfInvoicesForPendingOrders && order.OrderStatus == OrderStatus.Pending,
                 CustomOrderNumber = order.CustomOrderNumber,
+
+                IsFavorite = order.IsFavorite,
 
                 //shipping info
                 ShippingStatus = await _localizationService.GetLocalizedEnumAsync(order.ShippingStatus)
