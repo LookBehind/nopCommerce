@@ -39,6 +39,8 @@ namespace Nop.Web.Models.Order
             public string PaymentStatus { get; set; }
             public string ShippingStatus { get; set; }
             public DateTime CreatedOn { get; set; }
+            public bool IsFavorite { get; set; }
+            public string OrderNotes { get; set; }
         }
 
         public partial record RecurringOrderModel : BaseNopEntityModel

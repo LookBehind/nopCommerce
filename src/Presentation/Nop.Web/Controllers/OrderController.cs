@@ -140,6 +140,29 @@ namespace Nop.Web.Controllers
             return View(model);
         }
 
+        //My account / Orders / favorite order
+        [HttpPost, ActionName("CustomerOrders")]
+        [AutoValidateAntiforgeryToken]
+        [FormValueRequired(FormValueRequirement.StartsWith, "favorite")]
+        public virtual async Task<IActionResult> Favorite(IFormCollection form)
+        {
+            var orderId = 0;
+            if (!form.Keys.Any(formValue => formValue.StartsWith("favorite", StringComparison.InvariantCultureIgnoreCase) &&
+                int.TryParse(formValue[(formValue.IndexOf('_') + 1)..], out orderId)))
+            {
+                return RedirectToRoute("CustomerOrders");
+            }
+
+            var order = await _orderService.GetOrderByIdAsync(orderId);
+            if (order == null || order.Deleted || (await _workContext.GetCurrentCustomerAsync()).Id != order.CustomerId)
+                return Challenge();
+
+            order.IsFavorite = !order.IsFavorite;
+            await _orderService.UpdateOrderAsync(order);
+
+            return RedirectToRoute("CustomerOrders");
+        }
+
         //My account / Reward points
         public virtual async Task<IActionResult> CustomerRewardPoints(int? pageNumber)
         {
