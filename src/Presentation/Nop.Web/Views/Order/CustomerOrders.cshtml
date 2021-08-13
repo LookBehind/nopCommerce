@@ -147,10 +147,10 @@
                   <strong>@T("Account.CustomerOrders.OrderNumber"): @order.CustomOrderNumber</strong>
                 </div>
                 <ul class="info">
-                  <li>@T("Admin.Orders.List.OrderNotes"): <span class="order-status">@order.OrderNotes</span></li>
                   <li>@T("Account.CustomerOrders.OrderStatus"): <span class="order-status @order.OrderStatusEnum.ToString().ToLowerInvariant()">@order.OrderStatus</span></li>
                   <li>@T("Account.CustomerOrders.OrderDate"): <span class="order-date">@order.CreatedOn.ToString()</span></li>
                   <li>@T("Account.CustomerOrders.OrderTotal"): <span class="order-total">@order.OrderTotal</span></li>
+                  <li><span class="order-status">@order.OrderNotes</span></li>
                 </ul>
                 <div class="buttons">
                   @if (order.IsReturnRequestAllowed)

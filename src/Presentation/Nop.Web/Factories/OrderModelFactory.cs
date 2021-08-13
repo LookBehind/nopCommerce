@@ -163,7 +163,7 @@ namespace Nop.Web.Factories
                     IsReturnRequestAllowed = await _orderProcessingService.IsReturnRequestAllowedAsync(order),
                     CustomOrderNumber = order.CustomOrderNumber,
                     IsFavorite = order.IsFavorite,
-                    OrderNotes = (await _orderService.GetOrderNoteByIdAsync(order.Id))?.Note ?? string.Empty
+                    OrderNotes = order.CheckoutAttributeDescription
                 };
                 var orderTotalInCustomerCurrency = _currencyService.ConvertCurrency(order.OrderTotal, order.CurrencyRate);
                 orderModel.OrderTotal = await _priceFormatter.FormatPriceAsync(orderTotalInCustomerCurrency, true, order.CustomerCurrencyCode, false, (await _workContext.GetWorkingLanguageAsync()).Id);
