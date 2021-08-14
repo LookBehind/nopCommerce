@@ -1,11 +1,12 @@
 ﻿@model ShoppingCartModel
 @{
-    Layout = "_ColumnsOne";
+  Layout = "_ColumnsOne";
 
-    //title
-    Html.AddTitleParts(T("PageTitle.ShoppingCart").Text);
-    //page class
-    Html.AppendPageCssClassParts("html-shopping-cart-page");
+  //title
+  Html.AddTitleParts(T("PageTitle.ShoppingCart").Text);
+  //page class
+  Html.AppendPageCssClassParts("html-shopping-cart-page");
+  Html.AppendCssFileParts("~/lib_npm/@fortawesome/fontawesome-free/css/all.min.css");
 }
 @if (!Model.OnePageCheckoutEnabled)
 {

@@ -5,7 +5,7 @@ namespace Nop.Plugin.Misc.BuyAmScraper.Models
 {
     public record ProductDTO
     {
-        public int Code { get; set; }
+        public string Sku { get; set; }
         public string Name { get; set; }
         public int Price { get; set; }
         public string ShortDescription { get; set; }
@@ -14,5 +14,6 @@ namespace Nop.Plugin.Misc.BuyAmScraper.Models
         public string ImageFileName { get; set; }
         public string Category { get; set; }
         public string SubCategory { get; set; }
+        public string Partner { get; set; }
     }
 }
