@@ -285,7 +285,7 @@
             });
         }
 
-        function checkoutQuantityChange(id,val) {
+        function checkoutQuantityChange(id, val) {
             var $input = $(id);
             var count = parseInt($(id).val()) + val;
             count = count < 1 ? 1 : count;
@@ -318,7 +318,10 @@
                         }
                     }
                     $(document).trigger({ type: "checkout_attributes_changed", changedData: data });
-                }
+                },
+                    error: function () {
+                        displayBarNotification("Unable to update cart", 'error', 3500);
+                    }
             }), 3000);
 
         }

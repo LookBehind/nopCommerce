@@ -563,7 +563,6 @@ label, label + * {
   height: 34px;
   width: 50px;
   text-align: center;
-  font-size: 26px;
   border: 1px solid #ddd;
   border-radius: 4px;
   display: inline-block;
@@ -582,11 +581,10 @@ label, label + * {
   border: transparent;
 }
 
-.fontpassword input {
+.item-quantities input {
   height: 34px;
   width: 100px;
   text-align: center;
-  font-size: 26px;
   border: 1px solid #ddd;
   border-radius: 4px;
   display: inline-block;
@@ -2436,7 +2434,7 @@ label, label + * {
 
 .overview .qty-input,
 .variant-overview .qty-input {
-  width: 75px;
+  width: 45px;
   height: 43px;
   padding: 0 12px;
   text-align: center;
@@ -4124,7 +4122,7 @@ label, label + * {
 .shopping-cart-page .common-buttons {
   margin: 0 0 60px;
   background-color: #f6f6f6;
-  padding: 20px;
+  padding-bottom: 20px ;
   font-size: 0;
 }
 
@@ -8793,5 +8791,3 @@ pre {
     max-width: 100%;
   }
 }
-
-
