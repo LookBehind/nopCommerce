@@ -10,6 +10,7 @@ using Microsoft.Extensions.Primitives;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Common;
+using Nop.Core.Domain.Companies;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Forums;
 using Nop.Core.Domain.Gdpr;
@@ -17,6 +18,7 @@ using Nop.Core.Domain.Messages;
 using Nop.Core.Domain.Tax;
 using Nop.Core.Events;
 using Nop.Services.Common;
+using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.ExportImport;
 using Nop.Services.Forums;
@@ -75,6 +77,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         private readonly IWorkContext _workContext;
         private readonly IWorkflowMessageService _workflowMessageService;
         private readonly TaxSettings _taxSettings;
+        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -111,7 +114,8 @@ namespace Nop.Web.Areas.Admin.Controllers
             ITaxService taxService,
             IWorkContext workContext,
             IWorkflowMessageService workflowMessageService,
-            TaxSettings taxSettings)
+            TaxSettings taxSettings,
+            ICompanyService companyService)
         {
             _customerSettings = customerSettings;
             _dateTimeSettings = dateTimeSettings;
@@ -145,6 +149,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             _workContext = workContext;
             _workflowMessageService = workflowMessageService;
             _taxSettings = taxSettings;
+            _companyService = companyService;
         }
 
         #endregion
@@ -328,6 +333,9 @@ namespace Nop.Web.Areas.Admin.Controllers
                 ModelState.AddModelError(string.Empty, "Username is already registered");
             }
 
+            if (model.VendorId == 0 && model.CompanyId == 0)
+                ModelState.AddModelError(string.Empty, "Company is required");
+
             //validate customer roles
             var allCustomerRoles = await _customerService.GetAllCustomerRolesAsync(true);
             var newCustomerRoles = new List<CustomerRole>();
@@ -407,6 +415,26 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                 //custom customer attributes
                 await _genericAttributeService.SaveAttributeAsync(customer, NopCustomerDefaults.CustomCustomerAttributes, customerAttributesXml);
+
+                //address customer mapping 
+                var companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(model.CompanyId);
+                if (companyCustomers.Any())
+                {
+                    var addressId = 0;
+                    //foreach (var companyCustomer in companyCustomers)
+                    //{
+                        var addresses = await _customerService.GetAddressesByCustomerIdAsync(companyCustomers.FirstOrDefault().CustomerId);
+                        foreach (var address in addresses)
+                        {
+                            await _customerService.InsertCustomerAddressAsync(customer, address);
+                            addressId = address.Id;
+                        }
+                    //}
+                    await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = model.CompanyId, CustomerId = customer.Id });
+                    customer.ShippingAddressId = addressId;
+                    customer.BillingAddressId = addressId;
+                    await _customerService.UpdateCustomerAsync(customer);
+                }
 
                 //newsletter subscriptions
                 if (!string.IsNullOrEmpty(customer.Email))
@@ -621,6 +649,47 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                     //vendor
                     customer.VendorId = model.VendorId;
+
+                    ///delete customer address mapping for previous company
+                    var companyCustomersCheck = await _companyService.GetCompanyCustomersByCustomerIdAsync(customer.Id);
+                    if (companyCustomersCheck.Any() && !companyCustomersCheck.Where(x => x.CustomerId == customer.Id && x.CompanyId == model.CompanyId).Any())
+                    {
+                        foreach (var companyCustomer in companyCustomersCheck)
+                        {
+                            var addresses = await _customerService.GetAddressesByCustomerIdAsync(companyCustomer.CustomerId);
+                            foreach (var address in addresses)
+                            {
+                                await _customerService.RemoveCustomerAddressAsync(customer, address);
+                                await _customerService.UpdateCustomerAsync(customer);
+                                await _companyService.DeleteCompanyCustomerAsync(companyCustomer);
+                            }
+                        }
+                    }
+
+                    //address customer mapping 
+                    var companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(model.CompanyId);
+                    if (companyCustomers.Any() && !companyCustomers.Where(x=>x.CustomerId == customer.Id).Any())
+                    {
+                        var addressId = 0;
+                        foreach (var companyCustomer in companyCustomers)
+                        {
+                            var addresses = await _customerService.GetAddressesByCustomerIdAsync(companyCustomer.CustomerId);
+                            var customerAddresses = await _customerService.GetCustomerAddressesByCustomerIdAsync(customer.Id);
+                            foreach (var address in addresses)
+                            {
+                                if (_customerService.FindCustomerAddressMapping(customerAddresses, customer.Id, address.Id) != null)
+                                    continue;
+
+                                await _customerService.InsertCustomerAddressAsync(customer, address);
+                                addressId = address.Id;
+                            }
+                        }
+                        await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = model.CompanyId, CustomerId = customer.Id });
+                        customer.ShippingAddressId = addressId;
+                        customer.BillingAddressId = addressId;
+                        await _customerService.UpdateCustomerAsync(customer);
+                    }
+
 
                     //form fields
                     if (_dateTimeSettings.AllowCustomersToSetTimeZone)
@@ -1198,7 +1267,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 ?? throw new ArgumentException("No customer found with the specified id", nameof(customerId));
 
             //try to get an address with the specified id
-            var address = await _customerService.GetCustomerAddressAsync(customer.Id, id);            
+            var address = await _customerService.GetCustomerAddressAsync(customer.Id, id);
 
             if (address == null)
                 return Content("No address found with the specified id");

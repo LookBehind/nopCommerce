@@ -10,10 +10,13 @@ using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
+using Nop.Core.Domain.Vendors;
+using Nop.Core.Domain.Shipping;
 using Nop.Core.Html;
 using Nop.Data;
 using Nop.Data.Extensions;
 using Nop.Services.Catalog;
+using Nop.Services.Orders.CustomExceptions;
 using Nop.Services.Shipping;
 
 namespace Nop.Services.Orders
@@ -35,6 +38,7 @@ namespace Nop.Services.Orders
         private readonly IRepository<ProductWarehouseInventory> _productWarehouseInventoryRepository;
         private readonly IRepository<RecurringPayment> _recurringPaymentRepository;
         private readonly IRepository<RecurringPaymentHistory> _recurringPaymentHistoryRepository;
+        public readonly IRepository<Vendor> _vendorRepository;
         private readonly IShipmentService _shipmentService;
 
         #endregion
@@ -51,6 +55,7 @@ namespace Nop.Services.Orders
             IRepository<ProductWarehouseInventory> productWarehouseInventoryRepository,
             IRepository<RecurringPayment> recurringPaymentRepository,
             IRepository<RecurringPaymentHistory> recurringPaymentHistoryRepository,
+            IRepository<Vendor> vendorRepositopry,
             IShipmentService shipmentService)
         {
             _productService = productService;
@@ -63,6 +68,7 @@ namespace Nop.Services.Orders
             _productWarehouseInventoryRepository = productWarehouseInventoryRepository;
             _recurringPaymentRepository = recurringPaymentRepository;
             _recurringPaymentHistoryRepository = recurringPaymentHistoryRepository;
+            _vendorRepository = vendorRepositopry;
             _shipmentService = shipmentService;
         }
 
@@ -304,7 +310,7 @@ namespace Nop.Services.Orders
             DateTime? createdFromUtc = null, DateTime? createdToUtc = null,
             List<int> osIds = null, List<int> psIds = null, List<int> ssIds = null,
             string billingPhone = null, string billingEmail = null, string billingLastName = "",
-            string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue, bool getOnlyTotalCount = false, bool isRateNotificationSend = false)
+            string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue, bool getOnlyTotalCount = false, bool sendRateNotification = false)
         {
             var query = _orderRepository.Table;
 
@@ -383,7 +389,7 @@ namespace Nop.Services.Orders
                         (string.IsNullOrEmpty(billingLastName) || (!string.IsNullOrEmpty(oba.LastName) && oba.LastName.Contains(billingLastName)))
                     select o;
 
-            if (isRateNotificationSend)
+            if (sendRateNotification)
                 query = query.Where(o => !o.RateNotificationSend);
 
             query = query.Where(o => !o.Deleted);
@@ -391,6 +397,22 @@ namespace Nop.Services.Orders
 
             //database layer paging
             return await query.ToPagedListAsync(pageIndex, pageSize, getOnlyTotalCount);
+        }
+
+        public virtual async Task<List<int>> GetOrdersIdsAsync(DateTime? createdFromUtc = null, DateTime? createdToUtc = null)
+        {
+            var query = _orderRepository.Table;
+
+            if (createdFromUtc.HasValue)
+                query = query.Where(o => createdFromUtc.Value <= o.CreatedOnUtc);
+
+            if (createdToUtc.HasValue)
+                query = query.Where(o => createdToUtc.Value >= o.CreatedOnUtc);
+
+            query = query.Where(o => !o.Deleted);
+            query = query.OrderByDescending(o => o.CreatedOnUtc);
+
+            return query.Select(order => order.Id).ToList();
         }
 
         /// <summary>
@@ -897,6 +919,27 @@ namespace Nop.Services.Orders
             await _orderNoteRepository.InsertAsync(orderNote);
         }
 
+        #endregion
+
+
+        #region ShippingStatus
+        public async Task SetOrderShippingStatus(ShippingStatus status, List<Order> orders)
+        {
+            foreach (var order in orders)
+            {
+                if (!CanUpdateOrderShippingStatus(order.ShippingStatus, status))
+                    throw new InvalidOrderShippingStatusException();
+
+                order.ShippingStatus = status;
+            }
+
+            await _orderRepository.UpdateAsync(orders);
+        }
+
+        private static bool CanUpdateOrderShippingStatus(ShippingStatus currentStatus, ShippingStatus newStatus)
+        {
+            return !(currentStatus == ShippingStatus.Delivered && newStatus != ShippingStatus.Delivered);
+        }
         #endregion
 
         #region Recurring payments

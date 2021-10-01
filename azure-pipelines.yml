@@ -4,6 +4,8 @@
 
 trigger:
 - staging
+- old-4.30
+- master
 
 resources:
 - repo: self
@@ -30,8 +32,15 @@ stages:
         tags: $(tag)
     - task: KubernetesManifest@0
       inputs:
-        action: 'deploy'
-        kubernetesServiceConnection: 'hetzner microk8s mysnacks namespace'
-        namespace: 'mysnacks'
-        manifests: 'manifests/service.yml|manifests/deployment.yml'
-        containers: 'eisajanyan/nopcommerce:$(tag)'
+        targetType: 'inline'
+        script: |
+          $deployment = Get-Content -Path manifests/deployment.yml
+          Write-Host "Content before replace: $deployment"
+          $deployment = $deployment -replace 'image:\s*\S+', 'image: $(imageRepository):$(tag)'
+          Write-Host "Content after replace: $deployment"
+          Set-Content -Path manifests/deployment.yml -Value $deployment
+        pwsh: true
+    - task: PublishPipelineArtifact@1
+      inputs:
+        artifactName: 'manifests'
+        path: 'manifests'

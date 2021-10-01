@@ -13,6 +13,9 @@ namespace Nop.Web.Areas.Admin.Models.Companies
             Locales = new List<CompanyLocalizedModel>();
             CustomerAddressSearchModel = new CustomerAddressSearchModel();
         }
+        [NopResourceDisplayName("Admin.Companies.Company.Fields.Email")]
+        public string Email { get; set; }
+        
         [NopResourceDisplayName("Admin.Companies.Company.Fields.Name")]
         public string Name { get; set; }
 
@@ -24,6 +27,8 @@ namespace Nop.Web.Areas.Admin.Models.Companies
         public IList<CompanyLocalizedModel> Locales { get; set; }
 
         public CustomerAddressSearchModel CustomerAddressSearchModel { get; set; }
+
+        public bool CustomerExist { get; set; }
     }
 
     public partial record CompanyLocalizedModel : ILocalizedLocaleModel
@@ -32,5 +37,8 @@ namespace Nop.Web.Areas.Admin.Models.Companies
 
         [NopResourceDisplayName("Admin.Companies.Company.Fields.Name")]
         public string Name { get; set; }
+
+        [NopResourceDisplayName("Admin.Companies.Company.Fields.Email")]
+        public string Email { get; set; }
     }
 }

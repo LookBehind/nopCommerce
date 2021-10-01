@@ -441,6 +441,8 @@ namespace Nop.Services.Orders
                 throw new NopException("Billing address is not provided");
 
             var billingAddress = await _customerService.GetCustomerBillingAddressAsync(details.Customer);
+            if (billingAddress == null && details.Customer.BillingAddressId is not null)
+                billingAddress = await _addressService.GetAddressByIdAsync(details.Customer.BillingAddressId.Value);
 
             if (!CommonHelper.IsValidEmail(billingAddress?.Email))
                 throw new NopException("Email is not valid");
@@ -1585,23 +1587,79 @@ namespace Nop.Services.Orders
                 if (processPaymentResult == null)
                     throw new NopException("processPaymentResult is not available");
 
+                DateTime? orderScheduleDate = null;
                 if (processPaymentResult.Success)
                 {
                     //Check Customer today orders total amount is greater than company limited amount
                     var company = await _companyService.GetCompanyByCustomerIdAsync(details.Customer.Id);
                     if (company != null)
                     {
-                        var orders = await _orderService.SearchOrdersAsync(customerId: details.Customer.Id);
+                        var cartTotal = await _orderTotalCalculationService.GetShoppingCartTotalAsync(details.Cart);
+                        var orders = await _orderService.SearchOrdersAsync(customerId: details.Customer.Id, osIds: new List<int> { (int)OrderStatus.Complete, (int)OrderStatus.Pending, (int)OrderStatus.Processing });
                         if (orders.Any())
                         {
-                            var cartTotal = await _orderTotalCalculationService.GetShoppingCartTotalAsync(details.Cart);
-                            var todayOrderTotal = orders.Sum(x => x.OrderTotal) + cartTotal.shoppingCartTotal;
-                            if (todayOrderTotal > company.AmountLimit)
+                            //Checks if the schedule date has any previous orders, if yes then checks limit according to that!
+                            //When Null the order is from Public Site else from Mobile app.
+                            var scheduleDate = !string.IsNullOrWhiteSpace(processPaymentRequest.ScheduleDate) ? Convert.ToDateTime(processPaymentRequest.ScheduleDate) : (DateTime?)null;
+                            var currentDate = DateTime.UtcNow;
+
+                            var dates = _orderSettings.ScheduleDate.Split(',');
+                            if (!scheduleDate.HasValue)
                             {
-                                result.Errors.Add(string.Join(await _localizationService.GetResourceAsync("Order.Company.AmountLimit"), company.AmountLimit, _localizationService.GetResourceAsync("Customer.Company.OrderTotal"), todayOrderTotal));
+                                scheduleDate = DateTime.UtcNow;
+                                if (scheduleDate.Value.Date == currentDate.Date)
+                                {
+                                    var time = dates[0].Split('-')[0].Split(':');
+                                    var firstTime = dates[0].Split('-')[1].Split(':');
+                                    var secondTime = dates[1].Split('-')[1].Split(':');
+                                    var thirdTime = dates[2].Split('-')[1].Split(':');
+                                    //Get the first value of the first setting
+                                    var nextDayDateTime = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, DateTime.UtcNow.Day, Convert.ToInt32(time[0]), Convert.ToInt32(time[1]), Convert.ToInt32(time[2]), DateTimeKind.Utc);
+                                    //Get the first value of the second setting
+                                    var firstDateTime = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, DateTime.UtcNow.Day, Convert.ToInt32(firstTime[0]), Convert.ToInt32(firstTime[1]), Convert.ToInt32(firstTime[2]), DateTimeKind.Utc);
+                                    //Get the second value of the second setting
+                                    var secondDateTime = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, DateTime.UtcNow.Day, Convert.ToInt32(secondTime[0]), Convert.ToInt32(secondTime[1]), Convert.ToInt32(secondTime[2]), DateTimeKind.Utc);
+                                    //Get the second value of the third setting
+                                    var thirdDateTime = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, DateTime.UtcNow.Day, Convert.ToInt32(thirdTime[0]), Convert.ToInt32(thirdTime[1]), Convert.ToInt32(thirdTime[2]), DateTimeKind.Utc);
+
+                                    //check current date is less then first time of setting
+                                    if (currentDate < firstDateTime)
+                                        scheduleDate = firstDateTime;
+
+                                    //check current date is equal to second time of setting
+                                    else if (currentDate == secondDateTime)
+                                    {
+                                        scheduleDate = secondDateTime;
+                                    }
+                                    //check current date is equal to third Time of setting
+                                    else if (currentDate == thirdDateTime)
+                                    {
+                                        scheduleDate = thirdDateTime;
+                                    }
+                                    //check current date is greater then nextday Time of setting
+                                    else if (currentDate > nextDayDateTime)
+                                    {
+                                        scheduleDate = nextDayDateTime;
+                                    }
+                                }
                             }
+                            orderScheduleDate = scheduleDate.Value;
+
+                            var ordersAccordingToScheduleDate = orders.Where(x => x.ScheduleDate.Date == scheduleDate.Value.Date).ToList();
+                            var todayOrderTotal = ordersAccordingToScheduleDate.Sum(x => x.OrderTotal) + cartTotal.shoppingCartTotal;
+                            if (todayOrderTotal > company.AmountLimit)
+                                result.Errors.Add(string.Format(await _localizationService.GetResourceAsync("Order.Company.AmountLimit"), company.AmountLimit, await _localizationService.GetResourceAsync("Customer.Company.OrderTotal"), todayOrderTotal));
                         }
+                        //if there are no previous orders found then checks for company limit
+                        else if (cartTotal.shoppingCartTotal > company.AmountLimit)
+                            result.Errors.Add(string.Format(await _localizationService.GetResourceAsync("Order.Company.AmountLimit"), company.AmountLimit, await _localizationService.GetResourceAsync("Customer.Company.OrderTotal"), cartTotal.shoppingCartTotal));
                     }
+                    else
+                        result.Errors.Add(await _localizationService.GetResourceAsync("Company.NotFound"));
+
+                    if (result.Errors.Count > 0)
+                        return result;
+
 
                     var order = await SaveOrderDetailsAsync(processPaymentRequest, processPaymentResult, details);
                     result.PlacedOrder = order;
@@ -1629,6 +1687,10 @@ namespace Nop.Services.Orders
 
                     //check order status
                     await CheckOrderStatusAsync(order);
+
+                    //update schedule date
+                    order.ScheduleDate = orderScheduleDate.Value;
+                    await _orderService.UpdateOrderAsync(order);
 
                     //raise event       
                     await _eventPublisher.PublishAsync(new OrderPlacedEvent(order));

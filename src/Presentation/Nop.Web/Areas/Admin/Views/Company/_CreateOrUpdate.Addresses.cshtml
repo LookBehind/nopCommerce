@@ -1,13 +1,13 @@
 @using Nop.Web.Areas.Admin.Models.Companies
 @model CompanyModel
-@if (Model.Id > 0)
+@if (Model.Id > 0 && Model.CustomerExist)
 {
 <div class="card-body">
     @await Html.PartialAsync("Table", new DataTablesModel
 {
     Name = "customer-addresses-grid",
     UrlRead = new DataUrl("AddressesSelect", "Company", new RouteValueDictionary { [nameof(Model.CustomerAddressSearchModel.CustomerId)] = Model.Id }),
-    UrlDelete = new DataUrl("AddressDelete", "Customer", new RouteValueDictionary { [nameof(Model.CustomerAddressSearchModel.CustomerId)] = Model.CustomerAddressSearchModel.CustomerId }),
+    UrlDelete = new DataUrl("AddressDelete", "Company", new RouteValueDictionary { [nameof(Model.CustomerAddressSearchModel.CustomerId)] = Model.Id }),
     Length = Model.CustomerAddressSearchModel.PageSize,
     LengthMenu = Model.CustomerAddressSearchModel.AvailablePageSizes,
     ColumnCollection = new List<ColumnProperty>
@@ -56,9 +56,19 @@
 
     <script>
         function renderProductAttributesCombinationsColumnEdit(data, type, row, meta) {
-            console.log(row + "asdasd")
             return '<a href="/Admin/Customer/AddressEdit?customerId=' + row.CustomerId + '&addressid='+row.Id+'"><i class="fas fa-pencil-alt"></i>@T("Admin.Common.Edit").Text</a>';
                 }
     </script>
 </div>
+ <div class="card-body">
+        <button type="button" class="btn btn-primary" onclick="location.href = '@Url.Action("AddressCreate", new { customerId = Model.Id })'">
+            @T("Admin.Customers.Customers.Addresses.AddButton")
+        </button>
+    </div>
+}
+else
+{
+     <div class="card-body">
+        @T("Admin.Company.Companies.Addresses.SaveBeforeEdit")
+    </div>
 }

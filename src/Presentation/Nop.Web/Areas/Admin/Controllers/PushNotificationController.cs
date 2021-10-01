@@ -44,25 +44,25 @@ namespace Nop.Web.Areas.Admin.Controllers
     {
         #region Fields
 
-        private readonly ICustomerModelFactory _customerModelFactory;
         private readonly ICustomerService _customerService;
         private readonly IPermissionService _permissionService;
-        private readonly IWorkContext _workContext;
+        private readonly ILocalizationService _localizationService;
+        private readonly INotificationService _notificationService;
 
         #endregion
 
         #region Ctor
 
         public PushNotificationController(
-            ICustomerModelFactory customerModelFactory,
             ICustomerService customerService,
             IPermissionService permissionService,
-            IWorkContext workContext)
+            ILocalizationService localizationService,
+            INotificationService notificationService)
         {
-            _customerModelFactory = customerModelFactory;
             _customerService = customerService;
             _permissionService = permissionService;
-            _workContext = workContext;
+            _localizationService = localizationService;
+            _notificationService = notificationService;
         }
 
         #endregion
@@ -73,8 +73,6 @@ namespace Nop.Web.Areas.Admin.Controllers
         {
             if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
                 return AccessDeniedView();
-
-            var customer = await _workContext.GetCurrentCustomerAsync();
 
             //prepare model
             var model = new PushNotificationModel();
@@ -88,42 +86,32 @@ namespace Nop.Web.Areas.Admin.Controllers
             if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
                 return AccessDeniedView();
 
-            var currentCustomer = await _workContext.GetCurrentCustomerAsync();
-            IPagedList<Customer> notificationCustomers = new PagedList<Customer>(new List<Customer>(), 0, 0, null);
-            if (model.NotificationType == "RateReminderNotification")
+            try
             {
-                notificationCustomers = await _customerService.GetAllPushNotificationCustomersAsync(isRateReminderNotification: true);
-            }
-            else if (model.NotificationType == "RemindMeNotification")
-            {
-                notificationCustomers = await _customerService.GetAllPushNotificationCustomersAsync(isRemindMeNotification: true);
-            }
-            else if (model.NotificationType == "OrderStatusNotification")
-            {
-                notificationCustomers = await _customerService.GetAllPushNotificationCustomersAsync(isOrderStatusNotification: true);
-            }
-            else if (model.NotificationType == "All")
-            {
-                notificationCustomers = await _customerService.GetAllPushNotificationCustomersAsync(true, true, true);
-            }
-
-            foreach (var customer in notificationCustomers)
-            {
-                if (!string.IsNullOrEmpty(customer.PushToken))
+                IPagedList<Customer> notificationCustomers = await _customerService.GetAllPushNotificationCustomersAsync(sendToAll: true);
+                foreach (var customer in notificationCustomers)
                 {
-                    var expoSDKClient = new PushApiClient();
-                    var pushTicketReq = new PushTicketRequest()
+                    if (!string.IsNullOrEmpty(customer.PushToken))
                     {
-                        PushTo = new List<string>() { customer.PushToken },
-                        PushTitle = model.MessageTitle,
-                        PushBody = model.MessageBody
-                    };
-                    var result = expoSDKClient.PushSendAsync(pushTicketReq).GetAwaiter().GetResult();
+                        var expoSDKClient = new PushApiClient();
+                        var pushTicketReq = new PushTicketRequest()
+                        {
+                            PushTo = new List<string>() { customer.PushToken },
+                            PushTitle = model.MessageTitle,
+                            PushBody = model.MessageBody
+                        };
+                        var result = await expoSDKClient.PushSendAsync(pushTicketReq);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                _notificationService.SuccessNotification(ex.Message);
             }
             //prepare model
             model = new PushNotificationModel();
 
+            _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.PushNotification.Send.Successfully"));
             //if we got this far, something failed, redisplay form
             return View(model);
         }

@@ -289,18 +289,21 @@ namespace Nop.Services.Customers
 
 
         public virtual async Task<IPagedList<Customer>> GetAllPushNotificationCustomersAsync(bool isRateReminderNotification = false, bool isRemindMeNotification = false,
-            bool isOrderStatusNotification = false, int pageIndex = 0, int pageSize = int.MaxValue)
+            bool isOrderStatusNotification = false, bool sendToAll = false, int pageIndex = 0, int pageSize = int.MaxValue)
         {
             var customers = await _customerRepository.GetAllPagedAsync(query =>
             {
-                if (isRateReminderNotification)
-                    query = query.Where(c => c.RateReminderNotification == isRateReminderNotification);
-                if (isRemindMeNotification)
-                    query = query.Where(c => c.RemindMeNotification == isRemindMeNotification);
-                if (isOrderStatusNotification)
-                    query = query.Where(c => c.OrderStatusNotification == isOrderStatusNotification);
-                query = query.Where(c => !c.Deleted);
-
+                if (!sendToAll)
+                {
+                    if (isRateReminderNotification)
+                        query = query.Where(c => c.RateReminderNotification == isRateReminderNotification);
+                    if (isRemindMeNotification)
+                        query = query.Where(c => c.RemindMeNotification == isRemindMeNotification);
+                    if (isOrderStatusNotification)
+                        query = query.Where(c => c.OrderStatusNotification == isOrderStatusNotification);
+                }
+                
+                query = query.Where(c => !c.Deleted && c.PushToken != null);
                 query = query.OrderByDescending(c => c.CreatedOnUtc);
 
                 return query;
@@ -884,6 +887,14 @@ namespace Nop.Services.Customers
             return result;
         }
 
+        public virtual CustomerAddressMapping FindCustomerAddressMapping(IList<CustomerAddressMapping> source, int customerId, int addresId)
+        {
+            foreach (var customerAddress in source)
+                if (customerAddress.CustomerId == customerId && customerAddress.AddressId == addresId)
+                    return customerAddress;
+
+            return null;
+        }
         /// <summary>
         /// Gets coupon codes
         /// </summary>
@@ -1668,11 +1679,21 @@ namespace Nop.Services.Customers
             return await _staticCacheManager.GetAsync(key, async () => await query.ToListAsync());
         }
 
-        public virtual async Task<IList<CustomerAddressMapping>> GetCustomerByAddressIdAsync(int addressId)
+        public virtual async Task<IList<CustomerAddressMapping>> GetCustomerAddressesByAddressIdAsync(int addressId)
         {
             var store = await _storeContext.GetCurrentStoreAsync();
             var query = from address in _customerAddressMappingRepository.Table
                         where address.AddressId == addressId
+                        select address;
+
+            return await query.ToListAsync();
+        }
+
+        public virtual async Task<IList<CustomerAddressMapping>> GetCustomerAddressesByCustomerIdAsync(int customerId)
+        {
+            var store = await _storeContext.GetCurrentStoreAsync();
+            var query = from address in _customerAddressMappingRepository.Table
+                        where address.CustomerId == customerId
                         select address;
 
             return await query.ToListAsync();

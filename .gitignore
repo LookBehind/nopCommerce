@@ -197,6 +197,8 @@ src/Presentation/Nop.Web/wwwroot/lib_npm/cldr-data/main/*
 !src/Presentation/Nop.Web/wwwroot/lib_npm/cldr-data/main/en/*
 !src/Presentation/Nop.Web/wwwroot/lib_npm/cldr-data/main/main.zip
 src/packages/*
-/src/Presentation/Nop.Web/App_Data/dataSettings.json.mssql.old
-/src/Presentation/Nop.Web/persistent/DataProtectionKeys
-plugins.json
+src/Presentation/Nop.Web/persistent/*
+*.old
+/src/Presentation/Nop.Web/persistent/plugins.json
+images
+.idea

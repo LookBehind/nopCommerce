@@ -44,6 +44,7 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly IAddressAttributeFormatter _addressAttributeFormatter;
         private readonly ICountryService _countryService;
         private readonly IStateProvinceService _stateProvinceService;
+        private readonly IAddressModelFactory _addressModelFactory;
 
         #endregion
 
@@ -57,7 +58,8 @@ namespace Nop.Web.Areas.Admin.Factories
             AddressSettings addressSettings,
             IAddressAttributeFormatter addressAttributeFormatter,
             ICountryService countryService,
-            IStateProvinceService stateProvinceService)
+            IStateProvinceService stateProvinceService,
+            IAddressModelFactory addressModelFactory)
         {
             _companyService = companyService;
             _localizationService = localizationService;
@@ -68,6 +70,7 @@ namespace Nop.Web.Areas.Admin.Factories
             _addressAttributeFormatter = addressAttributeFormatter;
             _countryService = countryService;
             _stateProvinceService = stateProvinceService;
+            _addressModelFactory = addressModelFactory;
         }
 
         #endregion
@@ -150,6 +153,9 @@ namespace Nop.Web.Areas.Admin.Factories
                 {
                     locale.Name = await _localizationService.GetLocalizedAsync(company, entity => entity.Name, languageId, false, false);
                 };
+                var companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(company.Id);
+                if (companyCustomers.Any())
+                    model.CustomerExist = true;
             }
 
             //prepare localized models
@@ -214,10 +220,18 @@ namespace Nop.Web.Areas.Admin.Factories
                  email: searchModel.SearchCustomerEmail, customerRoleIds: customerRoleIds,
                  pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
 
-            //prepare grid model
-            var model = await new AddCustomerToCompanyListModel().PrepareToGridAsync(searchModel, customers, () =>
+            IPagedList<Customer> filteredCustomers = new PagedList<Customer>(new List<Customer>(), searchModel.Page - 1, searchModel.PageSize, customers.TotalCount);
+            foreach (var customer in customers)
             {
-                return customers.SelectAwait(async customer =>
+                var companyCustomerMapping = await _companyService.GetCompanyCustomersByCustomerIdAsync(customer.Id);
+                if (companyCustomerMapping.Count == 0)
+                    filteredCustomers.Add(customer);
+            }
+
+            //prepare grid model
+            var model = await new AddCustomerToCompanyListModel().PrepareToGridAsync(searchModel, filteredCustomers, () =>
+            {
+                return filteredCustomers.SelectAwait(async customer =>
                 {
                     var customerModel = customer.ToModel<CustomerModel>();
 
@@ -252,8 +266,10 @@ namespace Nop.Web.Areas.Admin.Factories
                     .ToPagedList(searchModel);
 
                 foreach (var address in addresses)
-                    addressesList.Add(address);
-
+                {
+                    if (!addressesList.Where(x => x.Id == address.Id).Any())
+                        addressesList.Add(address);
+                }
                 searchModel.CustomerId = customer.Id;
             }
 
@@ -265,7 +281,7 @@ namespace Nop.Web.Areas.Admin.Factories
                     //fill in model values from the entity        
                     var addressModel = address.ToModel<AddressModel>();
 
-                    var customerAddressMapping = await _customerService.GetCustomerByAddressIdAsync(address.Id);
+                    var customerAddressMapping = await _customerService.GetCustomerAddressesByAddressIdAsync(address.Id);
                     addressModel.CustomerId = customerAddressMapping.Any() ? customerAddressMapping.FirstOrDefault().CustomerId : 0;
                     addressModel.CountryName = (await _countryService.GetCountryByAddressAsync(address))?.Name;
                     addressModel.StateProvinceName = (await _stateProvinceService.GetStateProvinceByAddressAsync(address))?.Name;
@@ -276,6 +292,41 @@ namespace Nop.Web.Areas.Admin.Factories
                     return addressModel;
                 });
             });
+            return model;
+        }
+
+        public virtual async Task<CustomerAddressModel> PrepareCompanyCustomerAddressModelAsync(CustomerAddressModel model,
+           Company company, Address address, bool excludeProperties = false)
+        {
+            if (company == null)
+                throw new ArgumentNullException(nameof(company));
+
+            if (address != null)
+            {
+                //fill in model values from the entity
+                model ??= new CustomerAddressModel();
+
+                //whether to fill in some of properties
+                if (!excludeProperties)
+                    model.Address = address.ToModel(model.Address);
+            }
+
+            model.CustomerId = company.Id;
+
+            //prepare address model
+            await _addressModelFactory.PrepareAddressModelAsync(model.Address, address);
+            model.Address.FirstNameRequired = true;
+            model.Address.LastNameRequired = true;
+            model.Address.EmailRequired = true;
+            model.Address.CompanyRequired = _addressSettings.CompanyRequired;
+            model.Address.CityRequired = _addressSettings.CityRequired;
+            model.Address.CountyRequired = _addressSettings.CountyRequired;
+            model.Address.StreetAddressRequired = _addressSettings.StreetAddressRequired;
+            model.Address.StreetAddress2Required = _addressSettings.StreetAddress2Required;
+            model.Address.ZipPostalCodeRequired = _addressSettings.ZipPostalCodeRequired;
+            model.Address.PhoneRequired = _addressSettings.PhoneRequired;
+            model.Address.FaxRequired = _addressSettings.FaxRequired;
+
             return model;
         }
 

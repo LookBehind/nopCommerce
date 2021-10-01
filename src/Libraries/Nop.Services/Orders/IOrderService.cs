@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Orders;
+using Nop.Core.Domain.Shipping;
 
 namespace Nop.Services.Orders
 {
@@ -13,6 +14,9 @@ namespace Nop.Services.Orders
     public partial interface IOrderService
     {
         #region Orders
+
+        Task<List<int>> GetOrdersIdsAsync(DateTime? createdFromUtc = null, DateTime? createdToUtc = null);
+
 
         /// <summary>
         /// Gets an order
@@ -105,7 +109,7 @@ namespace Nop.Services.Orders
             DateTime? createdFromUtc = null, DateTime? createdToUtc = null,
             List<int> osIds = null, List<int> psIds = null, List<int> ssIds = null,
             string billingPhone = null, string billingEmail = null, string billingLastName = "",
-            string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue, bool getOnlyTotalCount = false, bool isRateNotificationSend = false);
+            string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue, bool getOnlyTotalCount = false, bool sendRateNotification = false);
 
         /// <summary>
         /// Inserts an order
@@ -323,6 +327,10 @@ namespace Nop.Services.Orders
         /// <returns>A task that represents the asynchronous operation</returns>
         Task InsertOrderNoteAsync(OrderNote orderNote);
 
+        #endregion
+
+        #region Shipping status
+        Task SetOrderShippingStatus(ShippingStatus status, List<Order> orders);
         #endregion
 
         #region Recurring payments

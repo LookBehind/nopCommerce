@@ -49,7 +49,7 @@ namespace Nop.Services.Customers
             int pageIndex = 0, int pageSize = int.MaxValue, bool getOnlyTotalCount = false);
 
         Task<IPagedList<Customer>> GetAllPushNotificationCustomersAsync(bool isRateReminderNotification = false, bool isRemindMeNotification = false,
-            bool isOrderStatusNotification = false, int pageIndex = 0, int pageSize = int.MaxValue);
+            bool isOrderStatusNotification = false, bool sendToAll = false, int pageIndex = 0, int pageSize = int.MaxValue);
         /// <summary>
         /// Gets online customers
         /// </summary>
@@ -261,6 +261,8 @@ namespace Nop.Services.Customers
         /// The task result contains the formatted text
         /// </returns>
         Task<string> FormatUsernameAsync(Customer customer, bool stripTooLong = false, int maxLength = 0);
+
+        CustomerAddressMapping FindCustomerAddressMapping(IList<CustomerAddressMapping> source, int customerId, int addresId);
 
         /// <summary>
         /// Gets coupon codes
@@ -571,8 +573,8 @@ namespace Nop.Services.Customers
         /// </returns>
         Task<IList<Address>> GetAddressesByCustomerIdAsync(int customerId);
 
-        Task<IList<CustomerAddressMapping>> GetCustomerByAddressIdAsync(int addressId);
-
+        Task<IList<CustomerAddressMapping>> GetCustomerAddressesByAddressIdAsync(int addressId);
+        Task<IList<CustomerAddressMapping>> GetCustomerAddressesByCustomerIdAsync(int customerId);
         /// <summary>
         /// Gets a address mapped to customer
         /// </summary>

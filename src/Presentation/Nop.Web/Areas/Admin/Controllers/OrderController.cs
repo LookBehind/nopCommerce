@@ -24,9 +24,11 @@ using Nop.Services.Logging;
 using Nop.Services.Media;
 using Nop.Services.Messages;
 using Nop.Services.Orders;
+using Nop.Services.Orders.CustomExceptions;
 using Nop.Services.Payments;
 using Nop.Services.Security;
 using Nop.Services.Shipping;
+using Nop.Services.Vendors;
 using Nop.Web.Areas.Admin.Factories;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Orders;
@@ -72,6 +74,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         private readonly OrderSettings _orderSettings;
         private readonly IStoreContext _storeContext;
         private readonly ISettingService _settingService;
+        private readonly IVendorService _vendorService;
 
         #endregion
 
@@ -106,7 +109,8 @@ namespace Nop.Web.Areas.Admin.Controllers
             IWorkflowMessageService workflowMessageService,
             OrderSettings orderSettings,
             IStoreContext storeContext,
-            ISettingService settingService)
+            ISettingService settingService,
+            IVendorService vendorService)
         {
             _addressAttributeParser = addressAttributeParser;
             _addressService = addressService;
@@ -138,6 +142,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             _orderSettings = orderSettings;
             _storeContext = storeContext;
             _settingService = settingService;
+            _vendorService = vendorService;
         }
 
         #endregion
@@ -198,6 +203,60 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             await _customerActivityService.InsertActivityAsync("EditOrder",
                 string.Format(await _localizationService.GetResourceAsync("ActivityLog.EditOrder"), order.CustomOrderNumber), order);
+        }
+
+        private async Task<OrderMetric> GetMetrics(CultureInfo culture, DateTime searchYearDateUser, DateTime createdFromUtc, DateTime createdToUtc, string dateFormat)
+        {
+            var ordersids = await _orderService.GetOrdersIdsAsync(
+                                           createdFromUtc: createdFromUtc,
+                                           createdToUtc: createdToUtc);
+
+            var vendorsShare = new Dictionary<string, double>();
+            if (ordersids.Count > 0)
+            {
+                vendorsShare = await GetVendorsShare(ordersids);
+            }
+
+            return new OrderMetric
+            {
+                Date = searchYearDateUser.Date.ToString(dateFormat, culture),
+                TotalOrders = ordersids.Sum().ToString(),
+                VendorsShare = vendorsShare,
+            };
+        }
+
+        private async Task<Dictionary<string, double>> GetVendorsShare(IList<int> ordersIds)
+        {
+            var nameAndCount = new Dictionary<string, double>();
+            foreach (var id in ordersIds)
+            {
+                var orderItems = await _orderService.GetOrderItemsAsync(id);
+                foreach (var orderItem in orderItems)
+                {
+                    var vendor = await _vendorService.GetVendorByProductIdAsync(orderItem.ProductId);
+                    if (vendor == null)
+                        break;
+
+                    if (nameAndCount.ContainsKey(vendor.Name))
+                    {
+                        nameAndCount[vendor.Name]++;
+                    }
+                    else
+                    {
+                        nameAndCount.Add(vendor.Name, 1);
+                    }
+                }
+            }
+
+            var total = nameAndCount.Values.Sum();
+
+            var vendorShare = new Dictionary<string, double>();
+            foreach (var item in nameAndCount)
+            {
+                vendorShare.Add(item.Key, item.Value / total);
+            }
+
+            return vendorShare;
         }
 
         #endregion
@@ -310,10 +369,10 @@ namespace Nop.Web.Areas.Admin.Controllers
                 osIds: orderStatusIds,
                 psIds: paymentStatusIds,
                 ssIds: shippingStatusIds,
-                billingPhone: model.BillingPhone,
-                billingEmail: model.BillingEmail,
-                billingLastName: model.BillingLastName,
-                billingCountryId: model.BillingCountryId,
+                //billingPhone: model.BillingPhone,
+                //billingEmail: model.BillingEmail,
+                //billingLastName: model.BillingLastName,
+                //billingCountryId: model.BillingCountryId,
                 orderNotes: model.OrderNotes);
 
             //ensure that we at least one order selected
@@ -409,10 +468,10 @@ namespace Nop.Web.Areas.Admin.Controllers
                 osIds: orderStatusIds,
                 psIds: paymentStatusIds,
                 ssIds: shippingStatusIds,
-                billingPhone: model.BillingPhone,
-                billingEmail: model.BillingEmail,
-                billingLastName: model.BillingLastName,
-                billingCountryId: model.BillingCountryId,
+                //billingPhone: model.BillingPhone,
+                //billingEmail: model.BillingEmail,
+                //billingLastName: model.BillingLastName,
+                //billingCountryId: model.BillingCountryId,
                 orderNotes: model.OrderNotes);
 
             //ensure that we at least one order selected
@@ -464,6 +523,37 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #endregion
 
+        #region Shipping status
+        [HttpPost, ActionName("UpdateShippingStatus")]
+        public virtual async Task<IActionResult> UpdateShippingStatus(string selectedIds, ShippingStatus shippingStatus)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
+                return AccessDeniedView();
+
+            if (selectedIds != null)
+            {
+                var orders = new List<Order>();
+                var ids = selectedIds
+                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => Convert.ToInt32(x))
+                    .ToArray();
+                orders.AddRange(await (await _orderService.GetOrdersByIdsAsync(ids)).WhereAwait(HasAccessToOrderAsync).ToListAsync());
+
+                try
+                {
+                    await _orderService.SetOrderShippingStatus(shippingStatus, orders);
+                }
+                catch (InvalidOrderShippingStatusException)
+                {
+                    _notificationService.Notification(NotifyType.Error, await _localizationService.GetResourceAsync("Admin.Orders.InvalidAttemptToChangeShippingStatus"));
+                }
+
+            }
+
+            return RedirectToAction("List");
+        }
+        #endregion
+
         #region Order details
 
         #region Payments and other order workflow
@@ -495,14 +585,17 @@ namespace Nop.Web.Areas.Admin.Controllers
                 await _orderProcessingService.CancelOrderAsync(order, true);
                 await LogEditOrderAsync(order.Id);
 
-                var expoSDKClient = new PushApiClient();
-                var pushTicketReq = new PushTicketRequest()
+                if (customer.OrderStatusNotification)
                 {
-                    PushTo = new List<string>() { customer.PushToken },
-                    PushTitle = await _localizationService.GetResourceAsync("PushNotification.OrderCancelTitle"),
-                    PushBody = await _localizationService.GetResourceAsync("PushNotification.OrderCancelBody")
-                };
-                var result = expoSDKClient.PushSendAsync(pushTicketReq).GetAwaiter().GetResult();
+                    var expoSDKClient = new PushApiClient();
+                    var pushTicketReq = new PushTicketRequest()
+                    {
+                        PushTo = new List<string>() { customer.PushToken },
+                        PushTitle = await _localizationService.GetResourceAsync("PushNotification.OrderCancelTitle"),
+                        PushBody = await _localizationService.GetResourceAsync("PushNotification.OrderCancelBody")
+                    };
+                    var result = await expoSDKClient.PushSendAsync(pushTicketReq);
+                }
 
                 //prepare model
                 var model = await _orderModelFactory.PrepareOrderModelAsync(null, order);
@@ -584,14 +677,17 @@ namespace Nop.Web.Areas.Admin.Controllers
                 await _orderProcessingService.MarkOrderAsPaidAsync(order);
                 await LogEditOrderAsync(order.Id);
 
-                var expoSDKClient = new PushApiClient();
-                var pushTicketReq = new PushTicketRequest()
+                if (customer.OrderStatusNotification)
                 {
-                    PushTo = new List<string>() { customer.PushToken },
-                    PushTitle = await _localizationService.GetResourceAsync("PushNotification.OrderPaidTitle"),
-                    PushBody = await _localizationService.GetResourceAsync("PushNotification.OrderPaidBody")
-                };
-                var result = expoSDKClient.PushSendAsync(pushTicketReq).GetAwaiter().GetResult();
+                    var expoSDKClient = new PushApiClient();
+                    var pushTicketReq = new PushTicketRequest()
+                    {
+                        PushTo = new List<string>() { customer.PushToken },
+                        PushTitle = await _localizationService.GetResourceAsync("PushNotification.OrderPaidTitle"),
+                        PushBody = await _localizationService.GetResourceAsync("PushNotification.OrderPaidBody")
+                    };
+                    var result = await expoSDKClient.PushSendAsync(pushTicketReq);
+                }
 
                 //prepare model
                 var model = await _orderModelFactory.PrepareOrderModelAsync(null, order);
@@ -878,15 +974,17 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                 await LogEditOrderAsync(order.Id);
 
-                var expoSDKClient = new PushApiClient();
-                var pushTicketReq = new PushTicketRequest()
+                if (customer.OrderStatusNotification)
                 {
-                    PushTo = new List<string>() { customer.PushToken },
-                    PushTitle = await _localizationService.GetResourceAsync("PushNotification.OrderStatusChangeTitle"),
-                    PushBody = string.Format(await _localizationService.GetResourceAsync("PushNotification.OrderStatusChangeBody"), await _localizationService.GetLocalizedEnumAsync(order.OrderStatus))
-                };
-                var result = expoSDKClient.PushSendAsync(pushTicketReq).GetAwaiter().GetResult();
-
+                    var expoSDKClient = new PushApiClient();
+                    var pushTicketReq = new PushTicketRequest()
+                    {
+                        PushTo = new List<string>() { customer.PushToken },
+                        PushTitle = await _localizationService.GetResourceAsync("PushNotification.OrderStatusChangeTitle"),
+                        PushBody = string.Format(await _localizationService.GetResourceAsync("PushNotification.OrderStatusChangeBody"), await _localizationService.GetLocalizedEnumAsync(order.OrderStatus))
+                    };
+                    var result = await expoSDKClient.PushSendAsync(pushTicketReq);
+                }
                 //prepare model
                 model = await _orderModelFactory.PrepareOrderModelAsync(model, order);
 
@@ -1023,10 +1121,10 @@ namespace Nop.Web.Areas.Admin.Controllers
                 osIds: orderStatusIds,
                 psIds: paymentStatusIds,
                 ssIds: shippingStatusIds,
-                billingPhone: model.BillingPhone,
-                billingEmail: model.BillingEmail,
-                billingLastName: model.BillingLastName,
-                billingCountryId: model.BillingCountryId,
+                //billingPhone: model.BillingPhone,
+                //billingEmail: model.BillingEmail,
+                //billingLastName: model.BillingLastName,
+                //billingCountryId: model.BillingCountryId,
                 orderNotes: model.OrderNotes);
 
             //ensure that we at least one order selected
@@ -1856,7 +1954,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             var model = new OrderScheduleModel();
 
             var scheduleDateSetting = await _settingService.SettingExistsAsync(orderSettings, x => x.ScheduleDate, storeId);
-            if (scheduleDateSetting)
+            if (scheduleDateSetting && !string.IsNullOrWhiteSpace(orderSettings.ScheduleDate))
             {
                 var value = orderSettings.ScheduleDate.Split(',');//orderscheduleDate1.ResourceValue.Split(',');
                 model.ScheduleDate1 = value[0];
@@ -1872,27 +1970,107 @@ namespace Nop.Web.Areas.Admin.Controllers
             if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
                 return AccessDeniedView();
 
-            if (!String.IsNullOrWhiteSpace(model.ScheduleDate1))
-            {
-                model.ScheduleDate1 = model.ScheduleDate1.Trim();
-            }
-            if (!String.IsNullOrWhiteSpace(model.ScheduleDate2))
-            {
-                model.ScheduleDate2 = model.ScheduleDate2.Trim();
-            }
-            if (!String.IsNullOrWhiteSpace(model.ScheduleDate3))
-            {
-                model.ScheduleDate3 = model.ScheduleDate3.Trim();
-            }
+            if (string.IsNullOrWhiteSpace(model.ScheduleDate1))
+                return View(model);
+
+            var combineValue = "";
+
+            model.ScheduleDate1 = model.ScheduleDate1.Trim();
+            combineValue += model.ScheduleDate1 + ",";
+
+            model.ScheduleDate2 = model.ScheduleDate2.Trim();
+            combineValue += model.ScheduleDate2 + ",";
+
+            model.ScheduleDate3 = model.ScheduleDate3.Trim();
+            combineValue += model.ScheduleDate3;
 
             var storeId = await _storeContext.GetActiveStoreScopeConfigurationAsync();
             var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>(storeId);
             var storeScope = await _storeContext.GetActiveStoreScopeConfigurationAsync();
+            long ticksPerMinute = 600000000;
+            var array = combineValue.Split(',');
+            bool isErrorExist = false;
+            for (int i = 0; i <= array.Length; i++)
+            {
+                if (i == 0)
+                {
+                    var firstRow = Array.ConvertAll(array[i].Split('-'), s => TimeSpan.Parse(s));
+                    if (firstRow.Length == 3)
+                    {
+                        if (firstRow[2].Ticks < firstRow[1].Ticks)
+                        {
+                            _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[i].ToString()));
+                            isErrorExist = true;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        _notificationService.ErrorNotification(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateValueLengthError"));
+                        isErrorExist = true;
+                        break;
+                    }
+                }
+                if (i > 0 && (i + 1) < array.Length)
+                {
+                    var prevRow = Array.ConvertAll(array[i - 1].Split('-'), s => TimeSpan.Parse(s));
+                    var currentRow = Array.ConvertAll(array[i].Split('-'), s => TimeSpan.Parse(s));
+                    if (currentRow.Length == 3)
+                    {
+                        if (currentRow[0].Ticks > currentRow[1].Ticks || currentRow[2].Ticks < currentRow[1].Ticks)
+                        {
+                            _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[i].ToString()));
+                            isErrorExist = true;
+                            break;
+                        }
+                        if (currentRow[0].Ticks - prevRow[1].Ticks != ticksPerMinute)
+                        {
+                            _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[i - 1].ToString()));
+                            isErrorExist = true;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        _notificationService.ErrorNotification(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateValueLengthError"));
+                        isErrorExist = true;
+                        break;
+                    }
+                }
+
+                if ((i + 1) == array.Length)
+                {
+                    var firstRow = Array.ConvertAll(array[0].Split('-'), s => TimeSpan.Parse(s));
+                    var prevRow = Array.ConvertAll(array[i - 1].Split('-'), s => TimeSpan.Parse(s));
+                    var currRow = Array.ConvertAll(array[array.Length - 1].Split('-'), s => TimeSpan.Parse(s));
+                    if (currRow[0].Ticks > currRow[1].Ticks || currRow[2].Ticks < currRow[1].Ticks)
+                    {
+                        _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[array.Length - 1].ToString()));
+                        isErrorExist = true;
+                        break;
+                    }
+                    if (currRow[0].Ticks - prevRow[1].Ticks != ticksPerMinute)
+                    {
+                        _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[i - 1].ToString()));
+                        isErrorExist = true;
+                        break;
+                    }
+                    if (firstRow[0].Ticks - currRow[1].Ticks != ticksPerMinute)
+                    {
+                        _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[0].ToString()));
+                        isErrorExist = true;
+                        break;
+                    }
+                }
+            }
+            if (isErrorExist)
+                return View(model);
 
             orderSettings.ScheduleDate = model.ScheduleDate1 + "," + model.ScheduleDate2 + "," + model.ScheduleDate3;
             await _settingService.SaveSettingAsync(orderSettings, x => x.ScheduleDate, clearCache: true);
+            _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Orders.ScheduleDate.Updated"));
 
-            return RedirectToAction("ScheduleDate");
+            return View(model);
         }
 
         #endregion
@@ -2795,7 +2973,8 @@ namespace Nop.Web.Areas.Admin.Controllers
             if (await _workContext.GetCurrentVendorAsync() != null)
                 return Content(string.Empty);
 
-            var result = new List<object>();
+            var ordersStatisticsResult = new OrderStatisticsModel();
+            ordersStatisticsResult.VendorsNames = (await _vendorService.GetAllVendorsAsync()).Select(vendor => vendor.Name).ToList();
 
             var nowDt = await _dateTimeHelper.ConvertToUserTimeAsync(DateTime.Now);
             var timeZone = await _dateTimeHelper.GetCurrentTimeZoneAsync();
@@ -2810,16 +2989,12 @@ namespace Nop.Web.Areas.Admin.Controllers
                     var searchYearDateUser = new DateTime(yearAgoDt.Year, yearAgoDt.Month, 1);
                     for (var i = 0; i <= 12; i++)
                     {
-                        result.Add(new
-                        {
-                            date = searchYearDateUser.Date.ToString("Y", culture),
-                            value = (await _orderService.SearchOrdersAsync(
-                                createdFromUtc: _dateTimeHelper.ConvertToUtcTime(searchYearDateUser, timeZone),
-                                createdToUtc: _dateTimeHelper.ConvertToUtcTime(searchYearDateUser.AddMonths(1), timeZone),
-                                pageIndex: 0,
-                                pageSize: 1, getOnlyTotalCount: true)).TotalCount.ToString()
-                        });
+                        var createdFromUtc = _dateTimeHelper.ConvertToUtcTime(searchYearDateUser, timeZone);
+                        var createdToUtc = _dateTimeHelper.ConvertToUtcTime(searchYearDateUser.AddMonths(1), timeZone);
+                        string dateFormat = "Y";
 
+                        var metrics = await GetMetrics(culture, searchYearDateUser, createdFromUtc, createdToUtc, dateFormat);
+                        ordersStatisticsResult.Metrics.Add(metrics);
                         searchYearDateUser = searchYearDateUser.AddMonths(1);
                     }
 
@@ -2830,16 +3005,12 @@ namespace Nop.Web.Areas.Admin.Controllers
                     var searchMonthDateUser = new DateTime(monthAgoDt.Year, monthAgoDt.Month, monthAgoDt.Day);
                     for (var i = 0; i <= 30; i++)
                     {
-                        result.Add(new
-                        {
-                            date = searchMonthDateUser.Date.ToString("M", culture),
-                            value = (await _orderService.SearchOrdersAsync(
-                                createdFromUtc: _dateTimeHelper.ConvertToUtcTime(searchMonthDateUser, timeZone),
-                                createdToUtc: _dateTimeHelper.ConvertToUtcTime(searchMonthDateUser.AddDays(1), timeZone),
-                                pageIndex: 0,
-                                pageSize: 1, getOnlyTotalCount: true)).TotalCount.ToString()
-                        });
+                        var createdFromUtc = _dateTimeHelper.ConvertToUtcTime(searchMonthDateUser, timeZone);
+                        var createdToUtc = _dateTimeHelper.ConvertToUtcTime(searchMonthDateUser.AddDays(1), timeZone);
+                        var dateFormat = "M";
 
+                        var metrics = await GetMetrics(culture, searchMonthDateUser, createdFromUtc, createdToUtc, dateFormat);
+                        ordersStatisticsResult.Metrics.Add(metrics);
                         searchMonthDateUser = searchMonthDateUser.AddDays(1);
                     }
 
@@ -2849,26 +3020,27 @@ namespace Nop.Web.Areas.Admin.Controllers
                     //week statistics
                     var weekAgoDt = nowDt.AddDays(-7);
                     var searchWeekDateUser = new DateTime(weekAgoDt.Year, weekAgoDt.Month, weekAgoDt.Day);
+
+
                     for (var i = 0; i <= 7; i++)
                     {
-                        result.Add(new
-                        {
-                            date = searchWeekDateUser.Date.ToString("d dddd", culture),
-                            value = (await _orderService.SearchOrdersAsync(
-                                createdFromUtc: _dateTimeHelper.ConvertToUtcTime(searchWeekDateUser, timeZone),
-                                createdToUtc: _dateTimeHelper.ConvertToUtcTime(searchWeekDateUser.AddDays(1), timeZone),
-                                pageIndex: 0,
-                                pageSize: 1, getOnlyTotalCount: true)).TotalCount.ToString()
-                        });
+                        var createdFromUtc = _dateTimeHelper.ConvertToUtcTime(searchWeekDateUser, timeZone);
+                        var createdToUtc = _dateTimeHelper.ConvertToUtcTime(searchWeekDateUser.AddDays(1), timeZone);
+                        var dateFormat = "d dddd";
 
+                        var metrics = await GetMetrics(culture, searchWeekDateUser, createdFromUtc, createdToUtc, dateFormat);
+                        ordersStatisticsResult.Metrics.Add(metrics);
                         searchWeekDateUser = searchWeekDateUser.AddDays(1);
                     }
-
                     break;
             }
 
-            return Json(result);
+
+
+            return Json(ordersStatisticsResult);
         }
+
+
 
         #endregion
     }
