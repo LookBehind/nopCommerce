@@ -17,6 +17,8 @@ using HtmlAgilityPack;
 using System.Text.Json;
 using System.Diagnostics;
 using System.Threading;
+using Nop.Plugin.Misc.BuyAmScraper.Helpers;
+using Product = Nop.Core.Domain.Catalog.Product;
 
 namespace Nop.Plugin.BuyAmScraper.Service
 {
@@ -56,18 +58,18 @@ namespace Nop.Plugin.BuyAmScraper.Service
             IUrlRecordService urlRecordService)
         {
             this._categoryUrlsToScrape = new string[] {
-                //"https://buy.am/hy/carrefour/bakery-pastry",
-                //"https://buy.am/hy/carrefour/fresh-fruit-vegetable",
-                //"https://buy.am/hy/carrefour/dairy-eggs",
-                //"https://buy.am/hy/carrefour/frozen-products",
-                //"https://buy.am/hy/carrefour/breakfast-coffee-tea",
-                //"https://buy.am/hy/carrefour/bio-organic",
-                //"https://buy.am/hy/carrefour/sweets-snacks",
-                //"https://buy.am/hy/carrefour/juices-drinks",
-                //"https://buy.am/hy/carrefour/alcoholic-beverages-cigarettes",
+                "https://buy.am/hy/carrefour/bakery-pastry",
+                "https://buy.am/hy/carrefour/fresh-fruit-vegetable",
+                "https://buy.am/hy/carrefour/dairy-eggs",
+                "https://buy.am/hy/carrefour/frozen-products",
+                "https://buy.am/hy/carrefour/breakfast-coffee-tea",
+                "https://buy.am/hy/carrefour/bio-organic",
+                "https://buy.am/hy/carrefour/sweets-snacks",
+                "https://buy.am/hy/carrefour/juices-drinks",
+                "https://buy.am/hy/carrefour/alcoholic-beverages-cigarettes",
 
-                //"https://buy.am/hy/carrefour/shop-in-shop",
-                //"https://buy.am/hy/carrefour/household-goods",
+                "https://buy.am/hy/carrefour/shop-in-shop",
+                "https://buy.am/hy/carrefour/household-goods",
                 "https://buy.am/hy/12-ktor-pizza?p=1&imRootCategoryId=1316&o=1&n=100&f=9440&sd=9440"
             };
             this._logger = logger;
@@ -76,21 +78,6 @@ namespace Nop.Plugin.BuyAmScraper.Service
             this._categoryService = categoryService;
             this._pictureService = pictureService;
             this._urlRecordService = urlRecordService;
-        }
-
-        private async Task<byte[]> DownloadImage(string url)
-        {
-            using var httpClient = new WebClient();
-            try
-            {
-                return await httpClient.DownloadDataTaskAsync(url);
-            }
-            catch (Exception exc)
-            {
-                await _logger.ErrorAsync($"Exception while downloading image: {url}, message: {exc.Message}");
-            }
-
-            return Array.Empty<byte>();
         }
 
         private async Task<ProductDTO> Convert(ProductMiniDto miniDto)
@@ -112,19 +99,19 @@ namespace Nop.Plugin.BuyAmScraper.Service
             var partner = productPageHtml.DocumentNode.SelectSingleNode("//span[normalize-space()='Գործընկեր՝']/following-sibling::span/a");
 
             var imageUrlParsed = new Uri(imageUrl.Attributes["data-img-original"].Value);
-            var imageBytes = await DownloadImage(imageUrlParsed.ToString());
 
-            var fullDescriptionString = fullDescription?.InnerText ?? string.Empty;
+            var fullDescriptionString = fullDescription?.InnerText?.Trim() ?? string.Empty;
+            var shortDescriptionString =
+                fullDescriptionString.Substring(0, Math.Min(100, fullDescriptionString.Length))?.Trim();
 
-            return new ProductDTO {
+            return new ProductDTO(imageUrlParsed.ToString()) {
                 Name = productTitle.InnerText.Trim(),
                 Sku = miniDto.Sku,
                 Category = (category?.InnerText ?? subCategory?.InnerText ?? subSubCategory?.InnerText ?? string.Empty).Trim(),
-                FullDescription = $"Code: {miniDto.Sku}\n" + fullDescriptionString?.Trim(),
+                FullDescription = $"<p>{fullDescriptionString}</p>",
                 Price = int.Parse(price.Attributes["content"].Value, System.Globalization.NumberStyles.AllowDecimalPoint),
-                ShortDescription = $"Code: {miniDto.Sku}\n" + fullDescriptionString.Substring(0, Math.Min(100, fullDescriptionString.Length))?.Trim(),
+                ShortDescription = $"<p>{shortDescriptionString}</p>",
                 SubCategory = (subCategory?.InnerText ?? subSubCategory?.InnerText ?? string.Empty).Trim(),
-                Image = imageBytes,
                 ImageFileName = imageUrlParsed.Segments[imageUrlParsed.Segments.Length - 1],
                 Partner = partner?.InnerText?.Trim()
             };
@@ -238,7 +225,7 @@ namespace Nop.Plugin.BuyAmScraper.Service
             return vendor.Id;
         }
 
-        async Task AddProductsIfMissing(IAsyncEnumerable<object> productDTOs)
+        async Task UpsertProducts(IAsyncEnumerable<object> productDTOs)
         {
             await foreach (var productDTOObject in productDTOs)
             {
@@ -249,21 +236,25 @@ namespace Nop.Plugin.BuyAmScraper.Service
 
                 var productCode = productDTO?.Sku ?? productMiniDTO.Sku;
 
-                var existingProduct = await _productService.GetProductBySkuAsync(productCode.ToString());
+                if (productMiniDTO != null)
+                    productDTO = await Convert(productMiniDTO);
+                
+                var existingProduct = await _productService.GetProductBySkuAsync(productCode);
                 if (existingProduct != null)
                 {
-                    await _logger.InformationAsync($"Product with code {productCode} exists, skipping");
+                    if(!existingProduct.IsEqualHelper(productDTO))
+                    {
+                        _logger.InformationAsync($"Updating product with SKU: {existingProduct.Sku}");
+                        existingProduct.Update(productDTO);
+                        await _productService.UpdateProductAsync(existingProduct); 
+                    }
+                    
                     continue;
                 }
 
-                if (productMiniDTO != null)
-                    productDTO = await Convert(productMiniDTO);
-
-                var picture = await _pictureService.InsertPictureAsync(productDTO.Image, MimeTypes.ImageJpeg, productDTO.ImageFileName);
-
                 var vendorId = await GetOrAddVendor(productDTO);
 
-                var product = new Core.Domain.Catalog.Product()
+                var product = new Product()
                 {
                     Sku = productDTO.Sku,
                     Name = productDTO.Name,
@@ -274,8 +265,8 @@ namespace Nop.Plugin.BuyAmScraper.Service
                     IsShipEnabled = true,
                     DisableWishlistButton = true,
                     Published = true,
-                    CreatedOnUtc = DateTime.Now,
-                    UpdatedOnUtc = DateTime.Now,
+                    CreatedOnUtc = DateTime.UtcNow,
+                    UpdatedOnUtc = DateTime.UtcNow,
                     RibbonEnable = false,
                     ProductType = Core.Domain.Catalog.ProductType.SimpleProduct,
                     VisibleIndividually = true,
@@ -285,7 +276,7 @@ namespace Nop.Plugin.BuyAmScraper.Service
                 };
 
                 await _productService.InsertProductAsync(product);
-
+                
                 var seName = await _urlRecordService.ValidateSeNameAsync(product, null, product.Name, true);
                 await _urlRecordService.SaveSlugAsync(product, seName, 0);
 
@@ -326,8 +317,7 @@ namespace Nop.Plugin.BuyAmScraper.Service
                     await _urlRecordService.SaveSlugAsync(productCategory, await _urlRecordService.ValidateSeNameAsync(productCategory, null, productCategory.Name, true), 0);
                 }
 
-                bool subCategorySpecified = string.IsNullOrEmpty(productDTO.SubCategory) ||
-                    productDTO.SubCategory.Equals(productDTO.Category, StringComparison.OrdinalIgnoreCase) ? false : true;
+                bool subCategorySpecified = !string.IsNullOrEmpty(productDTO.SubCategory) && !productDTO.SubCategory.Equals(productDTO.Category, StringComparison.OrdinalIgnoreCase);
                 var productSubCategory = subCategorySpecified ? await GetExactCategoryByName(productDTO.SubCategory, productCategory) : null;
                 if (subCategorySpecified && productSubCategory == null)
                 {
@@ -351,6 +341,7 @@ namespace Nop.Plugin.BuyAmScraper.Service
                     CategoryId = subCategorySpecified ? productSubCategory.Id : productCategory.Id
                 });
 
+                var picture = await _pictureService.InsertPictureAsync(productDTO.Image, MimeTypes.ImageJpeg, productDTO.ImageFileName);
                 await _productService.InsertProductPictureAsync(new Core.Domain.Catalog.ProductPicture
                 {
                     PictureId = picture.Id,
@@ -376,7 +367,7 @@ namespace Nop.Plugin.BuyAmScraper.Service
                     sw.Start();
 
                     var products = ExtractProductsFromDownloadedPages(categoryUrl);
-                    await AddProductsIfMissing(products);
+                    await UpsertProducts(products);
 
                     var count = await products.CountAsync();
                     result += count;
