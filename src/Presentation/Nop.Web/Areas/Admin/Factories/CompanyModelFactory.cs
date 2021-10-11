@@ -218,20 +218,34 @@ namespace Nop.Web.Areas.Admin.Factories
             //get customers
             var customers = await _customerService.GetAllCustomersAsync(
                  email: searchModel.SearchCustomerEmail, customerRoleIds: customerRoleIds,
-                 pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                 pageIndex: 0);
 
-            IPagedList<Customer> filteredCustomers = new PagedList<Customer>(new List<Customer>(), searchModel.Page - 1, searchModel.PageSize, customers.TotalCount);
+            var filteredCustomersCount = 0;
+            IPagedList<Customer> filteredCustomers = new PagedList<Customer>(new List<Customer>(), 0, int.MaxValue, customers.TotalCount);
             foreach (var customer in customers)
             {
                 var companyCustomerMapping = await _companyService.GetCompanyCustomersByCustomerIdAsync(customer.Id);
                 if (companyCustomerMapping.Count == 0)
+                {
                     filteredCustomers.Add(customer);
+                    filteredCustomersCount++;
+                }
+            }
+
+            IPagedList<Customer> filteredFilteredCustomers = new PagedList<Customer>(new List<Customer>(), searchModel.Page - 1, searchModel.PageSize, filteredCustomersCount);
+            int count = (searchModel.Page - 1) * searchModel.PageSize;
+            for (var i = count; i < searchModel.Page * searchModel.PageSize; i++)
+            {
+                if (i == filteredCustomersCount)
+                    break;
+
+                filteredFilteredCustomers.Add(filteredCustomers[i]);
             }
 
             //prepare grid model
-            var model = await new AddCustomerToCompanyListModel().PrepareToGridAsync(searchModel, filteredCustomers, () =>
+            var model = await new AddCustomerToCompanyListModel().PrepareToGridAsync(searchModel, filteredFilteredCustomers, () =>
             {
-                return filteredCustomers.SelectAwait(async customer =>
+                return filteredFilteredCustomers.SelectAwait(async customer =>
                 {
                     var customerModel = customer.ToModel<CustomerModel>();
 
