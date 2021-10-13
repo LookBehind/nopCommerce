@@ -170,7 +170,11 @@
                                         }
                                         else
                                         {
-                                            <input name="itemquantity@(item.Id)" id="itemquantity@(item.Id)" type="text" value="@(item.Quantity)" class="qty-input" aria-label="@T("ShoppingCart.Quantity")" />
+                                            <div class="item-quantities">
+                                                <button class="btn-block minus" onclick="checkoutQuantityChange(itemquantity@(item.Id),-1)" name="updatecart"><i class="fa fa-minus-circle"></i></button>
+                                                <input name="itemquantity@(item.Id)" id="itemquantity@(item.Id)" type="text" value="@(item.Quantity)" class="qty-input" aria-label="@T("ShoppingCart.Quantity")" />
+                                                <button class="btn-block plus" onclick="checkoutQuantityChange(itemquantity@(item.Id),1)" name="updatecart"><i class="fa fa-plus-circle"></i></button>
+                                            </div>
                                         }
                                     }
                                     else
@@ -226,8 +230,6 @@
                 @if (Model.IsEditable)
                 {
                     <div class="common-buttons">
-                        <button type="submit" name="updatecart" class="button-2 update-cart-button">@T("ShoppingCart.UpdateCart")</button>
-
                         <button type="submit" name="continueshopping" class="button-2 continue-shopping-button">@T("ShoppingCart.ContinueShopping")</button>
                         @await Component.InvokeAsync("ShoppingCartEstimateShipping")
                     </div>
