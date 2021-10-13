@@ -181,10 +181,13 @@ namespace Nop.Plugin.BuyAmScraper.Service
             }
         }
 
-        private async Task<Core.Domain.Catalog.Category> GetExactCategoryByName(string name, Core.Domain.Catalog.Category parent = null)
+        private async Task<Core.Domain.Catalog.Category> GetExactCategoryByName(string name, 
+            Core.Domain.Catalog.Category parent = null)
         {
             var categories = await _categoryService.GetAllCategoriesAsync(name);
-            return categories.FirstOrDefault(c => string.Equals(c.Name, name) && (parent == null || c.ParentCategoryId == parent.Id));
+            return categories.FirstOrDefault(c => 
+                string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase) && 
+                (parent == null || c.ParentCategoryId == parent.Id));
         }
 
         private async Task<int> GetOrAddVendor(ProductDTO product)
@@ -205,7 +208,9 @@ namespace Nop.Plugin.BuyAmScraper.Service
                 return matchedId.Value;
             }
 
-            var vendor = (await _vendorService.GetAllVendorsAsync(vendorName).ConfigureAwait(false)).FirstOrDefault();
+            var vendor = (await _vendorService.GetAllVendorsAsync(vendorName)
+                    .ConfigureAwait(false))
+                    .FirstOrDefault();
             if (vendor == null)
             {
                 vendor = new Core.Domain.Vendors.Vendor()
