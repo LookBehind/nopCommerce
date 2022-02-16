@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
-using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Tax;
 using Nop.Services.Catalog;
@@ -27,11 +26,12 @@ using Nop.Web.Framework.Mvc.Filters;
 using Nop.Web.Models.Api.Security;
 using Nop.Web.Models.Order;
 using TimeZoneConverter;
-using System.Collections.Generic;
 using Nop.Web.Models.Api.Catalog;
 using Newtonsoft.Json.Linq;
-using System.IO;
 using System.Text;
+using Nop.Web.Models.ShoppingCart;
+using Nop.Web.Factories;
+using static Nop.Web.Models.ShoppingCart.ShoppingCartModel;
 
 namespace Nop.Web.Controllers.Api.Security
 {
@@ -62,6 +62,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly ICompanyService _companyService;
         private readonly IProductAttributeParser _productAttributeParser;
         private readonly ShoppingCartSettings _shoppingCartSettings;
+        private readonly IShoppingCartModelFactory _shoppingCartModelFactory;
 
         #endregion
 
@@ -86,7 +87,8 @@ namespace Nop.Web.Controllers.Api.Security
             ICustomerActivityService customerActivityService,
             ICompanyService companyService,
             IProductAttributeParser productAttributeParser,
-            ShoppingCartSettings shoppingCartSettings)
+            ShoppingCartSettings shoppingCartSettings,
+            IShoppingCartModelFactory shoppingCartModelFactory)
         {
             _orderService = orderService;
             _customerService = customerService;
@@ -108,6 +110,7 @@ namespace Nop.Web.Controllers.Api.Security
             _companyService = companyService;
             _productAttributeParser = productAttributeParser;
             _shoppingCartSettings = shoppingCartSettings;
+            _shoppingCartModelFactory = shoppingCartModelFactory;
         }
 
         #endregion
@@ -239,15 +242,15 @@ namespace Nop.Web.Controllers.Api.Security
 
         private async Task<string> GetAttributtesFormAsync(ProductOverviewApiModel productOverviewApiModel, Product product, List<string> addToCartWarnings)
         {
-            var selectedAttributes =await productOverviewApiModel.ProductAttributeValues.Where(i => i.Key.IsPreSelected == true).ToListAsync();
-            if (selectedAttributes.Count==0)
+            var selectedAttributes = productOverviewApiModel.ProductAttributeValues != null ? await productOverviewApiModel.ProductAttributeValues.Where(i => i.Key.IsPreSelected == true).ToListAsync() : null;
+            if (productOverviewApiModel.ProductAttributeValues == null || selectedAttributes.Count == 0)
             {
                 return null;
             }
             StringBuilder attributeValues = new StringBuilder();
-            foreach ( var selectedAttribute in selectedAttributes)
+            foreach (var selectedAttribute in selectedAttributes)
             {
-                attributeValues.Append(selectedAttribute.Key.Id.ToString()+",");
+                attributeValues.Append(selectedAttribute.Key.Id.ToString() + ",");
             }
             attributeValues.Length -= 1;
             var attributeForm = new FormCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
@@ -480,45 +483,92 @@ namespace Nop.Web.Controllers.Api.Security
         }
 
         [HttpPost("check-products")]
-        public async Task<IActionResult> CheckProducts([FromBody] List<ProductOverviewApiModel> cartItems, IFormCollection form)
+        public async Task<IActionResult> CheckProducts()
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
-            //testForm.Keys.Add("test");
-            //form ["test"]= "test_result";
-            var carts = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, _storeContext.GetCurrentStore().Id);
-            foreach (var item in carts)
-                await _shoppingCartService.DeleteShoppingCartItemAsync(item.Id);
-            var errorList = new List<CartErrorModel>();
-            int[] ids = cartItems.Select(i => i.Id).ToArray();
 
-            var counter = 0;
-            var products = await _productService.GetProductsByIdsAsync(ids);
+            var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, _storeContext.GetCurrentStore().Id);
+
+            var cartTotal = await _orderTotalCalculationService.GetShoppingCartTotalAsync(cart, false);
+
+            // var cart = await _shoppingCartService.GetShoppingCartAsync(await _workContext.GetCurrentCustomerAsync(), ShoppingCartType.ShoppingCart, (await _storeContext.GetCurrentStoreAsync()).Id);
+            var model = new ShoppingCartModel();
+            model = await _shoppingCartModelFactory.PrepareShoppingCartModelAsync(model, cart);
 
 
+            return Ok(new { success = true, message = "All products are fine", cartTotal = cartTotal.shoppingCartTotal, cart = model });
 
-            var addToCartWarnings = new List<string>();
+            //var carts = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, _storeContext.GetCurrentStore().Id);
+            //foreach (var item in carts)
+            //    await _shoppingCartService.DeleteShoppingCartItemAsync(item.Id);
+            //var errorList = new List<CartErrorModel>();
+            //int[] ids = cartItems.Select(i => i.Id).ToArray();
 
-            //Microsoft.Extensions.Primitives.StringValues cartItems = "";
-            //var cartItemsJson = JObject.Parse(form.Keys.First().ToString());
-            //var cartProductsArray = JArray.Parse(cartItemsJson["cartItems"].ToString());
+            //var counter = 0;
+            //var products = await _productService.GetProductsByIdsAsync(ids);
 
-            //foreach (var item in cartProductsArray)
+
+
+            //var addToCartWarnings = new List<string>();
+
+
+            //foreach (var cartItem in cartItems)
             //{
-            //    await TestAddToCartAsync((int)ShoppingCartType.ShoppingCart, item);
+            //    var product = products.Where(i => i.Id == cartItem.Id).FirstOrDefault();
+
+            //    if (!product.Published || product.Deleted)
+            //        errorList.Add(new CartErrorModel { Success = false, Id = product.Id, Message = product.Name + " is not valid" });
+            //    var attributesXml = await GetAttributtesFormAsync(cartItem, product, addToCartWarnings);
+            //    errorList.Add(await AddProductToCart(product.Id, cartItem.Quantity, attributesXml));
+
+            //    counter++;
             //}
 
+            //var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, _storeContext.GetCurrentStore().Id);
 
-            foreach (var cartItem in cartItems)
-            {
-                var product = products.Where(i => i.Id == cartItem.Id).FirstOrDefault();
+            //var cartTotal = await _orderTotalCalculationService.GetShoppingCartTotalAsync(cart, false);
+            //if (errorList.Any() && errorList.Where(x => !x.Success).Count() > 0)
+            //    return Ok(new { success = false, errorList = errorList.Where(x => !x.Success), cartTotal = cartTotal.shoppingCartTotal });
 
-                if (!product.Published || product.Deleted)
-                    errorList.Add(new CartErrorModel { Success = false, Id = product.Id, Message = product.Name + " is not valid" });
-                var attributesXml = await GetAttributtesFormAsync(cartItem, product, addToCartWarnings);
-                errorList.Add(await AddProductToCart(product.Id, cartItem.Quantity, attributesXml));
+            //return Ok(new { success = true, message = "All products are fine", cartTotal = cartTotal.shoppingCartTotal });
+        }
 
-                counter++;
-            }
+        [HttpPost("remove-product")]
+        public async Task<IActionResult> RemoveProduct([FromBody] ShoppingCartItemModel shoppingCartItemModel)
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var cartItem = (await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, _storeContext.GetCurrentStore().Id))
+                .Where(i => i.Id == shoppingCartItemModel.Id).FirstOrDefault();
+            await _shoppingCartService.UpdateShoppingCartItemAsync(customer,
+                                    cartItem.Id, cartItem.AttributesXml, cartItem.CustomerEnteredPrice,
+                                    cartItem.RentalStartDateUtc, cartItem.RentalEndDateUtc,
+                                    (cartItem.Quantity - 1));
+
+            var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, _storeContext.GetCurrentStore().Id);
+
+            var cartTotal = await _orderTotalCalculationService.GetShoppingCartTotalAsync(cart, false);
+
+            // var cart = await _shoppingCartService.GetShoppingCartAsync(await _workContext.GetCurrentCustomerAsync(), ShoppingCartType.ShoppingCart, (await _storeContext.GetCurrentStoreAsync()).Id);
+            var model = new ShoppingCartModel();
+            model = await _shoppingCartModelFactory.PrepareShoppingCartModelAsync(model, cart);
+
+            return Ok(new { success = true, message = "All products are fine", cartTotal = cartTotal.shoppingCartTotal, cart = model });
+        }
+
+        [HttpPost("add-product")]
+        public async Task<IActionResult> AddProduct([FromBody] ProductOverviewApiModel productOverviewApiModel)
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+
+            var addToCartWarnings = new List<string>();
+            var errorList = new List<CartErrorModel>();
+
+            var product = await _productService.GetProductByIdAsync(productOverviewApiModel.Id);
+
+            if (!product.Published || product.Deleted)
+                errorList.Add(new CartErrorModel { Success = false, Id = product.Id, Message = product.Name + " is not valid" });
+            var attributesXml = await GetAttributtesFormAsync(productOverviewApiModel, product, addToCartWarnings);
+            errorList.Add(await AddProductToCart(product.Id, productOverviewApiModel.Quantity, attributesXml));
 
             var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, _storeContext.GetCurrentStore().Id);
 
@@ -526,7 +576,12 @@ namespace Nop.Web.Controllers.Api.Security
             if (errorList.Any() && errorList.Where(x => !x.Success).Count() > 0)
                 return Ok(new { success = false, errorList = errorList.Where(x => !x.Success), cartTotal = cartTotal.shoppingCartTotal });
 
-            return Ok(new { success = true, message = "All products are fine", cartTotal = cartTotal.shoppingCartTotal });
+            // var cart = await _shoppingCartService.GetShoppingCartAsync(await _workContext.GetCurrentCustomerAsync(), ShoppingCartType.ShoppingCart, (await _storeContext.GetCurrentStoreAsync()).Id);
+            var model = new ShoppingCartModel();
+            model = await _shoppingCartModelFactory.PrepareShoppingCartModelAsync(model, cart);
+
+
+            return Ok(new { success = true, message = "All products are fine", cartTotal = cartTotal.shoppingCartTotal, cart = model });
         }
 
         [HttpPost("order-confirmation/{scheduleDate}")]

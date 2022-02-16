@@ -13,6 +13,7 @@ namespace Nop.Web.Models.Api.Catalog
         public ProductOverviewApiModel()
         {
             ProductSpecificationModel = new ProductSpecificationApiModel();
+            ProductAttributeValues = new List<KeyValuePair<ProductAttributeValue, ProductAttributeMapping>>();
         }
         public bool RibbonEnable { get; set; }
         public string RibbonText { get; set; }
