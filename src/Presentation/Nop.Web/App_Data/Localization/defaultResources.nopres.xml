@@ -715,7 +715,7 @@
     <Value>Customer is locked out</Value>
   </LocaleResource>
   <LocaleResource Name="Account.Login.WrongCredentials.NotActive">
-    <Value>Account is not active</Value>
+    <Value>Account is not active (hint: try your workplace email account)</Value>
   </LocaleResource>
   <LocaleResource Name="Account.Login.WrongCredentials.NotRegistered">
     <Value>Account is not registered</Value>

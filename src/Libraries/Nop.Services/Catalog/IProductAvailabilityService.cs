@@ -7,5 +7,6 @@ namespace Nop.Services.Catalog
     public interface IProductAvailabilityService
     {
         Task<bool> IsProductAvailabilityForDateAsync(Product product, DateTime dateUTC);
+        Task<bool> DoesProductHaveAnyAvailabilityModifierAsync(Product product);
     }
 }
