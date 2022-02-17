@@ -17,6 +17,26 @@ namespace Nop.Services.Catalog
             _specificationAttributeService = specificationAttributeService;
         }
 
+        public async Task<bool> DoesProductHaveAnyAvailabilityModifierAsync(Product product)
+        {
+            // Get product's spec attributes (essentially option ids)
+            var productSpecAttributes =
+                await _specificationAttributeService.GetProductSpecificationAttributesAsync(product.Id);
+            
+            // if there are no attributes - no filtering is applied on the product, it depends only on Published
+            if (!productSpecAttributes.Any())
+                return false;
+            
+            // Get "Available On Weekday" spec attribute
+            var availableOnWeekday = 
+                (await _specificationAttributeService.GetSpecificationAttributesAsync())
+                .First(specAttribute => 
+                    string.Equals(specAttribute.Name, AVAILABLE_ON_WEEKDAY_SPEC_ATTRIBUTE_NAME, 
+                        StringComparison.OrdinalIgnoreCase));
+
+            return productSpecAttributes.Any(psa => psa.Id == availableOnWeekday.Id);
+        }
+        
         public async Task<bool> IsProductAvailabilityForDateAsync(Product product, DateTime dateUTC)
         {
             // Get product's spec attributes (essentially option ids)

@@ -49,31 +49,21 @@ namespace Nop.Web.Controllers.Api.Security
     {
         #region Fields
 
-        private readonly ShoppingCartSettings _shoppingCartSettings;
         private readonly LocalizationSettings _localizationSettings;
         private readonly IWorkflowMessageService _workflowMessageService;
         private readonly IOrderService _orderService;
         private readonly IOrderReportService _orderReportService;
-        private readonly IPriceFormatter _priceFormatter;
         private readonly ISpecificationAttributeService _specificationAttributeService;
         private readonly IProductModelFactory _productModelFactory;
-        private readonly IProductTagService _productTagService;
         private readonly IProductService _productService;
         private readonly ILocalizationService _localizationService;
-        private readonly IRecentlyViewedProductsService _recentlyViewedProductsService;
-        private readonly IAclService _aclService;
-        private readonly IStoreMappingService _storeMappingService;
-        private readonly IPermissionService _permissionService;
         private readonly ICustomerActivityService _customerActivityService;
         private readonly CatalogSettings _catalogSettings;
         private readonly IStoreContext _storeContext;
         private readonly IWorkContext _workContext;
-        private readonly IShoppingCartService _shoppingCartService;
         private readonly ICategoryService _categoryService;
         private readonly ICatalogModelFactory _catalogModelFactory;
         private readonly ITopicModelFactory _topicModelFactory;
-        private readonly IWebHelper _webHelper;
-        private readonly IPictureService _pictureService;
         private readonly IUrlRecordService _urlRecordService;
         private readonly IVendorService _vendorService;
         private readonly IEventPublisher _eventPublisher;
@@ -82,6 +72,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly IStaticCacheManager _staticCacheManager;
         private readonly ISettingService _settingService;
         private readonly IProductAttributeService _productAttributeService;
+        private readonly IProductAvailabilityService _productAvailabilityService;
 
         private static readonly AttributeControlType[] _allowedAttributeControlTypes = new[] {
             AttributeControlType.DropdownList,
@@ -94,61 +85,42 @@ namespace Nop.Web.Controllers.Api.Security
         #region Ctor
 
         public CatalogApiController(
-            ShoppingCartSettings shoppingCartSettings,
             LocalizationSettings localizationSettings,
             IWorkflowMessageService workflowMessageService,
             IOrderService orderService,
             IOrderReportService orderReportService,
-            IPriceFormatter priceFormatter,
             ISpecificationAttributeService specificationAttributeService,
-            IPictureService pictureService,
             IUrlRecordService urlRecordService,
-            IWebHelper webHelper,
             ICatalogModelFactory catalogModelService,
             IProductModelFactory productModelFactory,
             ITopicModelFactory topicModelFactory,
             ICategoryService categoryService,
             IProductService productService,
-            IProductTagService productTagService,
             ILocalizationService localizationService,
-            IRecentlyViewedProductsService recentlyViewedProductsService,
-            IAclService aclService,
-            IStoreMappingService storeMappingService,
-            IPermissionService permissionService,
             ICustomerActivityService customerActivityService,
             CatalogSettings catalogSettings,
             IStoreContext storeContext,
             IWorkContext workContext,
-            IShoppingCartService shoppingCartService,
             IEventPublisher eventPublisher,
             IVendorService vendorService,
             ICustomerService customerService,
             IDateTimeHelper dateTimeHelper,
             IStaticCacheManager staticCacheManager,
             ISettingService settingService,
-            IProductAttributeService productAttributeService)
+            IProductAttributeService productAttributeService, 
+            IProductAvailabilityService productAvailabilityService)
         {
-            _shoppingCartSettings = shoppingCartSettings;
             _localizationSettings = localizationSettings;
             _workflowMessageService = workflowMessageService;
             _orderReportService = orderReportService;
             _orderService = orderService;
-            _priceFormatter = priceFormatter;
             _specificationAttributeService = specificationAttributeService;
-            _pictureService = pictureService;
             _urlRecordService = urlRecordService;
-            _webHelper = webHelper;
             _categoryService = categoryService;
             _catalogModelFactory = catalogModelService;
             _topicModelFactory = topicModelFactory;
             _productService = productService;
-            _productTagService = productTagService;
-            _shoppingCartService = shoppingCartService;
             _localizationService = localizationService;
-            _recentlyViewedProductsService = recentlyViewedProductsService;
-            _aclService = aclService;
-            _storeMappingService = storeMappingService;
-            _permissionService = permissionService;
             _customerActivityService = customerActivityService;
             _catalogSettings = catalogSettings;
             _storeContext = storeContext;
@@ -161,6 +133,7 @@ namespace Nop.Web.Controllers.Api.Security
             _staticCacheManager = staticCacheManager;
             _settingService = settingService;
             _productAttributeService = productAttributeService;
+            _productAvailabilityService = productAvailabilityService;
         }
 
         #endregion
@@ -353,6 +326,12 @@ namespace Nop.Web.Controllers.Api.Security
 
             foreach (var product in products)
             {
+                if (!product.Published &&
+                    !(await _productAvailabilityService.DoesProductHaveAnyAvailabilityModifierAsync(product)))
+                {
+                    continue;
+                }
+                
                 var productDetailsModel = await _productModelFactory.PrepareProductDetailsModelAsync(product);
                 
                 var popularityByVendor = (await _staticCacheManager.GetAsync(
@@ -498,11 +477,12 @@ namespace Nop.Web.Controllers.Api.Security
                 .Where(id => id != 0)
                 .ToList();
             
-            var products = await _productService.SearchProductsAsync(
+            var products = (await _productService.SearchProductsAsync(
                 keywords: searchModel.Keyword, 
                 showHidden: true, 
-                categoryIds: categoryIds);
+                categoryIds: categoryIds));
 
+            
             if (!products.Any())
             {
                 return Ok(new

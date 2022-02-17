@@ -218,7 +218,7 @@ namespace Nop.Web.Controllers.Api.Security
                                 await _genericAttributeService.SaveAttributeAsync(newCustomer, NopCustomerDefaults.FirstNameAttribute, deserializedGoogleToken.given_name);
                             if (_customerSettings.LastNameEnabled)
                                 await _genericAttributeService.SaveAttributeAsync(newCustomer, NopCustomerDefaults.LastNameAttribute, deserializedGoogleToken.family_name);
-                            loginResult = CustomerLoginResults.Successful;
+                            loginResult = isApproved ? CustomerLoginResults.Successful : CustomerLoginResults.NotActive;
                             model.Email = deserializedGoogleToken.email;
                         }
                     }
