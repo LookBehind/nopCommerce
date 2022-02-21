@@ -84,7 +84,7 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuthentication.Infrastructure.Cache
                     if (!string.IsNullOrEmpty(lastName))
                     {
                         await _genericAttributeService.SaveAttributeAsync(eventMessage.Customer, NopCustomerDefaults.LastNameAttribute, lastName);
-                        continue;
+                        break;
                     }
                 }
             }
@@ -96,6 +96,7 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuthentication.Infrastructure.Cache
 
             if (!_customerSettings.AllowCustomersToUploadAvatars)
                 return;
+            
             try
             {
                 //try to get byte array of the user avatar image
