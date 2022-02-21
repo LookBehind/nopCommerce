@@ -92,6 +92,8 @@ namespace Nop.Services.Messages
         /// </returns>
         Task<int> DeleteAlreadySentEmailsAsync(DateTime? createdFromUtc, DateTime? createdToUtc);
 
+        Task<int> DeleteAlreadySentOrExpiredEmailsAsync(TimeSpan expiration);
+        
         /// <summary>
         /// Delete all queued emails
         /// </summary>

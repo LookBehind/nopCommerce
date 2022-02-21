@@ -1,0 +1,11 @@
+﻿{
+  "Group": "Notifications Manager",
+  "FriendlyName": "Notifications Manager",
+  "SystemName": "NotificationsManager",
+  "Version": "1.1",
+  "SupportedVersions": [ "4.30", "4.40", "4.50" ],
+  "Author": "Edgar Isajanyan",
+  "DisplayOrder": 1,
+  "FileName": "Nop.Plugin.Notifications.Manager.dll",
+  "Description": "Manages notifications to Telegram, Push notifications to mobiles"
+}

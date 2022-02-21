@@ -44,6 +44,7 @@ using Nop.Services.Seo;
 using Nop.Services.Shipping;
 using Nop.Services.Stores;
 using Nop.Services.Vendors;
+using Org.BouncyCastle.Bcpg.OpenPgp;
 
 namespace Nop.Services.Messages
 {
@@ -89,6 +90,7 @@ namespace Nop.Services.Messages
         private readonly PaymentSettings _paymentSettings;
         private readonly StoreInformationSettings _storeInformationSettings;
         private readonly TaxSettings _taxSettings;
+        private readonly IVendorService _vendorService;
 
         private Dictionary<string, IEnumerable<string>> _allowedTokens;
 
@@ -130,7 +132,8 @@ namespace Nop.Services.Messages
             MessageTemplatesSettings templatesSettings,
             PaymentSettings paymentSettings,
             StoreInformationSettings storeInformationSettings,
-            TaxSettings taxSettings)
+            TaxSettings taxSettings,
+            IVendorService vendorService)
         {
             _catalogSettings = catalogSettings;
             _currencySettings = currencySettings;
@@ -167,6 +170,7 @@ namespace Nop.Services.Messages
             _paymentSettings = paymentSettings;
             _storeInformationSettings = storeInformationSettings;
             _taxSettings = taxSettings;
+            _vendorService = vendorService;
         }
 
         #endregion
@@ -954,6 +958,7 @@ namespace Nop.Services.Messages
             async Task<Address> orderAddress(Order o) => await _addressService.GetAddressByIdAsync((o.PickupInStore ? o.PickupAddressId : o.ShippingAddressId) ?? 0);
 
             var billingAddress = await _addressService.GetAddressByIdAsync(order.BillingAddressId);
+            var vendor = vendorId != 0 ? await _vendorService.GetVendorByIdAsync(vendorId) : null;
 
             tokens.Add(new Token("Order.OrderId", order.Id));
             tokens.Add(new Token("Order.OrderNumber", order.CustomOrderNumber));
@@ -1029,7 +1034,7 @@ namespace Nop.Services.Messages
             tokens.Add(new Token("Order.OrderURLForCustomer", orderUrl, true));
 
             //event notification
-            await _eventPublisher.EntityTokensAddedAsync(order, tokens);
+            await _eventPublisher.EntityTokensAddedAsync(order, vendor, tokens);
         }
 
         /// <summary>

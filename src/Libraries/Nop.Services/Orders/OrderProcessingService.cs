@@ -1636,6 +1636,7 @@ namespace Nop.Services.Orders
 
 
                     var order = await SaveOrderDetailsAsync(processPaymentRequest, processPaymentResult, details);
+                    order.ScheduleDate = scheduleDate; //TODO: refactor details.ScheduleDate to be DateTime and don't put it here
                     result.PlacedOrder = order;
 
                     //move shopping cart items to order items
@@ -1663,7 +1664,6 @@ namespace Nop.Services.Orders
                     await CheckOrderStatusAsync(order);
 
                     //update schedule date
-                    order.ScheduleDate = scheduleDate;
                     await _orderService.UpdateOrderAsync(order);
 
                     //raise event

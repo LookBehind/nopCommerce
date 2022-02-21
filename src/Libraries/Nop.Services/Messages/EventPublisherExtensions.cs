@@ -47,6 +47,27 @@ namespace Nop.Services.Messages
         }
 
         /// <summary>
+        /// Entity tokens added
+        /// </summary>
+        /// <typeparam name="T">Type</typeparam>
+        /// <typeparam name="U">Type</typeparam>
+        /// <typeparam name="R">Type</typeparam>
+        /// <param name="eventPublisher">Event publisher</param>
+        /// <param name="entity">Entity</param>
+        /// <param name="attachedParam">AttachedParam</param>
+        /// <param name="tokens">Tokens</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public static async Task EntityTokensAddedAsync<T, R, U>(this IEventPublisher eventPublisher,
+            T entity,
+            R attachedParam,
+            System.Collections.Generic.IList<U> tokens) 
+            where T : BaseEntity
+            where R : BaseEntity
+        {
+            await eventPublisher.PublishAsync(new EntityTokensAddedEvent<T, R, U>(entity, attachedParam, tokens));
+        }
+
+        /// <summary>
         /// Message token added
         /// </summary>
         /// <typeparam name="U">Type</typeparam>
