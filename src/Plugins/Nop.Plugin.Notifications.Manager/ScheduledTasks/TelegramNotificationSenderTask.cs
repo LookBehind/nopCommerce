@@ -108,7 +108,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                     var (isVendorNotification, vendor) = await IsNotificationForVendorAsync(queuedEmail);
                     if (isVendorNotification)
                     {
-                        var vendorGroupId = await _genericAttribute.GetAttributeAsync(vendor,
+                        var vendorGroupId = await _genericAttribute.GetAttributeAsync<long>(vendor,
                             VENDOR_TELEGRAM_CHANNEL_KEY, defaultValue: 0);
 
                         if (vendorGroupId != 0)
