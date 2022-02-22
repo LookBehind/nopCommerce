@@ -95,8 +95,9 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
             var languageId = _localizationSettings.DefaultAdminLanguageId;
             var orderItems = await _orderService.GetOrderItemsAsync(order.Id);
             var productIdsArray = orderItems.Select(o => o.ProductId).ToArray();
-            var products = (await _productService.GetProductsByIdsAsync(productIdsArray))
-                .Where(product => product.VendorId == vendor.Id);
+            var products = (await _productService.GetProductsByIdsAsync(productIdsArray)).AsEnumerable();
+            if(vendor != null)
+                products = products.Where(product => product.VendorId == vendor.Id);
 
             var orderItemProduct = products.Join(orderItems,
                 productKey => productKey.Id,
@@ -106,7 +107,7 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
                 ));
             
             var vendorCustomer = (await _customerService.GetAllCustomersAsync(vendorId: vendor.Id))
-                .Single();
+                .SingleOrDefault();
             
             var sb = new StringBuilder();
             foreach (var (orderItem, product) in orderItemProduct)
