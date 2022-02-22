@@ -28,7 +28,7 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
         public void Register(IServiceCollection services, ITypeFinder typeFinder, AppSettings appSettings)
         {
             services.AddSingleton<ITelegramBotClient, TelegramBotClient>(ctx => 
-                new TelegramBotClient(appSettings.ExtendedAuthSettings.TelegramBotSecret));
+                appSettings.ExtendedAuthSettings.TelegramBotEnabled ? new TelegramBotClient(appSettings.ExtendedAuthSettings.TelegramBotSecret) : null);
         }
     }
 }
