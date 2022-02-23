@@ -67,9 +67,9 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
         public async Task HandleEventAsync(EntityTokensAddedEvent<Order, Vendor, Token> eventMessage)
         {
             eventMessage.Tokens.Add(new Token("Order.ProductsHumanReadable", 
-                await ProductOrdersHumanReadableAsync(eventMessage.Entity, eventMessage.AttachedParam)));
+                await ProductOrdersHumanReadableAsync(eventMessage.Entity, eventMessage.AttachedParam), true));
             eventMessage.Tokens.Add(new Token("Order.ScheduleDate", 
-                await GetScheduleDateForVendorAsync(eventMessage.Entity.ScheduleDate, eventMessage.AttachedParam)));
+                await GetScheduleDateForVendorAsync(eventMessage.Entity.ScheduleDate, eventMessage.AttachedParam), true));
         }
 
         private async Task<string> GetScheduleDateForVendorAsync(DateTime scheduleDate, Vendor vendor)
