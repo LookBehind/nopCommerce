@@ -314,7 +314,8 @@ namespace Nop.Services.Orders
             List<int> osIds = null, List<int> psIds = null, List<int> ssIds = null,
             string billingPhone = null, string billingEmail = null, string billingLastName = "",
             string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue,
-            bool getOnlyTotalCount = false, bool sendRateNotification = false, bool sortByDeliveryDate = false)
+            bool getOnlyTotalCount = false, bool sendRateNotification = false,
+            bool sortByDeliveryDate = false, DateTime? schedulDate = null)
         {
             var query = _orderRepository.Table;
 
@@ -404,6 +405,11 @@ namespace Nop.Services.Orders
 
             if (sendRateNotification)
                 query = query.Where(o => !o.RateNotificationSend);
+
+            if (schedulDate.HasValue)
+            {
+                query = query.Where(o => o.ScheduleDate.Date == schedulDate.Value.Date);
+            }
 
             query = query.Where(o => !o.Deleted);
             query = isLoggedInAsVendor && sortByDeliveryDate ? query.OrderByDescending(o => o.ScheduleDate) : query.OrderByDescending(o => o.CreatedOnUtc);

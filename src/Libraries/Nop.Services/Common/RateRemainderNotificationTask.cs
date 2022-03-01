@@ -56,10 +56,10 @@ namespace Nop.Services.Common
             if (rateRemainderCustomers.Count > 0)
             {
                 //DateTime currentDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
-                var osIds = new List<int> { (int)OrderStatus.Complete, (int)OrderStatus.Pending, (int)OrderStatus.Processing };
+                var osIds = new List<int> { (int)OrderStatus.Complete };
                 foreach (var rateRemainderCustomer in rateRemainderCustomers)
                 {
-                    var customerOrder = (await _orderService.SearchOrdersAsync(customerId: rateRemainderCustomer.Id, osIds: osIds, sendRateNotification: true))
+                    var customerOrder = (await _orderService.SearchOrdersAsync(customerId: rateRemainderCustomer.Id, osIds: osIds, sendRateNotification: true, schedulDate: DateTime.UtcNow))
                         .OrderByDescending(o => o.ScheduleDate).FirstOrDefault();
                     if (customerOrder != null)
                     {

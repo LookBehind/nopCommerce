@@ -80,10 +80,10 @@ namespace Nop.Services.Common
                     var customerTime = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
                     if (customerTime.Hour == startingHour)
                     {
-                        var order = await _orderService.SearchOrdersAsync(customerId: customer.Id, createdToUtc: currentDate, osIds: osIds);
+                        var order = await _orderService.SearchOrdersAsync(customerId: customer.Id, osIds: osIds, schedulDate: DateTime.UtcNow);
                         if (order.Count == 0)
                         {
-                            await _customerActivityService.InsertActivityAsync("User Remander",string.Format("Rmand user {0}", customer.Email), customer);
+                            await _customerActivityService.InsertActivityAsync("User Remander", string.Format("Rmand user {0}", customer.Email), customer);
                             if (!string.IsNullOrEmpty(customer.PushToken))
                             {
                                 var expoSDKClient = new PushApiTaskClient();
