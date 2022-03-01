@@ -49,46 +49,53 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
 
         private async Task UpdateVendorTelegramGroupsAsync()
         {
-            var lastSeenUpdateId = await _setting.GetSettingByKeyAsync(LAST_UPDATE_ID_SEEN_KEY, 0);
-            var updates = await _telegramBotClient.GetUpdatesAsync(
-                lastSeenUpdateId, timeout: 0,
-                allowedUpdates: new[] {UpdateType.Message});
-
-            foreach (var update in updates)
+            try
             {
-                if (update.Type == UpdateType.Message && update.Message.Type == MessageType.ChatMembersAdded &&
-                    update.Message.NewChatMembers.Any(m => m.Id == _telegramBotClient.BotId) &&
-                    _trustedUsernames.Contains(update.Message.From.Username))
+                var lastSeenUpdateId = await _setting.GetSettingByKeyAsync(LAST_UPDATE_ID_SEEN_KEY, 0);
+                var updates = await _telegramBotClient.GetUpdatesAsync(
+                    lastSeenUpdateId, timeout: 0,
+                    allowedUpdates: new[] {UpdateType.Message});
+
+                foreach (var update in updates)
                 {
-                    try
+                    if (update.Type == UpdateType.Message && update.Message?.Type == MessageType.ChatMembersAdded &&
+                        update.Message?.NewChatMembers?.Any(m => m.Id == _telegramBotClient.BotId) == true &&
+                        _trustedUsernames.Contains(update.Message?.From?.Username))
                     {
-                        var vendorNameFromMessage = Regex.Match(update.Message.Chat.Title,
-                            "(.*?) orders.*",
-                            RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.CultureInvariant |
-                            RegexOptions.IgnoreCase);
-
-                        Vendor vendor;
-                        if (!vendorNameFromMessage.Success ||
-                            (vendor = (await _vendor.GetAllVendorsAsync(vendorNameFromMessage.Groups[1].Value)).SingleOrDefault()) == null)
+                        try
                         {
-                            await _telegramBotClient.SendTextMessageAsync(update.Message.Chat,
-                                "Couldn't match with vendor");
-                            continue;
-                        }
+                            var vendorNameFromMessage = Regex.Match(update.Message.Chat.Title,
+                                "(.*?) orders.*",
+                                RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.CultureInvariant |
+                                RegexOptions.IgnoreCase);
+
+                            Vendor vendor;
+                            if (!vendorNameFromMessage.Success ||
+                                (vendor = (await _vendor.GetAllVendorsAsync(vendorNameFromMessage.Groups[1].Value)).SingleOrDefault()) == null)
+                            {
+                                await _telegramBotClient.SendTextMessageAsync(update.Message.Chat,
+                                    "Couldn't match with vendor");
+                                continue;
+                            }
                         
-                        await _genericAttribute.SaveAttributeAsync(vendor,
-                            VENDOR_TELEGRAM_CHANNEL_KEY, update.Message.Chat.Id); 
+                            await _genericAttribute.SaveAttributeAsync(vendor,
+                                VENDOR_TELEGRAM_CHANNEL_KEY, update.Message.Chat.Id); 
+                        }
+                        catch (Exception e)
+                        {
+                            await _logger.ErrorAsync("Exception while handling telegram update, skipping", e);
+                        }
                     }
-                    catch (Exception e)
-                    {
-                        await _logger.ErrorAsync("Exception while handling telegram update, skipping", e);
-                    }
+
+                    lastSeenUpdateId = Math.Max(lastSeenUpdateId, update.Id);
                 }
-
-                lastSeenUpdateId = Math.Max(lastSeenUpdateId, update.Id);
+                
+                await _setting.SetSettingAsync(LAST_UPDATE_ID_SEEN_KEY, lastSeenUpdateId);
             }
-
-            await _setting.SetSettingAsync(LAST_UPDATE_ID_SEEN_KEY, lastSeenUpdateId);
+            catch (Exception e)
+            {
+                await _logger.ErrorAsync("Exception while getting telegram updates, skipping", e);
+            }
         }
         
         public async Task ExecuteAsync()
@@ -102,7 +109,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                 false);
             foreach (var queuedEmail in queuedEmails)
             {
-                bool beingThrottled = false;
+                var beingThrottled = false;
                 try
                 {
                     var (isVendorNotification, vendor) = await IsNotificationForVendorAsync(queuedEmail);
