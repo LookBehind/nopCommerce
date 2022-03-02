@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Expo.Server.Client;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Orders;
@@ -55,32 +56,30 @@ namespace Nop.Services.Common
             if (rateRemainderCustomers.Count > 0)
             {
                 //DateTime currentDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
-                var osIds = new List<int> { (int)OrderStatus.Complete, (int)OrderStatus.Pending, (int)OrderStatus.Processing };
+                var osIds = new List<int> { (int)OrderStatus.Complete };
                 foreach (var rateRemainderCustomer in rateRemainderCustomers)
                 {
-                    var customerOrders = await _orderService.SearchOrdersAsync(customerId: rateRemainderCustomer.Id, osIds: osIds, sendRateNotification: true); //createdToUtc: currentDate,
-                    if (customerOrders.Count > 0)
+                    var customerOrder = (await _orderService.SearchOrdersAsync(customerId: rateRemainderCustomer.Id, osIds: osIds, sendRateNotification: true, schedulDate: DateTime.UtcNow))
+                        .OrderByDescending(o => o.ScheduleDate).FirstOrDefault();
+                    if (customerOrder != null)
                     {
-                        foreach (var customerOrder in customerOrders)
+                        TimeSpan diff = DateTime.UtcNow.Subtract(customerOrder.ScheduleDate);
+                        if (diff.Hours >= 1 && DateTime.UtcNow.Date == customerOrder.ScheduleDate.Date)
                         {
-                            TimeSpan diff = DateTime.Now.Subtract(customerOrder.ScheduleDate);
-                            if (diff.Hours >= 1)
+                            if (!string.IsNullOrEmpty(rateRemainderCustomer.PushToken))
                             {
-                                if (!string.IsNullOrEmpty(rateRemainderCustomer.PushToken))
+                                var expoSDKClient = new PushApiTaskClient();
+                                var pushTicketReq = new PushApiTaskTicketRequest()
                                 {
-                                    var expoSDKClient = new PushApiTaskClient();
-                                    var pushTicketReq = new PushApiTaskTicketRequest()
-                                    {
-                                        PushTo = new List<string>() { rateRemainderCustomer.PushToken },
-                                        PushTitle = await _localizationService.GetResourceAsync("RateRemainderNotificationTask.Title"),
-                                        PushBody = await _localizationService.GetResourceAsync("RateRemainderNotificationTask.Body"),
-                                        PushData = new { customerOrder.Id }
-                                    };
-                                    var result = await expoSDKClient.PushSendAsync(pushTicketReq);
+                                    PushTo = new List<string>() { rateRemainderCustomer.PushToken },
+                                    PushTitle = await _localizationService.GetResourceAsync("RateRemainderNotificationTask.Title"),
+                                    PushBody = await _localizationService.GetResourceAsync("RateRemainderNotificationTask.Body"),
+                                    PushData = new { customerOrder.Id }
+                                };
+                                var result = await expoSDKClient.PushSendAsync(pushTicketReq);
 
-                                    customerOrder.RateNotificationSend = true;
-                                    await _orderService.UpdateOrderAsync(customerOrder);
-                                }
+                                customerOrder.RateNotificationSend = true;
+                                await _orderService.UpdateOrderAsync(customerOrder);
                             }
                         }
                     }
