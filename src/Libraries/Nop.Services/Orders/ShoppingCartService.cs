@@ -325,8 +325,8 @@ namespace Nop.Services.Orders
             }
 
             //published
-            if (!product.Published && scheduledDateUTC.HasValue && 
-                !(await _productAvailabilityService.IsProductAvailabilityForDateAsync(product, scheduledDateUTC.Value)))
+            if (!product.Published || (scheduledDateUTC.HasValue && 
+                !(await _productAvailabilityService.IsProductAvailabilityForDateAsync(product, scheduledDateUTC.Value))))
             {
                 warnings.Add(await _localizationService.GetResourceAsync("ShoppingCart.ProductUnpublished"));
             }
