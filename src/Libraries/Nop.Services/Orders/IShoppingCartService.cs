@@ -72,6 +72,8 @@ namespace Nop.Services.Orders
         Task<IList<ShoppingCartItem>> GetShoppingCartAsync(Customer customer, ShoppingCartType? shoppingCartType = null,
             int storeId = 0, int? productId = null, DateTime? createdFromUtc = null, DateTime? createdToUtc = null);
 
+        Task<ShoppingCartItem> GetShoppingCartItemAsync(Customer customer, int shoppingCartItemId);
+        
         /// <summary>
         /// Validates shopping cart item attributes
         /// </summary>

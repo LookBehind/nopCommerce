@@ -1,6 +1,8 @@
 ﻿using System.Collections.Generic;
 using System.Threading.Tasks;
+using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Orders;
+using Nop.Web.Models.Api.Order;
 using Nop.Web.Models.Media;
 using Nop.Web.Models.ShoppingCart;
 
@@ -115,5 +117,9 @@ namespace Nop.Web.Factories
         /// The task result contains the picture model
         /// </returns>
         Task<PictureModel> PrepareCartItemPictureModelAsync(ShoppingCartItem sci, int pictureSize, bool showDefaultPicture, string productName);
+
+        /// Prepare CartModel for API
+        ///
+        Task<CartModel> PrepareCartModelAsync(Customer customer);
     }
 }

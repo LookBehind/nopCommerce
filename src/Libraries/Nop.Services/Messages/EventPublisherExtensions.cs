@@ -1,6 +1,7 @@
 ﻿using System.Threading.Tasks;
 using Nop.Core;
 using Nop.Core.Domain.Messages;
+using Nop.Core.Domain.Orders;
 using Nop.Core.Events;
 
 namespace Nop.Services.Messages
@@ -78,6 +79,19 @@ namespace Nop.Services.Messages
         public static async Task MessageTokensAddedAsync<U>(this IEventPublisher eventPublisher, MessageTemplate message, System.Collections.Generic.IList<U> tokens)
         {
             await eventPublisher.PublishAsync(new MessageTokensAddedEvent<U>(message, tokens));
+        }
+        
+        /// <summary>
+        /// Message for order is being sent
+        /// </summary>
+        /// <typeparam name="U">Type</typeparam>
+        /// <param name="eventPublisher">Event publisher</param>
+        /// <param name="message">Message</param>
+        /// <param name="order">Order</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public static async Task MessageForOrderBeingSentAsync(this IEventPublisher eventPublisher, MessageTemplate message, Order order)
+        {
+            await eventPublisher.PublishAsync(new MessageForOrderIsBeingSentEvent(message, order));
         }
     }
 }

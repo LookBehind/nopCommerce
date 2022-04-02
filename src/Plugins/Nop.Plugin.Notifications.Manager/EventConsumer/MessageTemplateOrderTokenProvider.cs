@@ -27,7 +27,8 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
 {
     public class MessageTemplateOrderTokenProvider : 
         IConsumer<EntityTokensAddedEvent<Order, Vendor, Token>>,
-        IConsumer<AdditionalTokensAddedEvent>
+        IConsumer<AdditionalTokensAddedEvent>,
+        IConsumer<MessageForOrderIsBeingSentEvent>
     {
         private readonly IOrderService _orderService;
         private readonly IVendorService _vendorService;
@@ -71,6 +72,27 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
             eventMessage.Tokens.Add(new Token("Order.ScheduleDate", 
                 await GetScheduleDateForVendorAsync(eventMessage.Entity.ScheduleDate, eventMessage.AttachedParam), true));
         }
+        
+        public Task HandleEventAsync(AdditionalTokensAddedEvent eventMessage)
+        {
+            eventMessage.AddTokens(_allowedTokens);
+            return Task.CompletedTask;
+        }
+        
+        public Task HandleEventAsync(MessageForOrderIsBeingSentEvent eventMessage)
+        {
+            if (eventMessage.Order.ScheduleDate.Date != DateTime.UtcNow.Date)
+            {
+                eventMessage.Message.DelayPeriod = MessageDelayPeriod.Hours;
+                
+                var scheduleDateAtNineAm = eventMessage.Order.ScheduleDate.Date;
+                scheduleDateAtNineAm = new DateTime(scheduleDateAtNineAm.Year, scheduleDateAtNineAm.Month,
+                    scheduleDateAtNineAm.Day, 9, 0, 0);
+                eventMessage.Message.DelayBeforeSend = (int)((scheduleDateAtNineAm - DateTime.UtcNow).TotalHours);
+            }
+            
+            return Task.CompletedTask;
+        }
 
         private async Task<string> GetScheduleDateForVendorAsync(DateTime scheduleDate, Vendor vendor)
         {
@@ -82,12 +104,6 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
             return _dateTimeHelper.ConvertToUserTime(scheduleDate, TimeZoneInfo.Utc,
                     vendorTimezone)
                 .ToString("t", DateTimeFormatInfo.InvariantInfo);
-        }
-
-        public Task HandleEventAsync(AdditionalTokensAddedEvent eventMessage)
-        {
-            eventMessage.AddTokens(_allowedTokens);
-            return Task.CompletedTask;
         }
 
         private async Task<string> ProductOrdersHumanReadableAsync(Order order, Vendor vendor)
@@ -140,5 +156,7 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
 
             return sb.ToString();
         }
+
+        
     }
 }

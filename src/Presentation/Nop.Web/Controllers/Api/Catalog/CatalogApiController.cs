@@ -73,6 +73,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly ISettingService _settingService;
         private readonly IProductAttributeService _productAttributeService;
         private readonly IProductAvailabilityService _productAvailabilityService;
+        private readonly IWebHelper _webHelper;
 
         private static readonly AttributeControlType[] _allowedAttributeControlTypes = new[] {
             AttributeControlType.DropdownList,
@@ -108,7 +109,8 @@ namespace Nop.Web.Controllers.Api.Security
             IStaticCacheManager staticCacheManager,
             ISettingService settingService,
             IProductAttributeService productAttributeService, 
-            IProductAvailabilityService productAvailabilityService)
+            IProductAvailabilityService productAvailabilityService, 
+            IWebHelper webHelper)
         {
             _localizationSettings = localizationSettings;
             _workflowMessageService = workflowMessageService;
@@ -134,6 +136,7 @@ namespace Nop.Web.Controllers.Api.Security
             _settingService = settingService;
             _productAttributeService = productAttributeService;
             _productAvailabilityService = productAvailabilityService;
+            _webHelper = webHelper;
         }
 
         #endregion
@@ -322,6 +325,7 @@ namespace Nop.Web.Controllers.Api.Security
             if (products == null)
                 throw new ArgumentNullException(nameof(products));
 
+            var imageUriBuilder = new UriBuilder(_webHelper.GetStoreLocation());
             var models = new List<ProductOverviewApiModel>();
 
             foreach (var product in products)
@@ -341,6 +345,8 @@ namespace Nop.Web.Controllers.Api.Security
                         showHidden: true,
                         vendorId: product.VendorId)).ToImmutableDictionary(k => k.ProductId)));
 
+                imageUriBuilder.Path = productDetailsModel.DefaultPictureModel.ImageUrl;
+                
                 models.Add(new ProductOverviewApiModel
                 {
                     Id = product.Id,
@@ -358,7 +364,7 @@ namespace Nop.Web.Controllers.Api.Security
                         popularityByVendor.TryGetValue(product.Id, out var productPopularity)
                             ? productPopularity.TotalQuantity
                             : 0,
-                    ImageUrl = productDetailsModel.DefaultPictureModel.ImageUrl, // TODO: add all images
+                    ImageUrl = imageUriBuilder.ToString(), // TODO: add all images
                     RibbonEnable = product.RibbonEnable,
                     RibbonText = product.RibbonText,
                     Vendor = productDetailsModel.VendorModel,

@@ -8,14 +8,15 @@ namespace Nop.Web.Extensions.Api
 {
     public static class ApiModelConversionExtensions
     {
-        public static async Task<string> ConvertToAttributesXmlAsync(this ProductOrderWithAttributes model,
-            IProductAttributeParser productAttributeParser, IProductAttributeService productAttributeService)
+        public static async Task<string> ConvertToAttributesXmlAsync(int productId, 
+            ProductOrderSimpleAttribute[] productAttributes, IProductAttributeParser productAttributeParser, 
+            IProductAttributeService productAttributeService)
         {
             string attributesXml = string.Empty;
             var attributeMappings = 
-                await productAttributeService.GetProductAttributeMappingsByProductIdAsync(model.ProductId);
+                await productAttributeService.GetProductAttributeMappingsByProductIdAsync(productId);
             
-            foreach (var modelAttribute in model.ProductAttributes)
+            foreach (var modelAttribute in productAttributes)
             {
                 var productAttributeMapping = attributeMappings.FirstOrDefault(am =>
                     am.ProductAttributeId == modelAttribute.ProductAttributeId);
@@ -40,5 +41,14 @@ namespace Nop.Web.Extensions.Api
 
             return attributesXml;
         }
+        
+        public static async Task<string> ConvertToAttributesXmlAsync(this ProductOrderWithAttributes model,
+            IProductAttributeParser productAttributeParser, IProductAttributeService productAttributeService)
+        {
+            return await ConvertToAttributesXmlAsync(model.ProductId, model.ProductAttributes, productAttributeParser,
+                productAttributeService);
+        }
+        
+        
     }
 }
