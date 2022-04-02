@@ -737,6 +737,17 @@ namespace Nop.Services.Orders
             return await _staticCacheManager.GetAsync(key, async () => await items.ToListAsync());
         }
 
+        public async Task<ShoppingCartItem> GetShoppingCartItemAsync(Customer customer, int shoppingCartItemId)
+        {
+            if (customer == null)
+                throw new ArgumentNullException(nameof(customer));
+
+            var item = _sciRepository.Table.Where(sci => 
+                sci.CustomerId == customer.Id && sci.Id == shoppingCartItemId);
+
+            return await item.SingleOrDefaultAsync();
+        }
+
         /// <summary>
         /// Validates shopping cart item attributes
         /// </summary>

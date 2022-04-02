@@ -35,6 +35,7 @@ using Nop.Services.Stores;
 using Nop.Services.Tax;
 using Nop.Services.Vendors;
 using Nop.Web.Infrastructure.Cache;
+using Nop.Web.Models.Api.Order;
 using Nop.Web.Models.Common;
 using Nop.Web.Models.Media;
 using Nop.Web.Models.ShoppingCart;
@@ -94,6 +95,8 @@ namespace Nop.Web.Factories
         private readonly ShoppingCartSettings _shoppingCartSettings;
         private readonly TaxSettings _taxSettings;
         private readonly VendorSettings _vendorSettings;
+        private readonly ICategoryService _categoryService;
+        private readonly IPriceCalculationService _priceCalculationService;
 
         #endregion
 
@@ -144,7 +147,9 @@ namespace Nop.Web.Factories
             ShippingSettings shippingSettings,
             ShoppingCartSettings shoppingCartSettings,
             TaxSettings taxSettings,
-            VendorSettings vendorSettings)
+            VendorSettings vendorSettings, 
+            ICategoryService categoryService, 
+            IPriceCalculationService priceCalculationService)
         {
             _addressSettings = addressSettings;
             _captchaSettings = captchaSettings;
@@ -192,6 +197,8 @@ namespace Nop.Web.Factories
             _shoppingCartSettings = shoppingCartSettings;
             _taxSettings = taxSettings;
             _vendorSettings = vendorSettings;
+            _categoryService = categoryService;
+            _priceCalculationService = priceCalculationService;
         }
 
         #endregion
@@ -1460,6 +1467,76 @@ namespace Nop.Web.Factories
             });
 
             return model;
+        }
+
+        public async Task<CartModel> PrepareCartModelAsync(Customer customer)
+        {
+            var currentStore = await _storeContext.GetCurrentStoreAsync();
+            var shoppingCart = await _shoppingCartService.GetShoppingCartAsync(customer, 
+                ShoppingCartType.ShoppingCart, currentStore.Id);
+            
+            var cartTotal = await _orderTotalCalculationService.GetShoppingCartTotalAsync(
+                shoppingCart, false);
+
+            var items = new List<ShoppingCartItemModel>(shoppingCart.Count);
+            foreach (var cartItem in shoppingCart)
+            {
+                var product = await _productService.GetProductByIdAsync(cartItem.ProductId);
+
+                // Main category
+                string categoryName = string.Empty;
+                var productCategory = 
+                    (await _categoryService.GetProductCategoriesByProductIdAsync(product.Id)).FirstOrDefault();
+                if (productCategory != null)
+                {
+                    var category = await _categoryService.GetCategoryByIdAsync(productCategory.CategoryId);
+                    categoryName = category.Name;
+                }
+
+                // Product picture
+                var productPicture = await _pictureService.GetProductPictureAsync(product, cartItem.AttributesXml);
+                var (pictureUrl, _) = await _pictureService.GetPictureUrlAsync(productPicture);
+                
+                // Price
+                var (finalPriceWithDiscountBase, _) = await _taxService.GetProductPriceAsync(product, 
+                    (await _priceCalculationService.GetFinalPriceAsync(product, 
+                        await _workContext.GetCurrentCustomerAsync())).finalPrice
+                    );
+                var priceValue = await _currencyService.ConvertFromPrimaryStoreCurrencyAsync(finalPriceWithDiscountBase, 
+                    await _workContext.GetWorkingCurrencyAsync());
+                var price = await _priceFormatter.FormatPriceAsync(priceValue);
+                
+                // Rating
+                var productReviews = await _productService.GetAllProductReviewsAsync(productId: product.Id, 
+                    approved: true, storeId: currentStore.Id);
+                    
+                // Vendor
+                var vendor = await _vendorService.GetVendorByIdAsync(product.VendorId);
+                
+                items.Add(new ShoppingCartItemModel()
+                {
+                    CategoryName = categoryName,
+                    ImageUrl = pictureUrl,
+                    Name = await _localizationService.GetLocalizedAsync(product, x => x.Name),
+                    Price = price,
+                    PriceValue = priceValue,
+                    Quantity = cartItem.Quantity,
+                    RatingSum = productReviews.Sum(pr => pr.Rating),
+                    ShoppingCartItemId = cartItem.Id,
+                    TotalReviews = productReviews.Count,
+                    Vendor = new VendorModel()
+                    {
+                        Name = await _localizationService.GetLocalizedAsync(vendor, v => v.Name),
+                        PictureUrl = await _pictureService.GetPictureUrlAsync(vendor.PictureId)
+                    }
+                });
+            }
+
+            return new CartModel()
+            {
+                CartTotal = cartTotal.shoppingCartTotal!.Value,
+                Items = items
+            };
         }
 
         #endregion

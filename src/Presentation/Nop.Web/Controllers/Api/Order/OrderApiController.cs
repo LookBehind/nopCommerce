@@ -32,7 +32,9 @@ using Nop.Web.Models.Api.Catalog;
 using Newtonsoft.Json.Linq;
 using System.IO;
 using System.Text;
+using AutoMapper;
 using Nop.Web.Extensions.Api;
+using Nop.Web.Factories;
 using Nop.Web.Models.Api.Order;
 using Nop.Web.Models.Catalog;
 
@@ -65,7 +67,8 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly ICompanyService _companyService;
         private readonly IProductAttributeParser _productAttributeParser;
         private readonly IProductAttributeService _productAttributeService;
-        private readonly ShoppingCartSettings _shoppingCartSettings;
+        private readonly ILogger _logger;
+        private readonly IShoppingCartModelFactory _shoppingCartModelFactory;
 
         #endregion
 
@@ -90,8 +93,9 @@ namespace Nop.Web.Controllers.Api.Security
             ICustomerActivityService customerActivityService,
             ICompanyService companyService,
             IProductAttributeParser productAttributeParser,
-            ShoppingCartSettings shoppingCartSettings, 
-            IProductAttributeService productAttributeService)
+            IProductAttributeService productAttributeService, 
+            ILogger logger, 
+            IShoppingCartModelFactory shoppingCartModelFactory)
         {
             _orderService = orderService;
             _customerService = customerService;
@@ -112,136 +116,14 @@ namespace Nop.Web.Controllers.Api.Security
             _customerActivityService = customerActivityService;
             _companyService = companyService;
             _productAttributeParser = productAttributeParser;
-            _shoppingCartSettings = shoppingCartSettings;
             _productAttributeService = productAttributeService;
+            _logger = logger;
+            _shoppingCartModelFactory = shoppingCartModelFactory;
         }
 
         #endregion
 
         #region Utility
-
-        /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task<IActionResult> GetProductToCartDetailsAsync(List<string> addToCartWarnings, ShoppingCartType cartType,
-            Product product)
-        {
-            if (addToCartWarnings.Any())
-            {
-                //cannot be added to the cart/wishlist
-                //let's display warnings
-                return Json(new
-                {
-                    success = false,
-                    message = addToCartWarnings.ToArray()
-                });
-            }
-
-            //added to the cart/wishlist
-            switch (cartType)
-            {
-                case ShoppingCartType.Wishlist:
-                    {
-                        //activity log
-                        await _customerActivityService.InsertActivityAsync("PublicStore.AddToWishlist",
-                            string.Format(await _localizationService.GetResourceAsync("ActivityLog.PublicStore.AddToWishlist"), product.Name), product);
-
-                        if (_shoppingCartSettings.DisplayWishlistAfterAddingProduct)
-                        {
-                            //redirect to the wishlist page
-                            return Json(new
-                            {
-                                redirect = Url.RouteUrl("Wishlist")
-                            });
-                        }
-
-                        //display notification message and update appropriate blocks
-                        var shoppingCarts = await _shoppingCartService.GetShoppingCartAsync(await _workContext.GetCurrentCustomerAsync(), ShoppingCartType.Wishlist, (await _storeContext.GetCurrentStoreAsync()).Id);
-
-                        var updateTopWishlistSectionHtml = string.Format(
-                            await _localizationService.GetResourceAsync("Wishlist.HeaderQuantity"),
-                            shoppingCarts.Sum(item => item.Quantity));
-
-                        return Json(new
-                        {
-                            success = true,
-                            message = string.Format(
-                                await _localizationService.GetResourceAsync("Products.ProductHasBeenAddedToTheWishlist.Link"),
-                                Url.RouteUrl("Wishlist")),
-                            updatetopwishlistsectionhtml = updateTopWishlistSectionHtml
-                        });
-                    }
-
-                case ShoppingCartType.ShoppingCart:
-                default:
-                    {
-                        //activity log
-                        await _customerActivityService.InsertActivityAsync("PublicStore.AddToShoppingCart",
-                            string.Format(await _localizationService.GetResourceAsync("ActivityLog.PublicStore.AddToShoppingCart"), product.Name), product);
-
-                        if (_shoppingCartSettings.DisplayCartAfterAddingProduct)
-                        {
-                            //redirect to the shopping cart page
-                            return Json(new
-                            {
-                                redirect = Url.RouteUrl("ShoppingCart")
-                            });
-                        }
-
-                        //display notification message and update appropriate blocks
-                        var shoppingCarts = await _shoppingCartService.GetShoppingCartAsync(await _workContext.GetCurrentCustomerAsync(), ShoppingCartType.ShoppingCart, (await _storeContext.GetCurrentStoreAsync()).Id);
-
-                        var updateTopCartSectionHtml = string.Format(
-                            await _localizationService.GetResourceAsync("ShoppingCart.HeaderQuantity"),
-                            shoppingCarts.Sum(item => item.Quantity));
-
-
-                        return Json(new
-                        {
-                            success = true,
-                            message = string.Format(await _localizationService.GetResourceAsync("Products.ProductHasBeenAddedToTheCart.Link"),
-                                Url.RouteUrl("ShoppingCart")),
-                            updatetopcartsectionhtml = updateTopCartSectionHtml
-                        });
-                    }
-            }
-        }
-
-        /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task SaveItemAsync(ShoppingCartItem updatecartitem, List<string> addToCartWarnings, Product product,
-           ShoppingCartType cartType, string attributes, decimal customerEnteredPriceConverted, DateTime? rentalStartDate,
-           DateTime? rentalEndDate, int quantity)
-        {
-            if (updatecartitem == null)
-            {
-                //add to the cart
-                addToCartWarnings.AddRange(await _shoppingCartService.AddToCartAsync(await _workContext.GetCurrentCustomerAsync(),
-                    product, cartType, (await _storeContext.GetCurrentStoreAsync()).Id,
-                    attributes, customerEnteredPriceConverted,
-                    rentalStartDate, rentalEndDate, quantity, true));
-            }
-            else
-            {
-                var cart = await _shoppingCartService.GetShoppingCartAsync(await _workContext.GetCurrentCustomerAsync(), updatecartitem.ShoppingCartType, (await _storeContext.GetCurrentStoreAsync()).Id);
-
-                var otherCartItemWithSameParameters = await _shoppingCartService.FindShoppingCartItemInTheCartAsync(
-                    cart, updatecartitem.ShoppingCartType, product, attributes, customerEnteredPriceConverted,
-                    rentalStartDate, rentalEndDate);
-                if (otherCartItemWithSameParameters != null &&
-                    otherCartItemWithSameParameters.Id == updatecartitem.Id)
-                {
-                    //ensure it's some other shopping cart item
-                    otherCartItemWithSameParameters = null;
-                }
-                //update existing item
-                addToCartWarnings.AddRange(await _shoppingCartService.UpdateShoppingCartItemAsync(await _workContext.GetCurrentCustomerAsync(),
-                    updatecartitem.Id, attributes, customerEnteredPriceConverted,
-                    rentalStartDate, rentalEndDate, quantity + (otherCartItemWithSameParameters?.Quantity ?? 0), true));
-                if (otherCartItemWithSameParameters != null && !addToCartWarnings.Any())
-                {
-                    //delete the same shopping cart item (the other one)
-                    await _shoppingCartService.DeleteShoppingCartItemAsync(otherCartItemWithSameParameters);
-                }
-            }
-        }
 
         protected virtual async Task<List<CartErrorModel>> AddProductsToCartAsync(
             Core.Domain.Customers.Customer customer,
@@ -364,6 +246,99 @@ namespace Nop.Web.Controllers.Api.Security
                 message = await _localizationService.GetResourceAsync("Order.Cancelled.Successfully") });
         }
 
+        [HttpPost("add-to-cart")]
+        public async Task<CartModel> AddToCartAsync([FromBody]AddToCartModel addToCartModel)
+        {
+            var product = await _productService.GetProductByIdAsync(addToCartModel.ProductId);
+            if (product == null)
+            {
+                throw new ArgumentException(
+                    await _localizationService.GetResourceAsync("Product.Not.Found"), 
+                    nameof(addToCartModel.ProductId));
+            }
+            
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var currentStoreId = (await _storeContext.GetCurrentStoreAsync()).Id;
+            
+            var scheduledDateUTC = await ConvertCustomerLocalTimeToUTCAsync(
+                customer,
+                addToCartModel.ScheduleDate);
+
+            var attributesXml = await ApiModelConversionExtensions.ConvertToAttributesXmlAsync(
+                addToCartModel.ProductId, addToCartModel.ProductAttributes,
+                _productAttributeParser, _productAttributeService); //TODO: move to attributes service with DI
+
+            var addToCartWarnings = await _shoppingCartService.AddToCartAsync(customer: customer,
+                product: product,
+                shoppingCartType: ShoppingCartType.ShoppingCart,
+                attributesXml: attributesXml,
+                storeId: currentStoreId,
+                scheduledDateUTC: scheduledDateUTC
+            );
+
+            if (addToCartWarnings.Any())
+            {
+                await _logger.ErrorAsync(string.Join('\n', addToCartWarnings), customer: customer);
+                throw new Exception(await _localizationService.GetResourceAsync("Order.Cancelled.Failed"));
+            }
+            
+            return await _shoppingCartModelFactory.PrepareCartModelAsync(customer);
+        }
+
+        [HttpPost("cart-item-increase/{shoppingCartItemId}")]
+        public async Task<CartModel> CartItemIncrease(int shoppingCartItemId)
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            
+            var shoppingCartItem = await _shoppingCartService.GetShoppingCartItemAsync(customer, shoppingCartItemId);
+            if (shoppingCartItem == null)
+            {
+                throw new ArgumentException(nameof(shoppingCartItemId));
+            }
+
+            var itemWarnings = await _shoppingCartService.UpdateShoppingCartItemAsync(customer,
+                shoppingCartItem.Id,
+                shoppingCartItem.AttributesXml,
+                shoppingCartItem.CustomerEnteredPrice,
+                quantity: shoppingCartItem.Quantity + 1,
+                resetCheckoutData: false);
+            
+            if (itemWarnings.Any())
+            {
+                await _logger.ErrorAsync(string.Join('\n', itemWarnings), customer: customer);
+                throw new Exception(await _localizationService.GetResourceAsync("Order.Cancelled.Failed"));
+            }
+            
+            return await _shoppingCartModelFactory.PrepareCartModelAsync(customer);
+        }
+        
+        [HttpPost("cart-item-decrease/{shoppingCartItemId}")]
+        public async Task<CartModel> CartItemDecrease(int shoppingCartItemId)
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            
+            var shoppingCartItem = await _shoppingCartService.GetShoppingCartItemAsync(customer, shoppingCartItemId);
+            if (shoppingCartItem == null)
+            {
+                throw new ArgumentException(nameof(shoppingCartItemId));
+            }
+
+            var itemWarnings = await _shoppingCartService.UpdateShoppingCartItemAsync(customer,
+                shoppingCartItem.Id,
+                shoppingCartItem.AttributesXml,
+                shoppingCartItem.CustomerEnteredPrice,
+                quantity: shoppingCartItem.Quantity - 1,
+                resetCheckoutData: false);
+            
+            if (itemWarnings.Any())
+            {
+                await _logger.ErrorAsync(string.Join('\n', itemWarnings), customer: customer);
+                throw new Exception(await _localizationService.GetResourceAsync("Order.Cancelled.Failed"));
+            }
+            
+            return await _shoppingCartModelFactory.PrepareCartModelAsync(customer);
+        }
+        
         [HttpPost("delete-cart/{ids}")]
         public async Task<IActionResult> DeleteCart(string ids)
         {

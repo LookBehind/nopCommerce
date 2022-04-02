@@ -440,6 +440,9 @@ namespace Nop.Services.Messages
                 //event notification
                 await _eventPublisher.MessageTokensAddedAsync(messageTemplate, tokens);
 
+                //messageTemplate notifications
+                await _eventPublisher.MessageForOrderBeingSentAsync(messageTemplate, order);
+                
                 var toEmail = vendor.Email;
                 var toName = vendor.Name;
 

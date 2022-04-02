@@ -155,7 +155,6 @@ namespace Nop.Web.Factories
             _seoSettings = seoSettings;
             _shippingSettings = shippingSettings;
             _vendorSettings = vendorSettings;
-            
         }
 
         #endregion
@@ -1544,7 +1543,7 @@ namespace Nop.Web.Factories
                         model.AssociatedProducts.Add(await PrepareProductDetailsModelAsync(associatedProduct, null, true));
                 }
             }
-
+            
             return model;
         }
 
