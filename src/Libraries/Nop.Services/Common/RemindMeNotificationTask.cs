@@ -76,7 +76,9 @@ namespace Nop.Services.Common
                 foreach (var customer in customers)
                 {
                     var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-                    var timezoneInfo = TZConvert.GetTimeZoneInfo(company.TimeZone);
+                    var timezoneInfo = company == null || company.TimeZone == null ?
+                        await _dateTimeHelper.GetCustomerTimeZoneAsync(customer) :
+                        TZConvert.GetTimeZoneInfo(company.TimeZone);
                     var customerTime = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
                     if (customerTime.Hour == startingHour)
                     {
