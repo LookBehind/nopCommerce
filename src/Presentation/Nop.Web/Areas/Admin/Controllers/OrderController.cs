@@ -1920,7 +1920,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         [HttpPost]
         public async Task<IActionResult> ScheduleDate(OrderScheduleModel model)
         {
-            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders) ||
+                await _customerService.IsVendorAsync(await _workContext.GetCurrentCustomerAsync()))
                 return AccessDeniedView();
 
             if (string.IsNullOrWhiteSpace(model.ScheduleDate1))
