@@ -24,6 +24,7 @@ using Nop.Services.Messages;
 using Nop.Services.Security;
 using Nop.Services.Seo;
 using Nop.Services.Stores;
+using Nop.Services.Vendors;
 using Nop.Web.Areas.Admin.Factories;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Catalog;
@@ -61,6 +62,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         private readonly ICustomerModelFactory _customerModelFactory;
         private readonly IAddressAttributeParser _addressAttributeParser;
         private readonly IAddressService _addressService;
+        private readonly IVendorService _vendorService;
 
         #endregion
 
@@ -87,7 +89,8 @@ namespace Nop.Web.Areas.Admin.Controllers
             IWorkContext workContext,
             ICustomerModelFactory customerModelFactory,
             IAddressAttributeParser addressAttributeParser,
-            IAddressService addressService)
+            IAddressService addressService,
+            IVendorService vendorService)
         {
             _aclService = aclService;
             _companyModelFactory = companyModelFactory;
@@ -111,6 +114,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             _customerModelFactory = customerModelFactory;
             _addressAttributeParser = addressAttributeParser;
             _addressService = addressService;
+            _vendorService = vendorService;
         }
 
         #endregion
@@ -438,7 +442,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                         customer.BillingAddressId = addressId;
                         await _customerService.UpdateCustomerAsync(customer);
                     }
-                    else if(existingCompanyCustomers.Any())
+                    else if (existingCompanyCustomers.Any())
                     {
                         var newAddressId = 0;
                         foreach (var existingCompanyCustomer in existingCompanyCustomers)
@@ -460,6 +464,104 @@ namespace Nop.Web.Areas.Admin.Controllers
             ViewBag.RefreshPage = true;
 
             return View(new AddCustomerToCompanySearchModel());
+        }
+
+        #endregion
+
+        #region vendors
+
+        [HttpPost]
+        [FormValueRequired("save")]
+        public virtual async Task<IActionResult> VendorAddPopup(AddVendorToCompanyModel model)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return AccessDeniedView();
+
+            //get selected products
+            var selectedVendors = await _vendorService.GetVendorsByIdsAsync(model.SelectedVendorIds.ToArray());
+            foreach (var selectedVendor in selectedVendors)
+            {
+                var existingCompanyVendor = (await _companyService.GetCompanyVendorsByCompanyIdAsync(model.CompanyId, showHidden: true))
+                    .Where(v => v.VendorId == selectedVendor.Id).FirstOrDefault();
+                if (existingCompanyVendor == null)
+                {
+                    await _companyService.InsertCompanyVendorAsync(new CompanyVendor { CompanyId = model.CompanyId, VendorId = selectedVendor.Id });
+                }
+            }
+            ViewBag.RefreshPage = true;
+
+            return View(new AddVendorToCompanySearchModel());
+        }
+
+        public virtual async Task<IActionResult> VendorAddPopup(int companyId)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return AccessDeniedView();
+
+            var searchModel = new AddVendorToCompanySearchModel();
+            searchModel.CompanyId = companyId;
+            //prepare model
+            var model = await _companyModelFactory.PrepareAddVendorToCompanySearchModelAsync(searchModel);
+
+            return View(model);
+        }
+
+        [HttpPost]
+        public virtual async Task<IActionResult> VendorList(CompanyVendorSearchModel searchModel)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return await AccessDeniedDataTablesJson();
+
+            //try to get a Company with the specified id
+            var company = await _companyService.GetCompanyByIdAsync(searchModel.CompanyId)
+                ?? throw new ArgumentException("No Company found with the specified id");
+
+            //prepare model PrepareCompanyVendorListModelAsync
+            var model = await _companyModelFactory.PrepareCompanyVendorListModelAsync(searchModel, company);
+
+            return Json(model);
+        }
+
+        public virtual async Task<IActionResult> VendorDelete(int id)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return AccessDeniedView();
+
+            //try to get a product Company with the specified id
+            var companyVendor = await _companyService.GetCompanyVendorByIdAsync(id)
+                ?? throw new ArgumentException("No Customer Company mapping found with the specified id", nameof(id));
+
+            await _companyService.DeleteCompanyVendorAsync(companyVendor);
+
+            return new NullJsonResult();
+        }
+
+        public virtual async Task<IActionResult> VendorUpdate(CompanyVendorModel model)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return AccessDeniedView();
+
+            //try to get a product Company with the specified id
+            var companyVendor = await _companyService.GetCompanyVendorByIdAsync(model.Id)
+                ?? throw new ArgumentException("No product Company mapping found with the specified id");
+
+            //fill entity from product
+            companyVendor = model.ToEntity(companyVendor);
+            await _companyService.UpdateCompanyVendorAsync(companyVendor);
+
+            return new NullJsonResult();
+        }
+
+        [HttpPost]
+        public virtual async Task<IActionResult> VendorAddPopupList(AddVendorToCompanySearchModel searchModel)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return await AccessDeniedDataTablesJson();
+
+            //prepare model
+            var model = await _companyModelFactory.PrepareAddVendorToCompanyListModelAsync(searchModel);
+
+            return Json(model);
         }
 
         #endregion
@@ -520,7 +622,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             if (ModelState.IsValid)
             {
-               
+
                 var address = model.Address.ToEntity<Address>();
                 address.CustomAttributes = customAttributes;
                 address.CreatedOnUtc = DateTime.UtcNow;

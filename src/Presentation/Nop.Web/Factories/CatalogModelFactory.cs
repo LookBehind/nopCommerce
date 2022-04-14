@@ -35,6 +35,7 @@ using Nop.Web.Infrastructure.Cache;
 using Nop.Web.Models.Catalog;
 using Nop.Web.Models.Media;
 using Nop.Services.Configuration;
+using Nop.Services.Companies;
 
 namespace Nop.Web.Factories
 {
@@ -74,6 +75,7 @@ namespace Nop.Web.Factories
         private readonly MediaSettings _mediaSettings;
         private readonly VendorSettings _vendorSettings;
         private readonly ISettingService _settingService;
+        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -110,7 +112,8 @@ namespace Nop.Web.Factories
             IWorkContext workContext,
             MediaSettings mediaSettings,
             VendorSettings vendorSettings,
-            ISettingService settingService)
+            ISettingService settingService,
+            ICompanyService companyService)
         {
             _blogSettings = blogSettings;
             _catalogSettings = catalogSettings;
@@ -144,6 +147,7 @@ namespace Nop.Web.Factories
             _mediaSettings = mediaSettings;
             _vendorSettings = vendorSettings;
             _settingService = settingService;
+            _companyService = companyService;
         }
 
         #endregion
@@ -466,10 +470,10 @@ namespace Nop.Web.Factories
                 }).ToListAsync();
 
             var displaySubcategoriesInCatalogPage = await _settingService.GetSettingAsync(
-                "catalogsettings.displaysubcategoriesincatalogpage", 
+                "catalogsettings.displaysubcategoriesincatalogpage",
                 (await _storeContext.GetCurrentStoreAsync()).Id,
                 true);
-            model.DisplaySubcategoriesInCatalogPage = displaySubcategoriesInCatalogPage != null && 
+            model.DisplaySubcategoriesInCatalogPage = displaySubcategoriesInCatalogPage != null &&
                 displaySubcategoriesInCatalogPage.Value == "False" ? false : true;
 
             //featured products
@@ -712,7 +716,7 @@ namespace Nop.Web.Factories
             //view mode
             await PrepareViewModesAsync(model, command);
             //page size
-            await PreparePageSizeOptionsAsync(model, command, category.AllowCustomersToSelectPageSize, 
+            await PreparePageSizeOptionsAsync(model, command, category.AllowCustomersToSelectPageSize,
                 category.PageSizeOptions, category.PageSize);
 
             var categoryIds = new List<int> { category.Id };
@@ -795,7 +799,7 @@ namespace Nop.Web.Factories
 
             return model;
         }
-        
+
         /// <summary>
         /// Prepare category (simple) models
         /// </summary>
@@ -911,7 +915,7 @@ namespace Nop.Web.Factories
                 return XDocument.Parse(xml);
             });
         }
-        
+
         #endregion
 
         #region Manufacturers
@@ -1772,6 +1776,10 @@ namespace Nop.Web.Factories
                         model.PriceRangeFilter = await PreparePriceRangeFilterAsync(selectedPriceRange, availablePriceRange);
                     }
 
+                    var customer = await _workContext.GetCurrentCustomerAsync();
+                    var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+                    var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company.Id))
+                        .Select(v => v.VendorId).ToArray();
                     //products
                     products = await _productService.SearchProductsAsync(
                         command.PageNumber - 1,
@@ -1787,7 +1795,8 @@ namespace Nop.Web.Factories
                         searchProductTags: searchInProductTags,
                         languageId: workingLanguage.Id,
                         orderBy: (ProductSortingEnum)command.OrderBy,
-                        vendorId: vendorId);
+                        vendorId: vendorId,
+                        vendors: vendors.Length == 0 ? null : vendors);
 
                     //search term statistics
                     if (!string.IsNullOrEmpty(searchTerms))
@@ -1853,7 +1862,7 @@ namespace Nop.Web.Factories
         #endregion
 
         #region Common
-        
+
         /// <summary>
         /// Prepare sorting options
         /// </summary>
@@ -2001,7 +2010,7 @@ namespace Nop.Web.Factories
 
             return Task.CompletedTask;
         }
-        
+
         #endregion
     }
 }

@@ -11,6 +11,7 @@ using Nop.Core.Domain.Vendors;
 using Nop.Core.Events;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
+using Nop.Services.Companies;
 using Nop.Services.Configuration;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
@@ -73,6 +74,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly ISettingService _settingService;
         private readonly IProductAttributeService _productAttributeService;
         private readonly IProductAvailabilityService _productAvailabilityService;
+        private readonly ICompanyService _companyService;
 
         private static readonly AttributeControlType[] _allowedAttributeControlTypes = new[] {
             AttributeControlType.DropdownList,
@@ -107,8 +109,9 @@ namespace Nop.Web.Controllers.Api.Security
             IDateTimeHelper dateTimeHelper,
             IStaticCacheManager staticCacheManager,
             ISettingService settingService,
-            IProductAttributeService productAttributeService, 
-            IProductAvailabilityService productAvailabilityService)
+            IProductAttributeService productAttributeService,
+            IProductAvailabilityService productAvailabilityService,
+            ICompanyService companyService)
         {
             _localizationSettings = localizationSettings;
             _workflowMessageService = workflowMessageService;
@@ -134,6 +137,7 @@ namespace Nop.Web.Controllers.Api.Security
             _settingService = settingService;
             _productAttributeService = productAttributeService;
             _productAvailabilityService = productAvailabilityService;
+            _companyService = companyService;
         }
 
         #endregion
@@ -265,19 +269,19 @@ namespace Nop.Web.Controllers.Api.Security
         [NonAction]
         private async Task<ProductAttributesApiModel> PrepareProductAttributesApiModel(Product product)
         {
-            var allowedProductAttributeMappings = 
+            var allowedProductAttributeMappings =
                 (await _productAttributeService.GetProductAttributeMappingsByProductIdAsync(product.Id))
-                .Where(pam => 
+                .Where(pam =>
                     _allowedAttributeControlTypes.Contains(pam.AttributeControlType))
                 .ToArray();
 
-            var productAttributes = 
+            var productAttributes =
                 (await _productAttributeService.GetProductAttributeByIdsAsync(
                 allowedProductAttributeMappings
                     .Select(pam => pam.ProductAttributeId)
                     .ToArray()));
 
-            var pamJoinedWithAttributes = 
+            var pamJoinedWithAttributes =
                 allowedProductAttributeMappings.GroupJoin(
                 productAttributes,
                 pamKey => pamKey.ProductAttributeId,
@@ -305,16 +309,16 @@ namespace Nop.Web.Controllers.Api.Security
                         };
                     });
                 }).ToArray();
-            
+
             var result = await Task.WhenAll(pamJoinedWithAttributes
                 .SelectMany(pam => pam));
-            
+
             return new ProductAttributesApiModel
             {
                 ProductAttributes = result
             };
         }
-        
+
         [NonAction]
         protected virtual async Task<IEnumerable<ProductOverviewApiModel>> PrepareApiProductOverviewModels(
             IEnumerable<Product> products)
@@ -331,9 +335,9 @@ namespace Nop.Web.Controllers.Api.Security
                 {
                     continue;
                 }
-                
+
                 var productDetailsModel = await _productModelFactory.PrepareProductDetailsModelAsync(product);
-                
+
                 var popularityByVendor = (await _staticCacheManager.GetAsync(
                     _staticCacheManager.PrepareKeyForDefaultCache(
                         NopModelCacheDefaults.ApiBestsellersVendorIdsKey, product.VendorId),
@@ -348,7 +352,7 @@ namespace Nop.Web.Controllers.Api.Security
                     ShortDescription = productDetailsModel.ShortDescription,
                     FullDescription = productDetailsModel.FullDescription,
                     SeName = productDetailsModel.SeName,
-                    CategoryName = string.Join(',', 
+                    CategoryName = string.Join(',',
                         productDetailsModel.Breadcrumb.CategoryBreadcrumb.Select(b => b.Name)),
                     Price = productDetailsModel.ProductPrice.Price,
                     PriceValue = productDetailsModel.ProductPrice.PriceValue,
@@ -444,14 +448,14 @@ namespace Nop.Web.Controllers.Api.Security
             if (categories.Count > 0)
             {
                 var result = categories.Select(cat => new
-                 {
-                     id = cat.Id,
-                     name = cat.Name,
-                     numberOfProducts = cat.NumberOfProducts,
-                     numberOfSubCategories = cat.SubCategories.Count,
-                     seName = cat.SeName,
-                     pictureUrl = cat.PictureUrl
-                 });
+                {
+                    id = cat.Id,
+                    name = cat.Name,
+                    numberOfProducts = cat.NumberOfProducts,
+                    numberOfSubCategories = cat.SubCategories.Count,
+                    seName = cat.SeName,
+                    pictureUrl = cat.PictureUrl
+                });
                 return Ok(result);
             }
             return Ok(new { message = await _localizationService.GetResourceAsync("Category.Not.Found") });
@@ -460,7 +464,7 @@ namespace Nop.Web.Controllers.Api.Security
         #endregion
 
         #region Product
-        
+
         [HttpGet("product-specification-attributes-and-productvendors")]
         public async Task<IActionResult> AllProductSpecificationAndProductVendors()
         {
@@ -476,18 +480,23 @@ namespace Nop.Web.Controllers.Api.Security
                 .Select(c => c.Id)
                 .Where(id => id != 0)
                 .ToList();
-            
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company.Id))
+                .Select(v => v.VendorId).ToArray();
             var products = (await _productService.SearchProductsAsync(
-                keywords: searchModel.Keyword, 
-                showHidden: true, 
-                categoryIds: categoryIds));
+                keywords: searchModel.Keyword,
+                showHidden: true,
+                categoryIds: categoryIds,
+                vendors: vendors.Length == 0 ? null : vendors));
 
-            
+
             if (!products.Any())
             {
                 return Ok(new
                 {
-                    success = true, message = await _localizationService.GetResourceAsync("Product.Not.Found")
+                    success = true,
+                    message = await _localizationService.GetResourceAsync("Product.Not.Found")
                 });
             }
 
@@ -524,7 +533,7 @@ namespace Nop.Web.Controllers.Api.Security
                     message = await _localizationService.GetResourceAsync("Reviews.OnlyRegisteredUsersCanWriteReviews")
                 });
             }
-            
+
             if (_catalogSettings.ProductReviewPossibleOnlyAfterPurchasing)
             {
                 var hasCompletedOrders = await _orderService.SearchOrdersAsync(customerId: curCus.Id,
@@ -580,8 +589,8 @@ namespace Nop.Web.Controllers.Api.Security
                 //activity log
                 await _customerActivityService.InsertActivityAsync("PublicStore.AddProductReview",
                     string.Format(
-                         await _localizationService.GetResourceAsync("ActivityLog.PublicStore.AddProductReview"), 
-                         product.Name), 
+                         await _localizationService.GetResourceAsync("ActivityLog.PublicStore.AddProductReview"),
+                         product.Name),
                     product);
 
                 //raise event
@@ -592,8 +601,8 @@ namespace Nop.Web.Controllers.Api.Security
 
                 return Ok(new
                 {
-                    success = true, 
-                    message = isApproved ? 
+                    success = true,
+                    message = isApproved ?
                         await _localizationService.GetResourceAsync("Reviews.SeeAfterApproving") :
                         await _localizationService.GetResourceAsync("Reviews.SuccessfullyAdded")
                 });
@@ -632,30 +641,30 @@ namespace Nop.Web.Controllers.Api.Security
             if (scheduleDateSetting)
             {
                 dates = (await _staticCacheManager.GetAsync(
-                    _staticCacheManager.PrepareKeyForDefaultCache(NopModelCacheDefaults.StoreScheduleDate, 
+                    _staticCacheManager.PrepareKeyForDefaultCache(NopModelCacheDefaults.StoreScheduleDate,
                         await _storeContext.GetCurrentStoreAsync()),
                 async () =>
                 {
-                    var scheduleDate = 
-                        await _settingService.GetSettingAsync("ordersettings.scheduledate", 
-                            (await _storeContext.GetCurrentStoreAsync()).Id, 
+                    var scheduleDate =
+                        await _settingService.GetSettingAsync("ordersettings.scheduledate",
+                            (await _storeContext.GetCurrentStoreAsync()).Id,
                             true);
-                    return !string.IsNullOrWhiteSpace(scheduleDate.Value) ? 
-                        scheduleDate.Value.Split(',') : 
+                    return !string.IsNullOrWhiteSpace(scheduleDate.Value) ?
+                        scheduleDate.Value.Split(',') :
                         null;
                 }));
 
                 return Ok(new
                 {
-                    success = true, 
+                    success = true,
                     dates = dates
                 });
             }
 
             return Ok(new
             {
-                success = true, 
-                dates = dates, 
+                success = true,
+                dates = dates,
                 message = await _localizationService.GetResourceAsync("Setting.Not.Found")
             });
         }

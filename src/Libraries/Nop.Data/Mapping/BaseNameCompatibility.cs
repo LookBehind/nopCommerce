@@ -40,6 +40,7 @@ namespace Nop.Data.Mapping
             { typeof(ForumTopic), "Forums_Topic" },
             { typeof(PrivateMessage), "Forums_PrivateMessage" },
             { typeof(CompanyCustomer), "Company_Customer_Mapping" },
+            { typeof(CompanyVendor), "Company_Vendor_Mapping" },
             { typeof(NewsItem), "News" }
         };
 
