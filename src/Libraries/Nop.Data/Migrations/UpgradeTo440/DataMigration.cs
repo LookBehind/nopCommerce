@@ -10,7 +10,7 @@ using Nop.Data.Mapping;
 
 namespace Nop.Data.Migrations.UpgradeTo440
 {
-    [NopMigration("2020-06-10 09:30:17:6455795", "4.40.0", UpdateMigrationType.Data)]
+    [NopMigration("2022-06-10 09:30:17:6455795", "4.50.0", UpdateMigrationType.Data)]
     [SkipMigrationOnInstall]
     public class DataMigration : Migration
     {
@@ -105,6 +105,31 @@ namespace Nop.Data.Migrations.UpgradeTo440
                     {
                         CustomerRoleId = adminRole.Id,
                         PermissionRecordId = multiFactorAuthenticationPermission.Id
+                    }
+                );
+            }
+            //add manage delivery scheduler
+            if (!_dataProvider.GetTable<PermissionRecord>().Any(pr => string.Compare(pr.SystemName, "ManageDeliveryScheduler", true) == 0))
+            {
+                var manageDeliveryScheduler = _dataProvider.InsertEntity(
+                    new PermissionRecord
+                    {
+                        Name = "Admin area. Manage Delivery Scheduler",
+                        SystemName = "ManageDeliveryScheduler",
+                        Category = "Order"
+                    }
+                );
+
+                //add it to the Admin role by default
+                var adminRole = _dataProvider
+                    .GetTable<CustomerRole>()
+                    .FirstOrDefault(x => x.IsSystemRole && x.SystemName == NopCustomerDefaults.AdministratorsRoleName);
+
+                _dataProvider.InsertEntity(
+                    new PermissionRecordCustomerRoleMapping
+                    {
+                        CustomerRoleId = adminRole.Id,
+                        PermissionRecordId = manageDeliveryScheduler.Id
                     }
                 );
             }
