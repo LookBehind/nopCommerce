@@ -16,6 +16,7 @@ using Nop.Core.Domain.Tax;
 using Nop.Core.Domain.Vendors;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
+using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Discounts;
@@ -77,6 +78,7 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly MeasureSettings _measureSettings;
         private readonly TaxSettings _taxSettings;
         private readonly VendorSettings _vendorSettings;
+        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -116,7 +118,8 @@ namespace Nop.Web.Areas.Admin.Factories
             IWorkContext workContext,
             MeasureSettings measureSettings,
             TaxSettings taxSettings,
-            VendorSettings vendorSettings)
+            VendorSettings vendorSettings,
+            ICompanyService companyService)
         {
             _catalogSettings = catalogSettings;
             _currencySettings = currencySettings;
@@ -153,6 +156,7 @@ namespace Nop.Web.Areas.Admin.Factories
             _workContext = workContext;
             _taxSettings = taxSettings;
             _vendorSettings = vendorSettings;
+            _companyService = companyService;
         }
 
         #endregion
@@ -726,6 +730,11 @@ namespace Nop.Web.Areas.Admin.Factories
                 categoryIds.AddRange(childCategoryIds);
             }
 
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
+
             //get products
             var products = await _productService.SearchProductsAsync(showHidden: true,
                 categoryIds: categoryIds,
@@ -736,7 +745,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
                 pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
-                overridePublished: overridePublished);
+                overridePublished: overridePublished,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             //prepare list model
             var model = await new ProductListModel().PrepareToGridAsync(searchModel, products, () =>
@@ -1017,6 +1027,11 @@ namespace Nop.Web.Areas.Admin.Factories
             if (await _workContext.GetCurrentVendorAsync() != null)
                 searchModel.SearchVendorId = (await _workContext.GetCurrentVendorAsync()).Id;
 
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
+
             //get products
             var products = await _productService.SearchProductsAsync(showHidden: true,
                 categoryIds: new List<int> { searchModel.SearchCategoryId },
@@ -1025,7 +1040,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             //prepare grid model
             var model = await new AddRequiredProductListModel().PrepareToGridAsync(searchModel, products, () =>
@@ -1134,6 +1150,11 @@ namespace Nop.Web.Areas.Admin.Factories
             if (await _workContext.GetCurrentVendorAsync() != null)
                 searchModel.SearchVendorId = (await _workContext.GetCurrentVendorAsync()).Id;
 
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
+
             //get products
             var products = await _productService.SearchProductsAsync(showHidden: true,
                 categoryIds: new List<int> { searchModel.SearchCategoryId },
@@ -1142,7 +1163,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             //prepare grid model
             var model = await new AddRelatedProductListModel().PrepareToGridAsync(searchModel, products, () =>
@@ -1256,6 +1278,11 @@ namespace Nop.Web.Areas.Admin.Factories
             if (await _workContext.GetCurrentVendorAsync() != null)
                 searchModel.SearchVendorId = (await _workContext.GetCurrentVendorAsync()).Id;
 
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
+
             //get products
             var products = await _productService.SearchProductsAsync(showHidden: true,
                 categoryIds: new List<int> { searchModel.SearchCategoryId },
@@ -1264,7 +1291,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             //prepare grid model
             var model = await new AddCrossSellProductListModel().PrepareToGridAsync(searchModel, products, () =>
@@ -1372,6 +1400,10 @@ namespace Nop.Web.Areas.Admin.Factories
             if (await _workContext.GetCurrentVendorAsync() != null)
                 searchModel.SearchVendorId = (await _workContext.GetCurrentVendorAsync()).Id;
 
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
             //get products
             var products = await _productService.SearchProductsAsync(showHidden: true,
                 categoryIds: new List<int> { searchModel.SearchCategoryId },
@@ -1380,7 +1412,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             //prepare grid model
             var model = await new AddAssociatedProductListModel().PrepareToGridAsync(searchModel, products, () =>
@@ -1596,7 +1629,7 @@ namespace Nop.Web.Areas.Admin.Factories
                 default:
                     throw new ArgumentOutOfRangeException(nameof(attribute.AttributeType));
             }
-            
+
             model.Locales = await _localizedModelFactory.PrepareLocalizedModelsAsync(
                 async (AddSpecificationAttributeLocalizedModel locale, int languageId) =>
                 {
@@ -2225,6 +2258,10 @@ namespace Nop.Web.Areas.Admin.Factories
             //a vendor should have access only to his products
             if (await _workContext.GetCurrentVendorAsync() != null)
                 searchModel.SearchVendorId = (await _workContext.GetCurrentVendorAsync()).Id;
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
 
             //get products
             var products = await _productService.SearchProductsAsync(showHidden: true,
@@ -2234,7 +2271,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             //prepare grid model
             var model = await new AssociateProductToAttributeValueListModel().PrepareToGridAsync(searchModel, products, () =>

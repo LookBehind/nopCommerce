@@ -482,7 +482,7 @@ namespace Nop.Web.Controllers.Api.Security
                 .ToList();
             var customer = await _workContext.GetCurrentCustomerAsync();
             var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company.Id))
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
                 .Select(v => v.VendorId).ToArray();
             var products = (await _productService.SearchProductsAsync(
                 keywords: searchModel.Keyword,

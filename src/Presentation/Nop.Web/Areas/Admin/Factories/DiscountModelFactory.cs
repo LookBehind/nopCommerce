@@ -10,6 +10,7 @@ using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Discounts;
 using Nop.Services;
 using Nop.Services.Catalog;
+using Nop.Services.Companies;
 using Nop.Services.Directory;
 using Nop.Services.Discounts;
 using Nop.Services.Helpers;
@@ -44,6 +45,8 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly IProductService _productService;
         private readonly IUrlRecordService _urlRecordService;
         private readonly IWebHelper _webHelper;
+        private readonly IWorkContext _workContext;
+        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -62,7 +65,9 @@ namespace Nop.Web.Areas.Admin.Factories
             IPriceFormatter priceFormatter,
             IProductService productService,
             IUrlRecordService urlRecordService,
-            IWebHelper webHelper)
+            IWebHelper webHelper,
+            IWorkContext workContext,
+            ICompanyService companyService)
         {
             _currencySettings = currencySettings;
             _baseAdminModelFactory = baseAdminModelFactory;
@@ -78,6 +83,8 @@ namespace Nop.Web.Areas.Admin.Factories
             _productService = productService;
             _urlRecordService = urlRecordService;
             _webHelper = webHelper;
+            _companyService = companyService;
+            _workContext = workContext;
         }
 
         #endregion
@@ -511,6 +518,11 @@ namespace Nop.Web.Areas.Admin.Factories
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
+
             //get products
             var products = await _productService.SearchProductsAsync(showHidden: true,
                 categoryIds: new List<int> { searchModel.SearchCategoryId },
@@ -519,7 +531,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             //prepare grid model
             var model = await new AddProductToDiscountListModel().PrepareToGridAsync(searchModel, products, () =>

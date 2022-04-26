@@ -6,6 +6,7 @@ using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
 using Nop.Services.Catalog;
+using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Seo;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
@@ -27,6 +28,7 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly IProductService _productService;
         private readonly IUrlRecordService _urlRecordService;
         private readonly IWorkContext _workContext;
+        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -36,13 +38,15 @@ namespace Nop.Web.Areas.Admin.Factories
             ICustomerService customerService,
             IProductService productService,
             IUrlRecordService urlRecordService,
-            IWorkContext workContext)
+            IWorkContext workContext,
+            ICompanyService companyService)
         {
             _baseAdminModelFactory = baseAdminModelFactory;
             _customerService = customerService;
             _productService = productService;
             _urlRecordService = urlRecordService;
             _workContext = workContext;
+            _companyService = companyService;
         }
 
         #endregion
@@ -185,6 +189,11 @@ namespace Nop.Web.Areas.Admin.Factories
             if (await _workContext.GetCurrentVendorAsync() != null)
                 searchModel.SearchVendorId = (await _workContext.GetCurrentVendorAsync()).Id;
 
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
+
             //get products
             var products = await _productService.SearchProductsAsync(showHidden: true,
                 categoryIds: new List<int> { searchModel.SearchCategoryId },
@@ -193,7 +202,9 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1,
+                pageSize: searchModel.PageSize,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             //prepare grid model
             var model = await new CustomerRoleProductListModel().PrepareToGridAsync(searchModel, products, () =>

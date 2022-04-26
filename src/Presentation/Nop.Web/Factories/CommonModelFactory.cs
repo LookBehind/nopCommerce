@@ -26,6 +26,7 @@ using Nop.Core.Infrastructure;
 using Nop.Services.Blogs;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
+using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Forums;
@@ -94,6 +95,7 @@ namespace Nop.Web.Factories
         private readonly SitemapXmlSettings _sitemapXmlSettings;
         private readonly StoreInformationSettings _storeInformationSettings;
         private readonly VendorSettings _vendorSettings;
+        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -141,7 +143,8 @@ namespace Nop.Web.Factories
             SitemapSettings sitemapSettings,
             SitemapXmlSettings sitemapXmlSettings,
             StoreInformationSettings storeInformationSettings,
-            VendorSettings vendorSettings)
+            VendorSettings vendorSettings,
+            ICompanyService companyService)
         {
             _blogSettings = blogSettings;
             _captchaSettings = captchaSettings;
@@ -186,6 +189,7 @@ namespace Nop.Web.Factories
             _sitemapXmlSettings = sitemapXmlSettings;
             _storeInformationSettings = storeInformationSettings;
             _vendorSettings = vendorSettings;
+            _companyService = companyService;
         }
 
         #endregion
@@ -369,7 +373,7 @@ namespace Nop.Web.Factories
                 }
             }
 
-            var registrationDisabledCases = new UserRegistrationType[] { UserRegistrationType.Disabled, 
+            var registrationDisabledCases = new UserRegistrationType[] { UserRegistrationType.Disabled,
                 UserRegistrationType.OnlyExternalAuthentication };
             var model = new HeaderLinksModel
             {
@@ -727,7 +731,13 @@ namespace Nop.Web.Factories
                 if (_sitemapSettings.SitemapIncludeProducts)
                 {
                     var productsGroupTitle = await _localizationService.GetResourceAsync("Sitemap.Products");
-                    var products = await _productService.SearchProductsAsync(0, storeId: store.Id, visibleIndividuallyOnly: true);
+
+                    var customer = await _workContext.GetCurrentCustomerAsync();
+                    var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+                    var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                        .Select(v => v.VendorId).ToArray();
+
+                    var products = await _productService.SearchProductsAsync(0, storeId: store.Id, visibleIndividuallyOnly: true, vendors: vendors.Length == 0 ? null : vendors);
                     model.Items.AddRange(await products.SelectAwait(async product => new SitemapModel.SitemapItemModel
                     {
                         GroupTitle = productsGroupTitle,

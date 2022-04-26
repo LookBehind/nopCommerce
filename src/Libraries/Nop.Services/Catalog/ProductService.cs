@@ -844,7 +844,7 @@ namespace Nop.Services.Catalog
 
             if (vendors != null)
             {
-                productsQuery = productsQuery.Where(p => vendors.Contains(p.Id));
+                productsQuery = productsQuery.Where(p => vendors.Contains(p.VendorId));
             }
 
             if (!string.IsNullOrEmpty(keywords))

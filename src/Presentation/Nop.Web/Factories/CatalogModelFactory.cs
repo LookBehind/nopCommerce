@@ -780,6 +780,10 @@ namespace Nop.Web.Factories
 
             var filteredSpecs = command.SpecificationOptionIds is null ? null : filterableOptions.Where(fo => command.SpecificationOptionIds.Contains(fo.Id)).ToList();
 
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
             //products
             var products = await _productService.SearchProductsAsync(
                 command.PageNumber - 1,
@@ -792,7 +796,8 @@ namespace Nop.Web.Factories
                 priceMax: selectedPriceRange?.To,
                 manufacturerIds: command.ManufacturerIds,
                 filteredSpecOptions: filteredSpecs,
-                orderBy: (ProductSortingEnum)command.OrderBy);
+                orderBy: (ProductSortingEnum)command.OrderBy,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             var isFiltering = filterableOptions.Any() || selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -1041,6 +1046,10 @@ namespace Nop.Web.Factories
 
             var filteredSpecs = command.SpecificationOptionIds is null ? null : filterableOptions.Where(fo => command.SpecificationOptionIds.Contains(fo.Id)).ToList();
 
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
             //products
             var products = await _productService.SearchProductsAsync(
                 command.PageNumber - 1,
@@ -1052,7 +1061,8 @@ namespace Nop.Web.Factories
                 priceMin: selectedPriceRange?.From,
                 priceMax: selectedPriceRange?.To,
                 filteredSpecOptions: filteredSpecs,
-                orderBy: (ProductSortingEnum)command.OrderBy);
+                orderBy: (ProductSortingEnum)command.OrderBy,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             var isFiltering = filterableOptions.Any() || selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -1286,6 +1296,13 @@ namespace Nop.Web.Factories
             }
 
             //products
+
+
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
+
             var products = await _productService.SearchProductsAsync(
                 command.PageNumber - 1,
                 command.PageSize,
@@ -1294,7 +1311,8 @@ namespace Nop.Web.Factories
                 priceMax: selectedPriceRange?.To,
                 storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
                 visibleIndividuallyOnly: true,
-                orderBy: (ProductSortingEnum)command.OrderBy);
+                orderBy: (ProductSortingEnum)command.OrderBy,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             var isFiltering = selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -1778,7 +1796,7 @@ namespace Nop.Web.Factories
 
                     var customer = await _workContext.GetCurrentCustomerAsync();
                     var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-                    var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company.Id))
+                    var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
                         .Select(v => v.VendorId).ToArray();
                     //products
                     products = await _productService.SearchProductsAsync(

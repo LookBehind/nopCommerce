@@ -1031,7 +1031,7 @@ namespace Nop.Web.Areas.Admin.Factories
                     //convert dates to the user time
                     orderModel.CreatedOn = await _dateTimeHelper.ConvertToUserTimeAsync(order.CreatedOnUtc, DateTimeKind.Utc);
                     var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-                    var timezoneInfo = TZConvert.GetTimeZoneInfo(company.TimeZone);
+                    var timezoneInfo = company == null ? await _dateTimeHelper.GetCustomerTimeZoneAsync(await _workContext.GetCurrentCustomerAsync()) : TZConvert.GetTimeZoneInfo(company.TimeZone);
                     orderModel.ScheduleDate = _dateTimeHelper.ConvertToUserTime(order.ScheduleDate, TimeZoneInfo.Utc, timezoneInfo);
                     //fill in additional values (not existing in the entity)
                     orderModel.StoreName = (await _storeService.GetStoreByIdAsync(order.StoreId))?.Name ?? "Deleted";
@@ -1271,13 +1271,18 @@ namespace Nop.Web.Areas.Admin.Factories
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                .Select(v => v.VendorId).ToArray();
             //get products
             var products = await _productService.SearchProductsAsync(showHidden: true,
                 categoryIds: new List<int> { searchModel.SearchCategoryId },
                 manufacturerIds: new List<int> { searchModel.SearchManufacturerId },
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                vendors: vendors.Length == 0 ? null : vendors);
 
             //prepare grid model
             var model = await new AddProductToOrderListModel().PrepareToGridAsync(searchModel, products, () =>
