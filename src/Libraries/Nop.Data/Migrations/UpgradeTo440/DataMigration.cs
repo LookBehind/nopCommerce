@@ -108,31 +108,6 @@ namespace Nop.Data.Migrations.UpgradeTo440
                     }
                 );
             }
-            //add manage delivery scheduler
-            if (!_dataProvider.GetTable<PermissionRecord>().Any(pr => string.Compare(pr.SystemName, "ManageDeliveryScheduler", true) == 0))
-            {
-                var manageDeliveryScheduler = _dataProvider.InsertEntity(
-                    new PermissionRecord
-                    {
-                        Name = "Admin area. Manage Delivery Scheduler",
-                        SystemName = "ManageDeliveryScheduler",
-                        Category = "Order"
-                    }
-                );
-
-                //add it to the Admin role by default
-                var adminRole = _dataProvider
-                    .GetTable<CustomerRole>()
-                    .FirstOrDefault(x => x.IsSystemRole && x.SystemName == NopCustomerDefaults.AdministratorsRoleName);
-
-                _dataProvider.InsertEntity(
-                    new PermissionRecordCustomerRoleMapping
-                    {
-                        CustomerRoleId = adminRole.Id,
-                        PermissionRecordId = manageDeliveryScheduler.Id
-                    }
-                );
-            }
             //</MFA #475>
 
             //issue-3852
