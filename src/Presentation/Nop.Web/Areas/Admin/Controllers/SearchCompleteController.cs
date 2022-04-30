@@ -15,7 +15,6 @@ namespace Nop.Web.Areas.Admin.Controllers
         private readonly IPermissionService _permissionService;
         private readonly IProductService _productService;
         private readonly IWorkContext _workContext;
-        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -51,11 +50,6 @@ namespace Nop.Web.Areas.Admin.Controllers
                 vendorId = (await _workContext.GetCurrentVendorAsync()).Id;
             }
 
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
-                .Select(v => v.VendorId).ToArray();
-
             //products
             const int productNumber = 15;
             var products = await _productService.SearchProductsAsync(0,
@@ -63,7 +57,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 keywords: term,
                 pageSize: productNumber,
                 showHidden: true,
-                vendors: vendors.Length == 0 ? null : vendors);
+                searchCustomerVendors: true);
 
             var result = (from p in products
                           select new

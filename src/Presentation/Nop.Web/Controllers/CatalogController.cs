@@ -8,7 +8,6 @@ using Nop.Core.Domain.Media;
 using Nop.Core.Domain.Vendors;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
-using Nop.Services.Companies;
 using Nop.Services.Localization;
 using Nop.Services.Logging;
 using Nop.Services.Security;
@@ -44,7 +43,6 @@ namespace Nop.Web.Controllers
         private readonly IWorkContext _workContext;
         private readonly MediaSettings _mediaSettings;
         private readonly VendorSettings _vendorSettings;
-        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -68,8 +66,7 @@ namespace Nop.Web.Controllers
             IWebHelper webHelper,
             IWorkContext workContext,
             MediaSettings mediaSettings,
-            VendorSettings vendorSettings,
-            ICompanyService companyService)
+            VendorSettings vendorSettings)
         {
             _catalogSettings = catalogSettings;
             _aclService = aclService;
@@ -90,7 +87,6 @@ namespace Nop.Web.Controllers
             _workContext = workContext;
             _mediaSettings = mediaSettings;
             _vendorSettings = vendorSettings;
-            _companyService = companyService;
         }
 
         #endregion
@@ -334,18 +330,13 @@ namespace Nop.Web.Controllers
             var productNumber = _catalogSettings.ProductSearchAutoCompleteNumberOfProducts > 0 ?
                 _catalogSettings.ProductSearchAutoCompleteNumberOfProducts : 10;
 
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
-                .Select(v => v.VendorId).ToArray();
-
             var products = await _productService.SearchProductsAsync(0,
                 storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
                 keywords: term,
                 languageId: (await _workContext.GetWorkingLanguageAsync()).Id,
                 visibleIndividuallyOnly: true,
                 pageSize: productNumber,
-                vendors: vendors.Length == 0 ? null : vendors);
+                searchCustomerVendors: true);
 
             var showLinkToResultSearch = _catalogSettings.ShowLinkToAllResultInSearchAutoComplete && (products.TotalCount > productNumber);
 

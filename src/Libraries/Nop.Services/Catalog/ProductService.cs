@@ -13,6 +13,7 @@ using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Shipping;
 using Nop.Core.Infrastructure;
 using Nop.Data;
+using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Localization;
 using Nop.Services.Messages;
@@ -63,6 +64,7 @@ namespace Nop.Services.Catalog
         protected readonly IStoreService _storeService;
         protected readonly IWorkContext _workContext;
         protected readonly LocalizationSettings _localizationSettings;
+        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -101,7 +103,8 @@ namespace Nop.Services.Catalog
             IStoreService storeService,
             IStoreMappingService storeMappingService,
             IWorkContext workContext,
-            LocalizationSettings localizationSettings)
+            LocalizationSettings localizationSettings,
+            ICompanyService companyService)
         {
             _catalogSettings = catalogSettings;
             _commonSettings = commonSettings;
@@ -137,6 +140,7 @@ namespace Nop.Services.Catalog
             _storeService = storeService;
             _workContext = workContext;
             _localizationSettings = localizationSettings;
+            _companyService = companyService;
         }
 
         #endregion
@@ -802,7 +806,7 @@ namespace Nop.Services.Catalog
             ProductSortingEnum orderBy = ProductSortingEnum.Position,
             bool showHidden = false,
             bool? overridePublished = null,
-            int[] vendors = null)
+            bool searchCustomerVendors = false)
         {
             //some databases don't support int.MaxValue
             if (pageSize == int.MaxValue)
@@ -842,9 +846,16 @@ namespace Nop.Services.Catalog
                     (priceMax == null || p.Price <= priceMax)
                 select p;
 
-            if (vendors != null)
+            if (searchCustomerVendors)
             {
-                productsQuery = productsQuery.Where(p => vendors.Contains(p.VendorId));
+                var customer = await _workContext.GetCurrentCustomerAsync();
+                var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+                var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                    .Select(v => v.VendorId).ToArray();
+                if (vendors.Length > 0)
+                {
+                    productsQuery = productsQuery.Where(p => vendors.Contains(p.VendorId));
+                }
             }
 
             if (!string.IsNullOrEmpty(keywords))

@@ -1,31 +1,19 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Rendering;
+﻿using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Localization;
-using Nop.Core.Domain.Media;
 using Nop.Core.Domain.Orders;
-using Nop.Core.Domain.Vendors;
 using Nop.Core.Events;
 using Nop.Services.Catalog;
-using Nop.Services.Common;
-using Nop.Services.Companies;
 using Nop.Services.Configuration;
 using Nop.Services.Customers;
-using Nop.Services.Directory;
-using Nop.Services.Events;
 using Nop.Services.Helpers;
 using Nop.Services.Localization;
 using Nop.Services.Logging;
-using Nop.Services.Media;
 using Nop.Services.Messages;
 using Nop.Services.Orders;
-using Nop.Services.Payments;
-using Nop.Services.Security;
 using Nop.Services.Seo;
-using Nop.Services.Stores;
 using Nop.Services.Vendors;
 using Nop.Web.Factories;
 using Nop.Web.Framework.Mvc.Filters;
@@ -74,7 +62,6 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly ISettingService _settingService;
         private readonly IProductAttributeService _productAttributeService;
         private readonly IProductAvailabilityService _productAvailabilityService;
-        private readonly ICompanyService _companyService;
 
         private static readonly AttributeControlType[] _allowedAttributeControlTypes = new[] {
             AttributeControlType.DropdownList,
@@ -110,8 +97,7 @@ namespace Nop.Web.Controllers.Api.Security
             IStaticCacheManager staticCacheManager,
             ISettingService settingService,
             IProductAttributeService productAttributeService,
-            IProductAvailabilityService productAvailabilityService,
-            ICompanyService companyService)
+            IProductAvailabilityService productAvailabilityService)
         {
             _localizationSettings = localizationSettings;
             _workflowMessageService = workflowMessageService;
@@ -137,7 +123,6 @@ namespace Nop.Web.Controllers.Api.Security
             _settingService = settingService;
             _productAttributeService = productAttributeService;
             _productAvailabilityService = productAvailabilityService;
-            _companyService = companyService;
         }
 
         #endregion
@@ -480,15 +465,11 @@ namespace Nop.Web.Controllers.Api.Security
                 .Select(c => c.Id)
                 .Where(id => id != 0)
                 .ToList();
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
-                .Select(v => v.VendorId).ToArray();
             var products = (await _productService.SearchProductsAsync(
                 keywords: searchModel.Keyword,
                 showHidden: true,
                 categoryIds: categoryIds,
-                vendors: vendors.Length == 0 ? null : vendors));
+                searchCustomerVendors: true));
 
 
             if (!products.Any())

@@ -35,7 +35,6 @@ using Nop.Web.Infrastructure.Cache;
 using Nop.Web.Models.Catalog;
 using Nop.Web.Models.Media;
 using Nop.Services.Configuration;
-using Nop.Services.Companies;
 
 namespace Nop.Web.Factories
 {
@@ -75,7 +74,6 @@ namespace Nop.Web.Factories
         private readonly MediaSettings _mediaSettings;
         private readonly VendorSettings _vendorSettings;
         private readonly ISettingService _settingService;
-        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -112,8 +110,7 @@ namespace Nop.Web.Factories
             IWorkContext workContext,
             MediaSettings mediaSettings,
             VendorSettings vendorSettings,
-            ISettingService settingService,
-            ICompanyService companyService)
+            ISettingService settingService)
         {
             _blogSettings = blogSettings;
             _catalogSettings = catalogSettings;
@@ -147,7 +144,6 @@ namespace Nop.Web.Factories
             _mediaSettings = mediaSettings;
             _vendorSettings = vendorSettings;
             _settingService = settingService;
-            _companyService = companyService;
         }
 
         #endregion
@@ -779,11 +775,6 @@ namespace Nop.Web.Factories
             }
 
             var filteredSpecs = command.SpecificationOptionIds is null ? null : filterableOptions.Where(fo => command.SpecificationOptionIds.Contains(fo.Id)).ToList();
-
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
-                .Select(v => v.VendorId).ToArray();
             //products
             var products = await _productService.SearchProductsAsync(
                 command.PageNumber - 1,
@@ -797,7 +788,7 @@ namespace Nop.Web.Factories
                 manufacturerIds: command.ManufacturerIds,
                 filteredSpecOptions: filteredSpecs,
                 orderBy: (ProductSortingEnum)command.OrderBy,
-                vendors: vendors.Length == 0 ? null : vendors);
+                searchCustomerVendors: true);
 
             var isFiltering = filterableOptions.Any() || selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -1045,11 +1036,6 @@ namespace Nop.Web.Factories
             model.SpecificationFilter = await PrepareSpecificationFilterModel(command.SpecificationOptionIds, filterableOptions);
 
             var filteredSpecs = command.SpecificationOptionIds is null ? null : filterableOptions.Where(fo => command.SpecificationOptionIds.Contains(fo.Id)).ToList();
-
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
-                .Select(v => v.VendorId).ToArray();
             //products
             var products = await _productService.SearchProductsAsync(
                 command.PageNumber - 1,
@@ -1062,7 +1048,7 @@ namespace Nop.Web.Factories
                 priceMax: selectedPriceRange?.To,
                 filteredSpecOptions: filteredSpecs,
                 orderBy: (ProductSortingEnum)command.OrderBy,
-                vendors: vendors.Length == 0 ? null : vendors);
+                searchCustomerVendors: true);
 
             var isFiltering = filterableOptions.Any() || selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -1297,12 +1283,6 @@ namespace Nop.Web.Factories
 
             //products
 
-
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-            var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
-                .Select(v => v.VendorId).ToArray();
-
             var products = await _productService.SearchProductsAsync(
                 command.PageNumber - 1,
                 command.PageSize,
@@ -1312,7 +1292,7 @@ namespace Nop.Web.Factories
                 storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
                 visibleIndividuallyOnly: true,
                 orderBy: (ProductSortingEnum)command.OrderBy,
-                vendors: vendors.Length == 0 ? null : vendors);
+                searchCustomerVendors: true);
 
             var isFiltering = selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -1793,11 +1773,6 @@ namespace Nop.Web.Factories
 
                         model.PriceRangeFilter = await PreparePriceRangeFilterAsync(selectedPriceRange, availablePriceRange);
                     }
-
-                    var customer = await _workContext.GetCurrentCustomerAsync();
-                    var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-                    var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
-                        .Select(v => v.VendorId).ToArray();
                     //products
                     products = await _productService.SearchProductsAsync(
                         command.PageNumber - 1,
@@ -1814,7 +1789,7 @@ namespace Nop.Web.Factories
                         languageId: workingLanguage.Id,
                         orderBy: (ProductSortingEnum)command.OrderBy,
                         vendorId: vendorId,
-                        vendors: vendors.Length == 0 ? null : vendors);
+                        searchCustomerVendors: true);
 
                     //search term statistics
                     if (!string.IsNullOrEmpty(searchTerms))

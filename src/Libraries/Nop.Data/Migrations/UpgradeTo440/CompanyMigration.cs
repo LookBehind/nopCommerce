@@ -37,9 +37,6 @@ namespace Nop.Data.Migrations.UpgradeTo440
 
             if (!Schema.Table(NameCompatibilityManager.GetTableName(typeof(CompanyCustomer))).Exists())
                 _migrationManager.BuildTable<CompanyCustomer>(Create);
-
-            if (!Schema.Table(NameCompatibilityManager.GetTableName(typeof(CompanyVendor))).Exists())
-                _migrationManager.BuildTable<CompanyVendor>(Create);
         }
 
         public override void Down()

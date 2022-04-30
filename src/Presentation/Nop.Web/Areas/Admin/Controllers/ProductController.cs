@@ -77,7 +77,6 @@ namespace Nop.Web.Areas.Admin.Controllers
         private readonly IGenericAttributeService _genericAttributeService;
         private readonly IWorkContext _workContext;
         private readonly VendorSettings _vendorSettings;
-        private readonly ICompanyService _companyService;
 
         #endregion
 
