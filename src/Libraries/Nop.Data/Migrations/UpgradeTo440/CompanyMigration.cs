@@ -6,7 +6,7 @@ using Nop.Core.Domain.Companies;
 
 namespace Nop.Data.Migrations.UpgradeTo440
 {
-    [NopMigration("2020/03/08 11:26:08:9037990", "Company")]
+    [NopMigration("2020/03/08 11:26:08:9037989", "Company")]
     [SkipMigrationOnInstall]
     public class CompanyMigration : MigrationBase
     {
