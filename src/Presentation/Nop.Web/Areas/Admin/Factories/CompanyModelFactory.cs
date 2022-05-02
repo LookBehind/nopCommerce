@@ -28,6 +28,9 @@ using System.Text;
 using System.Net;
 using Nop.Services.Common;
 using Nop.Core.Domain.Customers;
+using Nop.Services.Vendors;
+using Nop.Core.Domain.Vendors;
+using Nop.Web.Areas.Admin.Models.Vendors;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -35,6 +38,7 @@ namespace Nop.Web.Areas.Admin.Factories
     {
         #region Fields
 
+        private readonly IVendorService _vendorService;
         private readonly ICompanyService _companyService;
         private readonly ILocalizationService _localizationService;
         private readonly ILocalizedModelFactory _localizedModelFactory;
@@ -59,7 +63,8 @@ namespace Nop.Web.Areas.Admin.Factories
             IAddressAttributeFormatter addressAttributeFormatter,
             ICountryService countryService,
             IStateProvinceService stateProvinceService,
-            IAddressModelFactory addressModelFactory)
+            IAddressModelFactory addressModelFactory,
+            IVendorService vendorService)
         {
             _companyService = companyService;
             _localizationService = localizationService;
@@ -71,6 +76,7 @@ namespace Nop.Web.Areas.Admin.Factories
             _countryService = countryService;
             _stateProvinceService = stateProvinceService;
             _addressModelFactory = addressModelFactory;
+            _vendorService = vendorService;
         }
 
         #endregion
@@ -197,12 +203,23 @@ namespace Nop.Web.Areas.Admin.Factories
 
             return model;
         }
+
         public virtual async Task<AddCustomerToCompanySearchModel> PrepareAddCustomerToCompanySearchModelAsync(AddCustomerToCompanySearchModel searchModel)
         {
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
             var customer = await _workContext.GetCurrentCustomerAsync();
+
+            //prepare page parameters
+            searchModel.SetPopupGridPageSize();
+            return searchModel;
+        }
+
+        public virtual async Task<AddVendorToCompanySearchModel> PrepareAddVendorToCompanySearchModelAsync(AddVendorToCompanySearchModel searchModel)
+        {
+            if (searchModel == null)
+                throw new ArgumentNullException(nameof(searchModel));
 
             //prepare page parameters
             searchModel.SetPopupGridPageSize();
@@ -246,6 +263,49 @@ namespace Nop.Web.Areas.Admin.Factories
 
             return model;
         }
+
+        public virtual async Task<AddVendorToCompanyListModel> PrepareAddVendorToCompanyListModelAsync(AddVendorToCompanySearchModel searchModel)
+        {
+            if (searchModel == null)
+                throw new ArgumentNullException(nameof(searchModel));
+
+            ////get customers
+            //var customers = await _customerService.GetAllCustomersAsync(
+            //     email: searchModel.SearchCustomerEmail, customerRoleIds: customerRoleIds,
+            //     pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+            //get vendors
+            var vendors = await _vendorService.GetAllVendorsAsync(
+                 email: searchModel.SearchVendorEmail,
+                 pageIndex: searchModel.Page - 1,
+                 pageSize: searchModel.PageSize);
+
+            IPagedList<Vendor> filteredVendors = new PagedList<Vendor>(new List<Vendor>(), searchModel.Page - 1, searchModel.PageSize, vendors.TotalCount);
+            foreach (var vendor in vendors)
+            {
+                var companyVendorMapping = await _companyService.GetCompanyVendorsByVendorIdAsync(vendor.Id);
+                if (companyVendorMapping.Count == 0)
+                    filteredVendors.Add(vendor);
+            }
+
+            //prepare grid model
+            var model = await new AddVendorToCompanyListModel().PrepareToGridAsync(searchModel, filteredVendors, () =>
+            {
+                return filteredVendors.SelectAwait(async vendor =>
+                {
+                    await Task.Delay(10);
+                    var vendorModel = vendor.ToModel<VendorModel>();
+                    vendorModel.Name = vendor.Name;
+                    //(await _vendorService.GetVendorByIdAsync(await _customerService.GetCustomerByIdAsync(customer.Id)));
+                    vendorModel.Id = vendor.Id;
+                    vendorModel.Email = vendor.Email;
+                    //(await _customerService.GetCustomerByIdAsync(customer.Id))?.Email;
+                    return vendorModel;
+                });
+            });
+
+            return model;
+        }
+
         public virtual async Task<CustomerAddressListModel> PrepareCompanyCustomerAddressListModelAsync(CustomerAddressSearchModel searchModel, Company company)
         {
             if (searchModel == null)
@@ -371,6 +431,41 @@ namespace Nop.Web.Areas.Admin.Factories
             addressHtmlSb.Append("</div>");
 
             model.AddressHtml = addressHtmlSb.ToString();
+        }
+
+        public async Task<CompanyVendorListModel> PrepareCompanyVendorListModelAsync(CompanyVendorSearchModel searchModel, Company company)
+        {
+            if (searchModel == null)
+                throw new ArgumentNullException(nameof(searchModel));
+
+            if (company == null)
+                throw new ArgumentNullException(nameof(company));
+
+            //get vendors
+            var companyVendors = await _companyService.GetCompanyVendorsByCompanyIdAsync(company.Id,
+                showHidden: true,
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+
+            //prepare grid model
+            var model = await new CompanyVendorListModel().PrepareToGridAsync(searchModel, companyVendors, () =>
+            {
+                return companyVendors.SelectAwait(async companyVendor =>
+                {
+                    //fill in model values from the entity
+                    var companyVendorModel = companyVendor.ToModel<CompanyVendorModel>();
+
+                    //fill in additional values (not existing in the entity)
+                    var vendor = await _vendorService.GetVendorByIdAsync(companyVendor.VendorId);
+
+                    companyVendorModel.VendorName = vendor.Name;
+                    companyVendorModel.VendorId = companyVendor.VendorId;
+                    companyVendorModel.Email = vendor?.Email;
+
+                    return companyVendorModel;
+                });
+            });
+
+            return model;
         }
 
         #endregion

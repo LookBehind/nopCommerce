@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Services.Catalog;
+using Nop.Services.Companies;
 using Nop.Services.Security;
 
 namespace Nop.Web.Areas.Admin.Controllers
@@ -55,14 +56,15 @@ namespace Nop.Web.Areas.Admin.Controllers
                 vendorId: vendorId,
                 keywords: term,
                 pageSize: productNumber,
-                showHidden: true);
+                showHidden: true,
+                searchCustomerVendors: true);
 
             var result = (from p in products
-                            select new
-                            {
-                                label = p.Name,
-                                productid = p.Id
-                            }).ToList();
+                          select new
+                          {
+                              label = p.Name,
+                              productid = p.Id
+                          }).ToList();
 
             return Json(result);
         }

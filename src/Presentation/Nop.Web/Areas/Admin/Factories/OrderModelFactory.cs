@@ -1031,7 +1031,7 @@ namespace Nop.Web.Areas.Admin.Factories
                     //convert dates to the user time
                     orderModel.CreatedOn = await _dateTimeHelper.ConvertToUserTimeAsync(order.CreatedOnUtc, DateTimeKind.Utc);
                     var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-                    var timezoneInfo = TZConvert.GetTimeZoneInfo(company.TimeZone);
+                    var timezoneInfo = company == null ? await _dateTimeHelper.GetCustomerTimeZoneAsync(await _workContext.GetCurrentCustomerAsync()) : TZConvert.GetTimeZoneInfo(company.TimeZone);
                     orderModel.ScheduleDate = _dateTimeHelper.ConvertToUserTime(order.ScheduleDate, TimeZoneInfo.Utc, timezoneInfo);
                     //fill in additional values (not existing in the entity)
                     orderModel.StoreName = (await _storeService.GetStoreByIdAsync(order.StoreId))?.Name ?? "Deleted";
@@ -1277,7 +1277,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 manufacturerIds: new List<int> { searchModel.SearchManufacturerId },
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                searchCustomerVendors: true);
 
             //prepare grid model
             var model = await new AddProductToOrderListModel().PrepareToGridAsync(searchModel, products, () =>

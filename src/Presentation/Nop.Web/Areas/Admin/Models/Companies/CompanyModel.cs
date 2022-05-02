@@ -12,10 +12,11 @@ namespace Nop.Web.Areas.Admin.Models.Companies
             CompanyCustomerSearchModel = new CompanyCustomerSearchModel();
             Locales = new List<CompanyLocalizedModel>();
             CustomerAddressSearchModel = new CustomerAddressSearchModel();
+            CompanyVendorSearchModel = new CompanyVendorSearchModel();
         }
         [NopResourceDisplayName("Admin.Companies.Company.Fields.Email")]
         public string Email { get; set; }
-        
+
         [NopResourceDisplayName("Admin.Companies.Company.Fields.Name")]
         public string Name { get; set; }
 
@@ -27,6 +28,8 @@ namespace Nop.Web.Areas.Admin.Models.Companies
         public IList<CompanyLocalizedModel> Locales { get; set; }
 
         public CustomerAddressSearchModel CustomerAddressSearchModel { get; set; }
+
+        public CompanyVendorSearchModel CompanyVendorSearchModel { get; set; }
 
         public bool CustomerExist { get; set; }
     }

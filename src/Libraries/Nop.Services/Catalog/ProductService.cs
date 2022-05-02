@@ -13,6 +13,7 @@ using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Shipping;
 using Nop.Core.Infrastructure;
 using Nop.Data;
+using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Localization;
 using Nop.Services.Messages;
@@ -63,6 +64,7 @@ namespace Nop.Services.Catalog
         protected readonly IStoreService _storeService;
         protected readonly IWorkContext _workContext;
         protected readonly LocalizationSettings _localizationSettings;
+        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -101,7 +103,8 @@ namespace Nop.Services.Catalog
             IStoreService storeService,
             IStoreMappingService storeMappingService,
             IWorkContext workContext,
-            LocalizationSettings localizationSettings)
+            LocalizationSettings localizationSettings,
+            ICompanyService companyService)
         {
             _catalogSettings = catalogSettings;
             _commonSettings = commonSettings;
@@ -137,6 +140,7 @@ namespace Nop.Services.Catalog
             _storeService = storeService;
             _workContext = workContext;
             _localizationSettings = localizationSettings;
+            _companyService = companyService;
         }
 
         #endregion
@@ -450,12 +454,12 @@ namespace Nop.Services.Catalog
                 return new List<CrossSellProduct>();
 
             var query = from csp in _crossSellProductRepository.Table
-                join p in _productRepository.Table on csp.ProductId2 equals p.Id
-                where productIds.Contains(csp.ProductId1) &&
-                      !p.Deleted &&
-                      (showHidden || p.Published)
-                orderby csp.Id
-                select csp;
+                        join p in _productRepository.Table on csp.ProductId2 equals p.Id
+                        where productIds.Contains(csp.ProductId1) &&
+                              !p.Deleted &&
+                              (showHidden || p.Published)
+                        orderby csp.Id
+                        select csp;
             var crossSellProducts = await query.ToListAsync();
 
             return crossSellProducts;
@@ -801,7 +805,8 @@ namespace Nop.Services.Catalog
             IList<SpecificationAttributeOption> filteredSpecOptions = null,
             ProductSortingEnum orderBy = ProductSortingEnum.Position,
             bool showHidden = false,
-            bool? overridePublished = null)
+            bool? overridePublished = null,
+            bool searchCustomerVendors = false)
         {
             //some databases don't support int.MaxValue
             if (pageSize == int.MaxValue)
@@ -840,6 +845,18 @@ namespace Nop.Services.Catalog
                     (priceMin == null || p.Price >= priceMin) &&
                     (priceMax == null || p.Price <= priceMax)
                 select p;
+
+            if (searchCustomerVendors)
+            {
+                var customer = await _workContext.GetCurrentCustomerAsync();
+                var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+                var vendors = (await _companyService.GetCompanyVendorsByCompanyAsync(company == null ? 0 : company.Id))
+                    .Select(v => v.VendorId).ToArray();
+                if (vendors.Length > 0)
+                {
+                    productsQuery = productsQuery.Where(p => vendors.Contains(p.VendorId));
+                }
+            }
 
             if (!string.IsNullOrEmpty(keywords))
             {
@@ -927,7 +944,8 @@ namespace Nop.Services.Catalog
                         where (!excludeFeaturedProducts || !pc.IsFeaturedProduct) &&
                             categoryIds.Contains(pc.CategoryId)
                         group pc by pc.ProductId into pc
-                        select new { 
+                        select new
+                        {
                             ProductId = pc.Key,
                             DisplayOrder = pc.First().DisplayOrder
                         };
@@ -952,7 +970,8 @@ namespace Nop.Services.Catalog
                         where (!excludeFeaturedProducts || !pm.IsFeaturedProduct) &&
                             manufacturerIds.Contains(pm.ManufacturerId)
                         group pm by pm.ProductId into pm
-                        select new { 
+                        select new
+                        {
                             ProductId = pm.Key,
                             DisplayOrder = pm.First().DisplayOrder
                         };
@@ -997,7 +1016,7 @@ namespace Nop.Services.Catalog
                         select p;
                 }
             }
-            
+
             return await productsQuery.OrderBy(orderBy).ToPagedListAsync(pageIndex, pageSize);
         }
 

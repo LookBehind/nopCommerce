@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Discounts;
 using Nop.Services.Catalog;
+using Nop.Services.Companies;
 using Nop.Services.Directory;
 using Nop.Services.Discounts;
 using Nop.Services.Localization;
@@ -352,7 +354,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                searchCustomerVendors: true);
 
             //prepare grid model
             var model = await new AddProductToManufacturerListModel().PrepareToGridAsync(searchModel, products, () =>

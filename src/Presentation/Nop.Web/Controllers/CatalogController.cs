@@ -335,7 +335,8 @@ namespace Nop.Web.Controllers
                 keywords: term,
                 languageId: (await _workContext.GetWorkingLanguageAsync()).Id,
                 visibleIndividuallyOnly: true,
-                pageSize: productNumber);
+                pageSize: productNumber,
+                searchCustomerVendors: true);
 
             var showLinkToResultSearch = _catalogSettings.ShowLinkToAllResultInSearchAutoComplete && (products.TotalCount > productNumber);
 

@@ -26,6 +26,7 @@ using Nop.Core.Infrastructure;
 using Nop.Services.Blogs;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
+using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Forums;
@@ -369,7 +370,7 @@ namespace Nop.Web.Factories
                 }
             }
 
-            var registrationDisabledCases = new UserRegistrationType[] { UserRegistrationType.Disabled, 
+            var registrationDisabledCases = new UserRegistrationType[] { UserRegistrationType.Disabled,
                 UserRegistrationType.OnlyExternalAuthentication };
             var model = new HeaderLinksModel
             {
@@ -727,7 +728,8 @@ namespace Nop.Web.Factories
                 if (_sitemapSettings.SitemapIncludeProducts)
                 {
                     var productsGroupTitle = await _localizationService.GetResourceAsync("Sitemap.Products");
-                    var products = await _productService.SearchProductsAsync(0, storeId: store.Id, visibleIndividuallyOnly: true);
+
+                    var products = await _productService.SearchProductsAsync(0, storeId: store.Id, visibleIndividuallyOnly: true, searchCustomerVendors: true);
                     model.Items.AddRange(await products.SelectAwait(async product => new SitemapModel.SitemapItemModel
                     {
                         GroupTitle = productsGroupTitle,

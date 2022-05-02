@@ -736,7 +736,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
                 pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
-                overridePublished: overridePublished);
+                overridePublished: overridePublished,
+                searchCustomerVendors: true);
 
             //prepare list model
             var model = await new ProductListModel().PrepareToGridAsync(searchModel, products, () =>
@@ -1025,7 +1026,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                searchCustomerVendors: true);
 
             //prepare grid model
             var model = await new AddRequiredProductListModel().PrepareToGridAsync(searchModel, products, () =>
@@ -1142,7 +1144,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                searchCustomerVendors: true);
 
             //prepare grid model
             var model = await new AddRelatedProductListModel().PrepareToGridAsync(searchModel, products, () =>
@@ -1264,7 +1267,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                searchCustomerVendors: true);
 
             //prepare grid model
             var model = await new AddCrossSellProductListModel().PrepareToGridAsync(searchModel, products, () =>
@@ -1371,7 +1375,6 @@ namespace Nop.Web.Areas.Admin.Factories
             //a vendor should have access only to his products
             if (await _workContext.GetCurrentVendorAsync() != null)
                 searchModel.SearchVendorId = (await _workContext.GetCurrentVendorAsync()).Id;
-
             //get products
             var products = await _productService.SearchProductsAsync(showHidden: true,
                 categoryIds: new List<int> { searchModel.SearchCategoryId },
@@ -1380,7 +1383,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                searchCustomerVendors: true);
 
             //prepare grid model
             var model = await new AddAssociatedProductListModel().PrepareToGridAsync(searchModel, products, () =>
@@ -1596,7 +1600,7 @@ namespace Nop.Web.Areas.Admin.Factories
                 default:
                     throw new ArgumentOutOfRangeException(nameof(attribute.AttributeType));
             }
-            
+
             model.Locales = await _localizedModelFactory.PrepareLocalizedModelsAsync(
                 async (AddSpecificationAttributeLocalizedModel locale, int languageId) =>
                 {
@@ -2234,7 +2238,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 vendorId: searchModel.SearchVendorId,
                 productType: searchModel.SearchProductTypeId > 0 ? (ProductType?)searchModel.SearchProductTypeId : null,
                 keywords: searchModel.SearchProductName,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
+                searchCustomerVendors: true);
 
             //prepare grid model
             var model = await new AssociateProductToAttributeValueListModel().PrepareToGridAsync(searchModel, products, () =>

@@ -189,7 +189,7 @@ namespace Nop.Web.Areas.Admin.Infrastructure.Mapper
 
             CreateMap<HostingConfig, HostingConfigModel>();
             CreateMap<HostingConfigModel, HostingConfig>();
-            
+
             CreateMap<DistributedCacheConfig, DistributedCacheConfigModel>()
                 .ForMember(model => model.DistributedCacheTypeValues, options => options.Ignore());
             CreateMap<DistributedCacheConfigModel, DistributedCacheConfig>();
@@ -634,6 +634,12 @@ namespace Nop.Web.Areas.Admin.Infrastructure.Mapper
             CreateMap<CompanyCustomerModel, CompanyCustomer>()
                 .ForMember(entity => entity.CompanyId, options => options.Ignore())
                 .ForMember(entity => entity.CustomerId, options => options.Ignore());
+
+            CreateMap<CompanyVendor, CompanyVendorModel>()
+                .ForMember(model => model.VendorName, options => options.Ignore());
+            CreateMap<CompanyVendorModel, CompanyVendor>()
+                .ForMember(entity => entity.CompanyId, options => options.Ignore())
+                .ForMember(entity => entity.VendorId, options => options.Ignore());
 
             CreateMap<RelatedProduct, RelatedProductModel>()
                .ForMember(model => model.Product2Name, options => options.Ignore());

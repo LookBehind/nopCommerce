@@ -1586,13 +1586,13 @@ namespace Nop.Services.Orders
             var result = new PlaceOrderResult();
             try
             {
-                if(string.IsNullOrWhiteSpace(processPaymentRequest.ScheduleDate))
+                if (string.IsNullOrWhiteSpace(processPaymentRequest.ScheduleDate))
                     throw new Exception("Delivery time is not selected");
-                
+
                 var scheduleDate = DateTime.SpecifyKind(
-                    Convert.ToDateTime(processPaymentRequest.ScheduleDate), 
+                    Convert.ToDateTime(processPaymentRequest.ScheduleDate),
                     DateTimeKind.Utc);
-                
+
                 if (processPaymentRequest.OrderGuid == Guid.Empty)
                     throw new Exception("Order GUID is not generated");
 
@@ -1610,9 +1610,9 @@ namespace Nop.Services.Orders
                     var company = await _companyService.GetCompanyByCustomerIdAsync(details.Customer.Id);
                     if (company != null)
                     {
-                        var cartTotal = 
+                        var cartTotal =
                             await _orderTotalCalculationService.GetShoppingCartTotalAsync(details.Cart);
-                        
+
                         var orders = await _orderService.SearchOrdersAsync(customerId: details.Customer.Id,
                             osIds: new List<int> { (int)OrderStatus.Complete, (int)OrderStatus.Pending, (int)OrderStatus.Processing });
                         if (orders.Any())
@@ -3318,7 +3318,7 @@ namespace Nop.Services.Orders
         {
             var currentCustomer = await _workContext.GetCurrentCustomerAsync();
             var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
-            var timezoneInfo = TZConvert.GetTimeZoneInfo(company.TimeZone);
+            var timezoneInfo = company == null ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer) : TZConvert.GetTimeZoneInfo(company.TimeZone);
             var list = new List<DateTime>();
             var value = _orderSettings.ScheduleDate.Split(',');
             var scheduleDate1 = value[0];

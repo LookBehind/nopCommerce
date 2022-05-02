@@ -466,10 +466,10 @@ namespace Nop.Web.Factories
                 }).ToListAsync();
 
             var displaySubcategoriesInCatalogPage = await _settingService.GetSettingAsync(
-                "catalogsettings.displaysubcategoriesincatalogpage", 
+                "catalogsettings.displaysubcategoriesincatalogpage",
                 (await _storeContext.GetCurrentStoreAsync()).Id,
                 true);
-            model.DisplaySubcategoriesInCatalogPage = displaySubcategoriesInCatalogPage != null && 
+            model.DisplaySubcategoriesInCatalogPage = displaySubcategoriesInCatalogPage != null &&
                 displaySubcategoriesInCatalogPage.Value == "False" ? false : true;
 
             //featured products
@@ -712,7 +712,7 @@ namespace Nop.Web.Factories
             //view mode
             await PrepareViewModesAsync(model, command);
             //page size
-            await PreparePageSizeOptionsAsync(model, command, category.AllowCustomersToSelectPageSize, 
+            await PreparePageSizeOptionsAsync(model, command, category.AllowCustomersToSelectPageSize,
                 category.PageSizeOptions, category.PageSize);
 
             var categoryIds = new List<int> { category.Id };
@@ -775,7 +775,6 @@ namespace Nop.Web.Factories
             }
 
             var filteredSpecs = command.SpecificationOptionIds is null ? null : filterableOptions.Where(fo => command.SpecificationOptionIds.Contains(fo.Id)).ToList();
-
             //products
             var products = await _productService.SearchProductsAsync(
                 command.PageNumber - 1,
@@ -788,14 +787,15 @@ namespace Nop.Web.Factories
                 priceMax: selectedPriceRange?.To,
                 manufacturerIds: command.ManufacturerIds,
                 filteredSpecOptions: filteredSpecs,
-                orderBy: (ProductSortingEnum)command.OrderBy);
+                orderBy: (ProductSortingEnum)command.OrderBy,
+                searchCustomerVendors: true);
 
             var isFiltering = filterableOptions.Any() || selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
 
             return model;
         }
-        
+
         /// <summary>
         /// Prepare category (simple) models
         /// </summary>
@@ -911,7 +911,7 @@ namespace Nop.Web.Factories
                 return XDocument.Parse(xml);
             });
         }
-        
+
         #endregion
 
         #region Manufacturers
@@ -1036,7 +1036,6 @@ namespace Nop.Web.Factories
             model.SpecificationFilter = await PrepareSpecificationFilterModel(command.SpecificationOptionIds, filterableOptions);
 
             var filteredSpecs = command.SpecificationOptionIds is null ? null : filterableOptions.Where(fo => command.SpecificationOptionIds.Contains(fo.Id)).ToList();
-
             //products
             var products = await _productService.SearchProductsAsync(
                 command.PageNumber - 1,
@@ -1048,7 +1047,8 @@ namespace Nop.Web.Factories
                 priceMin: selectedPriceRange?.From,
                 priceMax: selectedPriceRange?.To,
                 filteredSpecOptions: filteredSpecs,
-                orderBy: (ProductSortingEnum)command.OrderBy);
+                orderBy: (ProductSortingEnum)command.OrderBy,
+                searchCustomerVendors: true);
 
             var isFiltering = filterableOptions.Any() || selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -1282,6 +1282,7 @@ namespace Nop.Web.Factories
             }
 
             //products
+
             var products = await _productService.SearchProductsAsync(
                 command.PageNumber - 1,
                 command.PageSize,
@@ -1290,7 +1291,8 @@ namespace Nop.Web.Factories
                 priceMax: selectedPriceRange?.To,
                 storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
                 visibleIndividuallyOnly: true,
-                orderBy: (ProductSortingEnum)command.OrderBy);
+                orderBy: (ProductSortingEnum)command.OrderBy,
+                searchCustomerVendors: true);
 
             var isFiltering = selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -1771,7 +1773,6 @@ namespace Nop.Web.Factories
 
                         model.PriceRangeFilter = await PreparePriceRangeFilterAsync(selectedPriceRange, availablePriceRange);
                     }
-
                     //products
                     products = await _productService.SearchProductsAsync(
                         command.PageNumber - 1,
@@ -1787,7 +1788,8 @@ namespace Nop.Web.Factories
                         searchProductTags: searchInProductTags,
                         languageId: workingLanguage.Id,
                         orderBy: (ProductSortingEnum)command.OrderBy,
-                        vendorId: vendorId);
+                        vendorId: vendorId,
+                        searchCustomerVendors: true);
 
                     //search term statistics
                     if (!string.IsNullOrEmpty(searchTerms))
@@ -1853,7 +1855,7 @@ namespace Nop.Web.Factories
         #endregion
 
         #region Common
-        
+
         /// <summary>
         /// Prepare sorting options
         /// </summary>
@@ -2001,7 +2003,7 @@ namespace Nop.Web.Factories
 
             return Task.CompletedTask;
         }
-        
+
         #endregion
     }
 }

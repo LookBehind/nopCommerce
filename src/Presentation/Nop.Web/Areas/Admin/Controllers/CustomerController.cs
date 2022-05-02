@@ -422,12 +422,12 @@ namespace Nop.Web.Areas.Admin.Controllers
                     var addressId = 0;
                     //foreach (var companyCustomer in companyCustomers)
                     //{
-                        var addresses = await _customerService.GetAddressesByCustomerIdAsync(companyCustomers.FirstOrDefault().CustomerId);
-                        foreach (var address in addresses)
-                        {
-                            await _customerService.InsertCustomerAddressAsync(customer, address);
-                            addressId = address.Id;
-                        }
+                    var addresses = await _customerService.GetAddressesByCustomerIdAsync(companyCustomers.FirstOrDefault().CustomerId);
+                    foreach (var address in addresses)
+                    {
+                        await _customerService.InsertCustomerAddressAsync(customer, address);
+                        addressId = address.Id;
+                    }
                     //}
                     await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = model.CompanyId, CustomerId = customer.Id });
                     customer.ShippingAddressId = addressId;
@@ -667,7 +667,13 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                     //address customer mapping 
                     var companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(model.CompanyId);
-                    if (companyCustomers.Any() && !companyCustomers.Where(x=>x.CustomerId == customer.Id).Any())
+                    if (!companyCustomers.Any())
+                    {
+                        await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = model.CompanyId, CustomerId = customer.Id });
+                        companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(model.CompanyId);
+                    }
+                    //todo clearify
+                    if (companyCustomers.Any() && !companyCustomers.Where(x => x.CustomerId == customer.Id).Any())
                     {
                         var addressId = 0;
                         foreach (var companyCustomer in companyCustomers)
@@ -683,7 +689,6 @@ namespace Nop.Web.Areas.Admin.Controllers
                                 addressId = address.Id;
                             }
                         }
-                        await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = model.CompanyId, CustomerId = customer.Id });
                         customer.ShippingAddressId = addressId;
                         customer.BillingAddressId = addressId;
                         await _customerService.UpdateCustomerAsync(customer);

@@ -249,6 +249,11 @@ namespace Nop.Services.Vendors
             return text;
         }
 
+        public async Task<IList<Vendor>> GetVendorsByIdsAsync(int[] vendorIds)
+        {
+            return await _vendorRepository.GetByIdsAsync(vendorIds, includeDeleted: false);
+        }
+
         #endregion
     }
 }
