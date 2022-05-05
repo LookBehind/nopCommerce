@@ -429,7 +429,7 @@ namespace Nop.Web.Controllers.Api.Security
         [HttpGet("category-list")]
         public async Task<IActionResult> GetAllCategories()
         {
-            var categories = await _catalogModelFactory.PrepareCategorySimpleModelsAsync();
+            var categories = await _catalogModelFactory.PrepareCategorySimpleModelsAsync(filterVendorCategories: true);
             if (categories.Count > 0)
             {
                 var result = categories.Select(cat => new
