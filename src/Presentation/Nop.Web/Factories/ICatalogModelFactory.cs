@@ -42,7 +42,7 @@ namespace Nop.Web.Factories
         /// The task result contains the category navigation model
         /// </returns>
         Task<CategoryNavigationModel> PrepareCategoryNavigationModelAsync(int currentCategoryId,
-            int currentProductId);
+            int currentProductId, bool filterVendorCategories = false);
 
         /// <summary>
         /// Prepare top menu model
@@ -99,7 +99,7 @@ namespace Nop.Web.Factories
         /// A task that represents the asynchronous operation
         /// The task result contains the list of category (simple) models
         /// </returns>
-        Task<List<CategorySimpleModel>> PrepareCategorySimpleModelsAsync();
+        Task<List<CategorySimpleModel>> PrepareCategorySimpleModelsAsync(bool filterVendorCategories=false);
 
         /// <summary>
         /// Prepare category (simple) models
@@ -110,7 +110,7 @@ namespace Nop.Web.Factories
         /// A task that represents the asynchronous operation
         /// The task result contains the list of category (simple) models
         /// </returns>
-        Task<List<CategorySimpleModel>> PrepareCategorySimpleModelsAsync(int rootCategoryId, bool loadSubCategories = true);
+        Task<List<CategorySimpleModel>> PrepareCategorySimpleModelsAsync(int rootCategoryId, bool loadSubCategories = true, bool filterVendorCategories = false);
 
         /// <summary>
         /// Prepare category (simple) xml document
@@ -218,7 +218,7 @@ namespace Nop.Web.Factories
         /// A task that represents the asynchronous operation
         /// The task result contains the vendor navigation model
         /// </returns>
-        Task<VendorNavigationModel> PrepareVendorNavigationModelAsync();
+        Task<VendorNavigationModel> PrepareVendorNavigationModelAsync(int[] vendorIds = null);
 
         #endregion
 

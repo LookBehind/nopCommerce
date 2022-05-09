@@ -511,7 +511,7 @@ namespace Nop.Web.Factories
         /// A task that represents the asynchronous operation
         /// The task result contains the category navigation model
         /// </returns>
-        public virtual async Task<CategoryNavigationModel> PrepareCategoryNavigationModelAsync(int currentCategoryId, int currentProductId)
+        public virtual async Task<CategoryNavigationModel> PrepareCategoryNavigationModelAsync(int currentCategoryId, int currentProductId, bool filterVendorCategories = false)
         {
             //get active category
             var activeCategoryId = 0;
@@ -528,7 +528,7 @@ namespace Nop.Web.Factories
                     activeCategoryId = productCategories[0].CategoryId;
             }
 
-            var cachedCategoriesModel = await PrepareCategorySimpleModelsAsync();
+            var cachedCategoriesModel = await PrepareCategorySimpleModelsAsync(filterVendorCategories: filterVendorCategories);
             var model = new CategoryNavigationModel
             {
                 CurrentCategoryId = activeCategoryId,
@@ -550,7 +550,7 @@ namespace Nop.Web.Factories
             var cachedCategoriesModel = new List<CategorySimpleModel>();
             //categories
             if (!_catalogSettings.UseAjaxLoadMenu)
-                cachedCategoriesModel = await PrepareCategorySimpleModelsAsync();
+                cachedCategoriesModel = await PrepareCategorySimpleModelsAsync(filterVendorCategories: true);
 
             //top menu topics
             var topicModel = await (await _topicService.GetAllTopicsAsync((await _storeContext.GetCurrentStoreAsync()).Id, onlyIncludedInTopMenu: true))
@@ -803,7 +803,7 @@ namespace Nop.Web.Factories
         /// A task that represents the asynchronous operation
         /// The task result contains the list of category (simple) models
         /// </returns>
-        public virtual async Task<List<CategorySimpleModel>> PrepareCategorySimpleModelsAsync()
+        public virtual async Task<List<CategorySimpleModel>> PrepareCategorySimpleModelsAsync(bool filterVendorCategories = false)
         {
             //load and cache them
             var language = await _workContext.GetWorkingLanguageAsync();
@@ -813,7 +813,7 @@ namespace Nop.Web.Factories
             var cacheKey = _staticCacheManager.PrepareKeyForDefaultCache(NopModelCacheDefaults.CategoryAllModelKey,
                 language, customerRoleIds, store);
 
-            return await _staticCacheManager.GetAsync(cacheKey, async () => await PrepareCategorySimpleModelsAsync(0));
+            return await _staticCacheManager.GetAsync(cacheKey, async () => await PrepareCategorySimpleModelsAsync(0, filterVendorCategories: filterVendorCategories));
         }
 
         /// <summary>
@@ -825,7 +825,7 @@ namespace Nop.Web.Factories
         /// A task that represents the asynchronous operation
         /// The task result contains the list of category (simple) models
         /// </returns>
-        public virtual async Task<List<CategorySimpleModel>> PrepareCategorySimpleModelsAsync(int rootCategoryId, bool loadSubCategories = true)
+        public virtual async Task<List<CategorySimpleModel>> PrepareCategorySimpleModelsAsync(int rootCategoryId, bool loadSubCategories = true, bool filterVendorCategories = false)
         {
             var result = new List<CategorySimpleModel>();
 
@@ -835,6 +835,15 @@ namespace Nop.Web.Factories
             //so there's no need to invoke "GetAllCategoriesByParentCategoryId" multiple times (extra SQL commands) to load childs
             //so we load all categories at once (we know they are cached)
             var allCategories = await _categoryService.GetAllCategoriesAsync(storeId: (await _storeContext.GetCurrentStoreAsync()).Id);
+            if (filterVendorCategories)
+            {
+                var productIds = (await _productService.SearchProductsAsync(searchCustomerVendors: true))
+                    .Select(p => p.Id).ToArray();
+                var categoryIds = (await _categoryService.GetProductCategoryIdsAsync(productIds))
+                    .SelectMany(pc => pc.Value).Distinct().ToArray();
+                allCategories = allCategories.Where(c => categoryIds.Contains(c.Id)).ToList();
+            }
+
             var categories = allCategories.Where(c => c.ParentCategoryId == rootCategoryId).OrderBy(c => c.DisplayOrder).ToList();
             foreach (var category in categories)
             {
@@ -1361,12 +1370,12 @@ namespace Nop.Web.Factories
         /// A task that represents the asynchronous operation
         /// The task result contains the vendor navigation model
         /// </returns>
-        public virtual async Task<VendorNavigationModel> PrepareVendorNavigationModelAsync()
+        public virtual async Task<VendorNavigationModel> PrepareVendorNavigationModelAsync(int[] vendorIds = null)
         {
             var cacheKey = NopModelCacheDefaults.VendorNavigationModelKey;
             var cachedModel = await _staticCacheManager.GetAsync(cacheKey, async () =>
             {
-                var vendors = await _vendorService.GetAllVendorsAsync(pageSize: _vendorSettings.VendorsBlockItemsToDisplay);
+                var vendors = await _vendorService.GetAllVendorsAsync(pageSize: _vendorSettings.VendorsBlockItemsToDisplay, vendorIds: vendorIds);
                 var model = new VendorNavigationModel
                 {
                     TotalVendors = vendors.TotalCount

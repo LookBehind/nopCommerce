@@ -9,6 +9,7 @@ using Nop.Core.Domain.Vendors;
 using Nop.Core.Html;
 using Nop.Data;
 using Nop.Data.Extensions;
+using Nop.Services.Companies;
 
 namespace Nop.Services.Vendors
 {
@@ -70,9 +71,9 @@ namespace Nop.Services.Vendors
                 return null;
 
             return await (from v in _vendorRepository.Table
-                    join p in _productRepository.Table on v.Id equals p.VendorId
-                    where p.Id == productId
-                    select v).FirstOrDefaultAsync();
+                          join p in _productRepository.Table on v.Id equals p.VendorId
+                          where p.Id == productId
+                          select v).FirstOrDefaultAsync();
         }
 
         /// <summary>
@@ -89,9 +90,9 @@ namespace Nop.Services.Vendors
                 throw new ArgumentNullException(nameof(productIds));
 
             return await (from v in _vendorRepository.Table
-                    join p in _productRepository.Table on v.Id equals p.VendorId
-                    where productIds.Contains(p.Id) && !v.Deleted && v.Active
-                    select v).Distinct().ToListAsync();
+                          join p in _productRepository.Table on v.Id equals p.VendorId
+                          where productIds.Contains(p.Id) && !v.Deleted && v.Active
+                          select v).Distinct().ToListAsync();
         }
 
         /// <summary>
@@ -108,9 +109,9 @@ namespace Nop.Services.Vendors
                 throw new ArgumentNullException(nameof(customerIds));
 
             return await (from v in _vendorRepository.Table
-                join c in _customerRepository.Table on v.Id equals c.VendorId
-                where customerIds.Contains(c.Id) && !v.Deleted && v.Active
-                select v).Distinct().ToListAsync();
+                          join c in _customerRepository.Table on v.Id equals c.VendorId
+                          where customerIds.Contains(c.Id) && !v.Deleted && v.Active
+                          select v).Distinct().ToListAsync();
         }
 
         /// <summary>
@@ -135,7 +136,7 @@ namespace Nop.Services.Vendors
         /// A task that represents the asynchronous operation
         /// The task result contains the vendors
         /// </returns>
-        public virtual async Task<IPagedList<Vendor>> GetAllVendorsAsync(string name = "", string email = "", int pageIndex = 0, int pageSize = int.MaxValue, bool showHidden = false)
+        public virtual async Task<IPagedList<Vendor>> GetAllVendorsAsync(string name = "", string email = "", int pageIndex = 0, int pageSize = int.MaxValue, bool showHidden = false, int[] vendorIds = null)
         {
             var vendors = await _vendorRepository.GetAllPagedAsync(query =>
             {
@@ -147,6 +148,11 @@ namespace Nop.Services.Vendors
 
                 if (!showHidden)
                     query = query.Where(v => v.Active);
+
+                if (vendorIds != null && vendorIds.Length > 0)
+                {
+                    query = query.Where(v => vendorIds.Contains(v.Id));
+                }
 
                 query = query.Where(v => !v.Deleted);
                 query = query.OrderBy(v => v.DisplayOrder).ThenBy(v => v.Name).ThenBy(v => v.Email);
