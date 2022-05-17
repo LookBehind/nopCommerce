@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LinqToDB.Tools;
 using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
@@ -2317,6 +2318,13 @@ namespace Nop.Services.Catalog
             return productReviews;
         }
 
+        public virtual async Task<ILookup<int, ProductReview>> GetProductReviewsByProductIdsAsync(int[] productIds)
+        {
+            return (await _productReviewRepository.GetAllAsync(query =>
+                query.Where(r => r.ProductId.In(productIds))))
+                .ToLookup(k => k.ProductId, k=> k);
+        }
+        
         /// <summary>
         /// Gets product review
         /// </summary>

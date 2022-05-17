@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using LinqToDB;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -42,6 +43,7 @@ using Nop.Web.Areas.Admin.Models.Orders;
 using Nop.Web.Areas.Admin.Models.Reports;
 using Nop.Web.Framework.Extensions;
 using Nop.Web.Framework.Models.Extensions;
+using Nop.Web.Models.Api.Order;
 using TimeZoneConverter;
 
 namespace Nop.Web.Areas.Admin.Factories
@@ -97,6 +99,7 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly IUrlRecordService _urlRecordService;
         private readonly TaxSettings _taxSettings;
         private readonly ICompanyService _companyService;
+        private readonly ICategoryService _categoryService;
 
         #endregion
 
@@ -145,7 +148,8 @@ namespace Nop.Web.Areas.Admin.Factories
             ShippingSettings shippingSettings,
             IUrlRecordService urlRecordService,
             TaxSettings taxSettings,
-            ICompanyService companyService)
+            ICompanyService companyService, 
+            ICategoryService categoryService)
         {
             _addressSettings = addressSettings;
             _catalogSettings = catalogSettings;
@@ -191,6 +195,7 @@ namespace Nop.Web.Areas.Admin.Factories
             _urlRecordService = urlRecordService;
             _taxSettings = taxSettings;
             _companyService = companyService;
+            _categoryService = categoryService;
         }
 
         #endregion

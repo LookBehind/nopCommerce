@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using Nop.Web.Models.Api.Catalog;
 using Nop.Web.Models.Catalog;
 
 namespace Nop.Web.Models.Api.Order
@@ -11,6 +12,8 @@ namespace Nop.Web.Models.Api.Order
 
     public record ShoppingCartItemModel()
     {
+        public int Id { get; set; }
+        public int ProductId { get; set; }
         public int ShoppingCartItemId { get; set; }
         public string Name { get; set; }
         public string CategoryName { get; set; }
@@ -21,11 +24,12 @@ namespace Nop.Web.Models.Api.Order
         public int RatingSum { get; set; }
         public int TotalReviews { get; set; }
         public int Quantity { get; set; }
+        public ProductOrderSimpleAttribute[] ProductAttributes { get; set; }
     }
 
     public record CartModel()
     {
         public IReadOnlyList<ShoppingCartItemModel> Items { get; set; }
-        public decimal CartTotal { get; set; }
+        public string CartTotal { get; set; }
     }
 }

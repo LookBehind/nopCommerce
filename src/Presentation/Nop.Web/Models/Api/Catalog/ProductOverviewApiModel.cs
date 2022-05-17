@@ -10,10 +10,6 @@ namespace Nop.Web.Models.Api.Catalog
 {
     public class ProductOverviewApiModel
     {
-        public ProductOverviewApiModel()
-        {
-            ProductSpecificationModel = new ProductSpecificationApiModel();
-        }
         public bool RibbonEnable { get; set; }
         public string RibbonText { get; set; }
         public string CategoryName { get; set; }

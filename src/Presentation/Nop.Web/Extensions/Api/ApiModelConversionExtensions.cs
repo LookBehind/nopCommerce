@@ -48,7 +48,20 @@ namespace Nop.Web.Extensions.Api
             return await ConvertToAttributesXmlAsync(model.ProductId, model.ProductAttributes, productAttributeParser,
                 productAttributeService);
         }
-        
-        
+
+        public static async Task<ProductOrderSimpleAttribute[]> ConvertToSimpleAttributes(string attributesXml,
+            IProductAttributeParser productAttributeParser, IProductAttributeService productAttributeService)
+        {
+            var attributeValues = 
+                await productAttributeParser.ParseProductAttributeValuesAsync(attributesXml);
+
+            return await attributeValues.SelectAwait(async a => new ProductOrderSimpleAttribute
+            {
+                ProductAttributeId =
+                    (await productAttributeService.GetProductAttributeMappingByIdAsync(
+                        a.ProductAttributeMappingId)).ProductAttributeId,
+                ProductAttributeValueId = a.Id
+            }).ToArrayAsync();
+        }
     }
 }

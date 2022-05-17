@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using LinqToDB.Tools;
 using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
@@ -35,6 +36,8 @@ namespace Nop.Services.Orders
         private readonly IRepository<OrderItem> _orderItemRepository;
         private readonly IRepository<OrderNote> _orderNoteRepository;
         private readonly IRepository<Product> _productRepository;
+        private readonly IRepository<ProductCategory> _productCategoryRepository;
+        private readonly IRepository<Category> _categoryRepository;
         private readonly IRepository<ProductWarehouseInventory> _productWarehouseInventoryRepository;
         private readonly IRepository<RecurringPayment> _recurringPaymentRepository;
         private readonly IRepository<RecurringPaymentHistory> _recurringPaymentHistoryRepository;
@@ -58,7 +61,7 @@ namespace Nop.Services.Orders
             IRepository<RecurringPaymentHistory> recurringPaymentHistoryRepository,
             IRepository<Vendor> vendorRepositopry,
             IShipmentService shipmentService,
-            IWorkContext workContext)
+            IWorkContext workContext, IRepository<ProductCategory> productCategoryRepository, IRepository<Category> categoryRepository)
         {
             _productService = productService;
             _addressRepository = addressRepository;
@@ -73,6 +76,8 @@ namespace Nop.Services.Orders
             _vendorRepository = vendorRepositopry;
             _shipmentService = shipmentService;
             _workContext = workContext;
+            _productCategoryRepository = productCategoryRepository;
+            _categoryRepository = categoryRepository;
         }
 
         #endregion
@@ -314,7 +319,8 @@ namespace Nop.Services.Orders
             List<int> osIds = null, List<int> psIds = null, List<int> ssIds = null,
             string billingPhone = null, string billingEmail = null, string billingLastName = "",
             string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue,
-            bool getOnlyTotalCount = false, bool sendRateNotification = false, bool sortByDeliveryDate = false)
+            bool getOnlyTotalCount = false, bool sendRateNotification = false, bool sortByDeliveryDate = false,
+            DateTime? scheduleDateBefore = null, DateTime? scheduleDateAfter = null)
         {
             var query = _orderRepository.Table;
 
@@ -381,6 +387,17 @@ namespace Nop.Services.Orders
             {
                 query = query.Where(o => o.CreatedOnUtc <= createdToUtc.Value);
             }
+
+            if (scheduleDateBefore.HasValue)
+            {
+                query = query.Where(o => o.ScheduleDate.Date <= scheduleDateBefore.Value);
+            }
+
+            if (scheduleDateAfter.HasValue)
+            {
+                query = query.Where(o => o.ScheduleDate.Date >= scheduleDateAfter.Value);
+            }
+            
             if (osIds != null && osIds.Any())
                 query = query.Where(o => osIds.Contains(o.OrderStatusId));
 
@@ -632,6 +649,18 @@ namespace Nop.Services.Orders
                           select oi).ToListAsync();
         }
 
+        public virtual async Task<IList<OrderItem>> GetOrderItemsAsync(IEnumerable<int> orderIds)
+        {
+            if (!orderIds.Any())
+                return new List<OrderItem>();
+
+            return await
+                (from oi in _orderItemRepository.Table
+                where
+                    oi.OrderId.In(orderIds)
+                select oi).ToListAsync();
+        }
+        
         /// <summary>
         /// Gets an item
         /// </summary>

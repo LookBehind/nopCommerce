@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Shipping;
 using Nop.Web.Models.Order;
@@ -48,5 +49,9 @@ namespace Nop.Web.Factories
         /// The task result contains the customer reward points model
         /// </returns>
         Task<CustomerRewardPointsModel> PrepareCustomerRewardPointsAsync(int? page);
+        
+        Task<Nop.Web.Models.Api.Order.OrdersModel> PrepareOrdersModelAsync(
+            int customerId,
+            DateTime scheduleDateBefore, DateTime scheduleDateAfter);
     }
 }

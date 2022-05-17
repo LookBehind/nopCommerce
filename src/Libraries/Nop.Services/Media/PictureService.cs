@@ -1120,6 +1120,12 @@ namespace Nop.Services.Media
             var parentGroupedProductPicture = (await GetPicturesByProductIdAsync(product.ParentGroupedProductId, 1)).FirstOrDefault();
             return parentGroupedProductPicture;
         }
+        
+        public virtual async Task<string> GetProductPictureUrlAsync(Product product, string attributesXml)
+        {
+            var picture = await GetProductPictureAsync(product, attributesXml);
+            return (await GetPictureUrlAsync(picture)).Url;
+        }
 
         /// <summary>
         /// Gets a value indicating whether the images should be stored in data base.

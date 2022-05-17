@@ -34,6 +34,7 @@ using Nop.Services.Shipping;
 using Nop.Services.Stores;
 using Nop.Services.Tax;
 using Nop.Services.Vendors;
+using Nop.Web.Extensions.Api;
 using Nop.Web.Infrastructure.Cache;
 using Nop.Web.Models.Api.Order;
 using Nop.Web.Models.Common;
@@ -76,6 +77,8 @@ namespace Nop.Web.Factories
         private readonly IPictureService _pictureService;
         private readonly IPriceFormatter _priceFormatter;
         private readonly IProductAttributeFormatter _productAttributeFormatter;
+        private readonly IProductAttributeParser _productAttributeParser;
+        private readonly IProductAttributeService _productAttributeService;
         private readonly IProductService _productService;
         private readonly IShippingService _shippingService;
         private readonly IShoppingCartService _shoppingCartService;
@@ -149,7 +152,9 @@ namespace Nop.Web.Factories
             TaxSettings taxSettings,
             VendorSettings vendorSettings, 
             ICategoryService categoryService, 
-            IPriceCalculationService priceCalculationService)
+            IPriceCalculationService priceCalculationService, 
+            IProductAttributeParser productAttributeParser, 
+            IProductAttributeService productAttributeService)
         {
             _addressSettings = addressSettings;
             _captchaSettings = captchaSettings;
@@ -199,6 +204,8 @@ namespace Nop.Web.Factories
             _vendorSettings = vendorSettings;
             _categoryService = categoryService;
             _priceCalculationService = priceCalculationService;
+            _productAttributeParser = productAttributeParser;
+            _productAttributeService = productAttributeService;
         }
 
         #endregion
@@ -1515,6 +1522,8 @@ namespace Nop.Web.Factories
                 
                 items.Add(new ShoppingCartItemModel()
                 {
+                    Id = cartItem.Id,
+                    ProductId = cartItem.ProductId,
                     CategoryName = categoryName,
                     ImageUrl = pictureUrl,
                     Name = await _localizationService.GetLocalizedAsync(product, x => x.Name),
@@ -1524,17 +1533,19 @@ namespace Nop.Web.Factories
                     RatingSum = productReviews.Sum(pr => pr.Rating),
                     ShoppingCartItemId = cartItem.Id,
                     TotalReviews = productReviews.Count,
-                    Vendor = new VendorModel()
+                    Vendor = new VendorModel
                     {
                         Name = await _localizationService.GetLocalizedAsync(vendor, v => v.Name),
                         PictureUrl = await _pictureService.GetPictureUrlAsync(vendor.PictureId)
-                    }
+                    },
+                    ProductAttributes = await ApiModelConversionExtensions.ConvertToSimpleAttributes(cartItem.AttributesXml,
+                        _productAttributeParser, _productAttributeService)
                 });
             }
 
             return new CartModel()
             {
-                CartTotal = cartTotal.shoppingCartTotal!.Value,
+                CartTotal = await _priceFormatter.FormatPriceAsync(cartTotal.shoppingCartTotal!.Value),
                 Items = items
             };
         }

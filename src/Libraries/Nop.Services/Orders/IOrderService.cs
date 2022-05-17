@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Shipping;
+using OfficeOpenXml.FormulaParsing.Excel.Functions.DateTime;
 
 namespace Nop.Services.Orders
 {
@@ -111,7 +113,8 @@ namespace Nop.Services.Orders
             string billingPhone = null, string billingEmail = null, string billingLastName = "",
             string orderNotes = null, int pageIndex = 0,
             int pageSize = int.MaxValue, bool getOnlyTotalCount = false,
-            bool sendRateNotification = false, bool sortByDeliveryDate = false);
+            bool sendRateNotification = false, bool sortByDeliveryDate = false,
+            DateTime? scheduleDateBefore = null, DateTime? scheduleDateAfter = null);
 
         /// <summary>
         /// Inserts an order
@@ -201,6 +204,7 @@ namespace Nop.Services.Orders
         /// The task result contains the result
         /// </returns>
         Task<IList<OrderItem>> GetOrderItemsAsync(int orderId, bool? isNotReturnable = null, bool? isShipEnabled = null, int vendorId = 0);
+        Task<IList<OrderItem>> GetOrderItemsAsync(IEnumerable<int> orderIds);
 
         /// <summary>
         /// Gets an order item

@@ -4,16 +4,11 @@ using Nop.Web.Models.Catalog;
 
 namespace Nop.Web.Models.Api.Catalog
 {
-    public partial record ProductSpecificationAttributeApiModel : BaseNopEntityModel
+    public record ProductSpecificationAttributeApiModel : BaseNopEntityModel
     {
         public string Name { get; set; }
 
-        public IList<ProductSpecificationAttributeValueApiModel> Values { get; set; }
-
-        public ProductSpecificationAttributeApiModel()
-        {
-            Values = new List<ProductSpecificationAttributeValueApiModel>();
-        }
-
+        public IList<ProductSpecificationAttributeValueApiModel> Values { get; init; } 
+            = new List<ProductSpecificationAttributeValueApiModel>();
     }
 }

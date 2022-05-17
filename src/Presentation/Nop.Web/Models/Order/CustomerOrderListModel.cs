@@ -6,28 +6,19 @@ using static Nop.Web.Models.Order.OrderDetailsModel;
 
 namespace Nop.Web.Models.Order
 {
-    public partial record CustomerOrderListModel : BaseNopModel
+    public record CustomerOrderListModel : BaseNopModel
     {
-        public CustomerOrderListModel()
-        {
-            Orders = new List<OrderDetailsModel>();
-            RecurringOrders = new List<RecurringOrderModel>();
-            RecurringPaymentErrors = new List<string>();
-        }
-
-        public IList<OrderDetailsModel> Orders { get; set; }
-        public IList<RecurringOrderModel> RecurringOrders { get; set; }
-        public IList<string> RecurringPaymentErrors { get; set; }
+        public IList<OrderDetailsModel> Orders { get; set; } = new List<OrderDetailsModel>();
+        public IList<RecurringOrderModel> RecurringOrders { get; set; } = new List<RecurringOrderModel>();
+        public IList<string> RecurringPaymentErrors { get; set; } = new List<string>();
 
         #region Nested classes
 
-        public partial record OrderDetailsModel : BaseNopEntityModel
+        public record OrderDetailsModel : BaseNopEntityModel
         {
-            public OrderDetailsModel()
-            {
-                Items = new List<OrderItemModel>();
-            }
-            public IList<OrderItemModel> Items { get; set; }
+            /// TODO: remove after deprecating v1 OrderApiController
+            /// This is left here for backward compatibility 
+            public IList<OrderItemModel> Items { get; set; } = new List<OrderItemModel>();
             public DateTime ScheduleDate { get; set; }
             public int Rating { get; set; }
             public string RatingText { get; set; }
@@ -41,7 +32,7 @@ namespace Nop.Web.Models.Order
             public DateTime CreatedOn { get; set; }
         }
 
-        public partial record RecurringOrderModel : BaseNopEntityModel
+        public record RecurringOrderModel : BaseNopEntityModel
         {
             public string StartDate { get; set; }
             public string CycleInfo { get; set; }

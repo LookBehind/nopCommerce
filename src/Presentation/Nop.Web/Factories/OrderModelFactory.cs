@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Nop.Core;
@@ -16,13 +17,16 @@ using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Helpers;
 using Nop.Services.Localization;
+using Nop.Services.Media;
 using Nop.Services.Orders;
 using Nop.Services.Payments;
 using Nop.Services.Seo;
 using Nop.Services.Shipping;
 using Nop.Services.Vendors;
+using Nop.Web.Models.Api.Order;
 using Nop.Web.Models.Common;
 using Nop.Web.Models.Order;
+using OrderDetailsModel = Nop.Web.Models.Order.OrderDetailsModel;
 
 namespace Nop.Web.Factories
 {
@@ -63,6 +67,8 @@ namespace Nop.Web.Factories
         private readonly ShippingSettings _shippingSettings;
         private readonly TaxSettings _taxSettings;
         private readonly VendorSettings _vendorSettings;
+        private readonly IPictureService _pictureService;
+        private readonly ICategoryService _categoryService;
 
         #endregion
 
@@ -97,7 +103,7 @@ namespace Nop.Web.Factories
             RewardPointsSettings rewardPointsSettings,
             ShippingSettings shippingSettings,
             TaxSettings taxSettings,
-            VendorSettings vendorSettings)
+            VendorSettings vendorSettings, IPictureService pictureService, ICategoryService categoryService)
         {
             _addressSettings = addressSettings;
             _catalogSettings = catalogSettings;
@@ -129,6 +135,8 @@ namespace Nop.Web.Factories
             _shippingSettings = shippingSettings;
             _taxSettings = taxSettings;
             _vendorSettings = vendorSettings;
+            _pictureService = pictureService;
+            _categoryService = categoryService;
         }
 
         #endregion
@@ -158,7 +166,10 @@ namespace Nop.Web.Factories
                     PaymentStatus = await _localizationService.GetLocalizedEnumAsync(order.PaymentStatus),
                     ShippingStatus = await _localizationService.GetLocalizedEnumAsync(order.ShippingStatus),
                     IsReturnRequestAllowed = await _orderProcessingService.IsReturnRequestAllowedAsync(order),
-                    CustomOrderNumber = order.CustomOrderNumber
+                    CustomOrderNumber = order.CustomOrderNumber,
+                    Rating = order.Rating,
+                    RatingText = order.RatingText,
+                    ScheduleDate = order.ScheduleDate
                 };
                 var orderTotalInCustomerCurrency = _currencyService.ConvertCurrency(order.OrderTotal, order.CurrencyRate);
                 orderModel.OrderTotal = await _priceFormatter.FormatPriceAsync(orderTotalInCustomerCurrency, true, order.CustomerCurrencyCode, false, (await _workContext.GetWorkingLanguageAsync()).Id);
@@ -640,6 +651,76 @@ namespace Nop.Web.Factories
             model.MinimumRewardPointsAmount = await _priceFormatter.FormatPriceAsync(minimumRewardPointsAmount, true, false);
 
             return model;
+        }
+        
+        public virtual async Task<Nop.Web.Models.Api.Order.OrdersModel> PrepareOrdersModelAsync(
+            int customerId,
+            DateTime scheduleDateBefore, DateTime scheduleDateAfter)
+        {
+            var orders = await _orderService.SearchOrdersAsync(customerId: customerId,
+                scheduleDateBefore: scheduleDateBefore, scheduleDateAfter: scheduleDateAfter);
+
+            var orderItemsByOrderId = 
+                (await _orderService.GetOrderItemsAsync(orders.Select(o => o.Id)))
+                .ToLookup(k => k.OrderId, k=> k);
+
+            var productIds = orderItemsByOrderId
+                .SelectMany(o => o)
+                .Select(o => o.ProductId)
+                .ToArray();
+            
+            var productsById = (await _productService.GetProductsByIdsAsync(productIds))
+                .ToDictionary(k => k.Id, k => k);
+
+            var allCategories = await _categoryService.GetAllCategoriesAsync();
+            
+            var categoryByProductIds = (await _categoryService.GetProductCategoryIdsAsync(
+                    productIds))
+                .Join(allCategories,
+                    p => p.Value.FirstOrDefault(),
+                    c => c.Id,
+                    (p, c) => KeyValuePair.Create(p.Key, c))
+                .ToDictionary(k => k.Key, v => v.Value);
+
+            var vendorModelById = await (await _vendorService.GetAllVendorsAsync())
+                .SelectAwait(async v => KeyValuePair.Create(v.Id, new VendorModel()
+                {
+                    Name = await _localizationService.GetLocalizedAsync(v, k => k.Name),
+                    PictureUrl = await _pictureService.GetPictureUrlAsync(v.PictureId)
+                }))
+                .ToDictionaryAsync(k => k.Key, k => k.Value);
+
+            var productReviewsByProductId = await _productService.GetProductReviewsByProductIdsAsync(productIds);
+            
+            return new Nop.Web.Models.Api.Order.OrdersModel()
+            {
+                Orders = await orders.SelectAwait(async o => new Nop.Web.Models.Api.Order.OrderDetailsModel()
+                {
+                    CustomOrderNumber = o.CustomOrderNumber,
+                    Id = o.Id,
+                    Rating = o.Rating,
+                    RatingText = o.RatingText,
+                    CreatedOn = o.CreatedOnUtc,
+                    OrderStatus = o.OrderStatus.ToString(),
+                    OrderTotal = await _priceFormatter.FormatPriceAsync(o.OrderTotal),
+                    ScheduleDate = o.ScheduleDate,
+                    OrderItems = await orderItemsByOrderId[o.Id].SelectAwait(async oi => new OrderItemDetails()
+                    {
+                        Id = oi.Id,
+                        ProductId = oi.ProductId,
+                        CategoryName = await _localizationService.GetLocalizedAsync(categoryByProductIds[oi.ProductId], k => k.Name),
+                        Name = await _localizationService.GetLocalizedAsync(productsById[oi.ProductId], k => k.Name),
+                        Price = await _priceFormatter.FormatPriceAsync(oi.PriceInclTax),
+                        Quantity = oi.Quantity,
+                        Vendor = vendorModelById[productsById[oi.ProductId].VendorId],
+                        ImageUrl = await _pictureService.GetProductPictureUrlAsync(productsById[oi.ProductId], oi.AttributesXml),
+                        PriceValue = oi.PriceInclTax,
+                        RatingSum = productReviewsByProductId[oi.ProductId].Sum(r => r.Rating),
+                        TotalReviews = productReviewsByProductId[oi.ProductId].Count(),
+                        AttributeDescription = oi.AttributeDescription
+                    }).ToListAsync()
+                }).ToListAsync()
+            };
         }
 
         #endregion

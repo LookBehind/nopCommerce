@@ -259,6 +259,8 @@ namespace Nop.Services.Media
         /// The task result contains the picture
         /// </returns>
         Task<Picture> GetProductPictureAsync(Product product, string attributesXml);
+        
+        Task<string> GetProductPictureUrlAsync(Product product, string attributesXml);
 
         /// <summary>
         /// Get product picture binary by picture identifier

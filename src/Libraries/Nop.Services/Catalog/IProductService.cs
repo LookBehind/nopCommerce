@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
@@ -742,6 +743,8 @@ namespace Nop.Services.Catalog
             string message = null, int storeId = 0, int productId = 0, int vendorId = 0, bool showHidden = false,
             int pageIndex = 0, int pageSize = int.MaxValue);
 
+        Task<ILookup<int, ProductReview>> GetProductReviewsByProductIdsAsync(int[] productIds);
+        
         /// <summary>
         /// Gets product review
         /// </summary>

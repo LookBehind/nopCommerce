@@ -37,6 +37,7 @@ using Nop.Web.Extensions.Api;
 using Nop.Web.Factories;
 using Nop.Web.Models.Api.Order;
 using Nop.Web.Models.Catalog;
+using OrderDetailsModel = Nop.Web.Models.Order.OrderDetailsModel;
 
 namespace Nop.Web.Controllers.Api.Security
 {
@@ -69,6 +70,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly IProductAttributeService _productAttributeService;
         private readonly ILogger _logger;
         private readonly IShoppingCartModelFactory _shoppingCartModelFactory;
+        private readonly IOrderModelFactory _orderModelFactory;
 
         #endregion
 
@@ -95,7 +97,7 @@ namespace Nop.Web.Controllers.Api.Security
             IProductAttributeParser productAttributeParser,
             IProductAttributeService productAttributeService, 
             ILogger logger, 
-            IShoppingCartModelFactory shoppingCartModelFactory)
+            IShoppingCartModelFactory shoppingCartModelFactory, IOrderModelFactory orderModelFactory)
         {
             _orderService = orderService;
             _customerService = customerService;
@@ -119,6 +121,7 @@ namespace Nop.Web.Controllers.Api.Security
             _productAttributeService = productAttributeService;
             _logger = logger;
             _shoppingCartModelFactory = shoppingCartModelFactory;
+            _orderModelFactory = orderModelFactory;
         }
 
         #endregion
@@ -246,7 +249,9 @@ namespace Nop.Web.Controllers.Api.Security
                 message = await _localizationService.GetResourceAsync("Order.Cancelled.Successfully") });
         }
 
-        [HttpPost("add-to-cart")]
+        #region V2
+
+        [HttpPost("v2/add-to-cart")]
         public async Task<CartModel> AddToCartAsync([FromBody]AddToCartModel addToCartModel)
         {
             var product = await _productService.GetProductByIdAsync(addToCartModel.ProductId);
@@ -285,7 +290,7 @@ namespace Nop.Web.Controllers.Api.Security
             return await _shoppingCartModelFactory.PrepareCartModelAsync(customer);
         }
 
-        [HttpPost("cart-item-increase/{shoppingCartItemId}")]
+        [HttpPost("v2/cart-item-increase/{shoppingCartItemId}")]
         public async Task<CartModel> CartItemIncrease(int shoppingCartItemId)
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
@@ -312,7 +317,7 @@ namespace Nop.Web.Controllers.Api.Security
             return await _shoppingCartModelFactory.PrepareCartModelAsync(customer);
         }
         
-        [HttpPost("cart-item-decrease/{shoppingCartItemId}")]
+        [HttpPost("v2/cart-item-decrease/{shoppingCartItemId}")]
         public async Task<CartModel> CartItemDecrease(int shoppingCartItemId)
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
@@ -338,6 +343,39 @@ namespace Nop.Web.Controllers.Api.Security
             
             return await _shoppingCartModelFactory.PrepareCartModelAsync(customer);
         }
+
+        [HttpGet("v2/cart")]
+        public async Task<CartModel> GetCart()
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            return await _shoppingCartModelFactory.PrepareCartModelAsync(customer);
+        }
+        
+        [HttpGet("v2/get-previous-orders")]
+        public async Task<OrdersModel> GetPreviousOrders()
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            return await _orderModelFactory.PrepareOrdersModelAsync(customer.Id, 
+                DateTime.UtcNow.Date.AddDays(-1), DateTime.UtcNow.Date.AddDays(-21));
+        }
+        
+        [HttpGet("v2/get-todays-orders")]
+        public async Task<OrdersModel> GetTodaysOrders()
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            return await _orderModelFactory.PrepareOrdersModelAsync(customer.Id, 
+                DateTime.UtcNow.Date, DateTime.UtcNow.Date);
+        }
+        
+        [HttpGet("v2/get-upcoming-orders")]
+        public async Task<OrdersModel> GetUpcomingOrders()
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            return await _orderModelFactory.PrepareOrdersModelAsync(customer.Id, 
+                DateTime.UtcNow.Date.AddDays(21), DateTime.UtcNow.Date.AddDays(1));
+        }
+
+        #endregion
         
         [HttpPost("delete-cart/{ids}")]
         public async Task<IActionResult> DeleteCart(string ids)
