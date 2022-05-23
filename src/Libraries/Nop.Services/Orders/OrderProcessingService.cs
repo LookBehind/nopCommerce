@@ -389,6 +389,34 @@ namespace Nop.Services.Orders
         #region Utilities
 
         /// <summary>
+        /// Add Delivery slot to order, retry in case of fail as there can be update issue with DeliverySlot,SchedulDateTime couple uniqueness
+        /// </summary>
+        /// <param name="note">Note text</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        protected virtual async Task AddOrderDeliverSlotAsync(Order order)
+        {
+            int maxRetryCount = 5;
+            int counter = 0;
+            bool isSucceed = false;
+            while (!isSucceed && counter < maxRetryCount)
+            {
+                try
+                {
+                    maxRetryCount++;
+                    var orders = (await _orderService.SearchOrdersAsync(scheduleDateTime: order.ScheduleDateTime));
+                    var lastSlot = orders.Count > 0 ? orders.Max(o => o.DeliverySlot) : 0;
+                    order.DeliverySlot = lastSlot > 0 ? lastSlot + 1 : 1;
+                    await _orderService.UpdateOrderAsync(order);
+                    isSucceed = true;
+                }
+                catch
+                {
+                }
+
+            }
+        }
+
+        /// <summary>
         /// Add order note
         /// </summary>
         /// <param name="order">Order</param>
@@ -852,6 +880,10 @@ namespace Nop.Services.Orders
                 await _addressService.InsertAddressAsync(details.ShippingAddress);
                 order.ShippingAddressId = details.ShippingAddress.Id;
             }
+
+            //set temporary values for order delivery slot. in checkout will be updated
+            order.DeliverySlot = -order.CustomerId;
+            order.ScheduleDateTime = DateTime.UtcNow;
 
             await _orderService.InsertOrderAsync(order);
 
@@ -1638,6 +1670,10 @@ namespace Nop.Services.Orders
                     var order = await SaveOrderDetailsAsync(processPaymentRequest, processPaymentResult, details);
                     order.ScheduleDate = scheduleDate; //TODO: refactor details.ScheduleDate to be DateTime and don't put it here
                     result.PlacedOrder = order;
+                    order.ScheduleDateTime = scheduleDate;
+
+                    //update order delivery slot
+                    await AddOrderDeliverSlotAsync(order);
 
                     //move shopping cart items to order items
                     await MoveShoppingCartItemsToOrderItemsAsync(details, order);

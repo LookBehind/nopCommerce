@@ -284,7 +284,16 @@ namespace Nop.Core.Domain.Orders
         public DateTime CreatedOnUtc { get; set; }
 
         public bool RateNotificationSend { get; set; }
+
+        //todo:  Replace ScheduleDate to ScheduleDateTime
+        /// <summary>
+        /// Gets or sets the delivery date
+        /// type string in database
+        /// to do 
+        /// </summary>
         public DateTime ScheduleDate { get; set; }
+
+        public DateTime ScheduleDateTime { get; set; }
 
         /// <summary>
         /// Gets or sets the custom order number without prefix
@@ -293,6 +302,11 @@ namespace Nop.Core.Domain.Orders
 
         public int Rating { get; set; }
         public string RatingText { get; set; }
+
+        /// <summary>
+        /// Gets or sets order delivery slot
+        /// </summary>
+        public int? DeliverySlot { get; set; }
 
         /// <summary>
         /// Gets or sets the reward points history record (spent by a customer when placing this order)

@@ -1002,7 +1002,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 //billingLastName: searchModel.BillingLastName,
                 //billingCountryId: searchModel.BillingCountryId,
                 orderNotes: searchModel.OrderNotes,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,sortByDeliveryDate: searchModel.SortByDeliveryDate);
+                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize, sortByDeliveryDate: searchModel.SortByDeliveryDate,
+                deliverySlot: searchModel.DeliverySlot, companyName: searchModel.Company);
 
             //prepare list model
             var model = await new OrderListModel().PrepareToGridAsync(searchModel, orders, () =>
@@ -1026,6 +1027,7 @@ namespace Nop.Web.Areas.Admin.Factories
                         CustomerId = order.CustomerId,
                         CustomOrderNumber = order.CustomOrderNumber,
                         ShippingAddress = shippingAddress,
+                        DeliverySlot = order.DeliverySlot.ToString()
                     };
 
                     //convert dates to the user time
@@ -1033,6 +1035,7 @@ namespace Nop.Web.Areas.Admin.Factories
                     var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
                     var timezoneInfo = company == null ? await _dateTimeHelper.GetCustomerTimeZoneAsync(await _workContext.GetCurrentCustomerAsync()) : TZConvert.GetTimeZoneInfo(company.TimeZone);
                     orderModel.ScheduleDate = _dateTimeHelper.ConvertToUserTime(order.ScheduleDate, TimeZoneInfo.Utc, timezoneInfo);
+                    orderModel.Company = company.Name;
                     //fill in additional values (not existing in the entity)
                     orderModel.StoreName = (await _storeService.GetStoreByIdAsync(order.StoreId))?.Name ?? "Deleted";
                     orderModel.OrderStatus = await _localizationService.GetLocalizedEnumAsync(order.OrderStatus);
@@ -1162,7 +1165,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 model.CustomerInfo = await _customerService.IsRegisteredAsync(customer) ? customer.Email : await _localizationService.GetResourceAsync("Admin.Customers.Guest");
                 model.CreatedOn = await _dateTimeHelper.ConvertToUserTimeAsync(order.CreatedOnUtc, DateTimeKind.Utc);
                 model.CustomValues = _paymentService.DeserializeCustomValues(order);
-
+                model.DeliverySlot = order.DeliverySlot.ToString();
+                model.Company = (await _companyService.GetCompanyByCustomerIdAsync(order.CustomerId)).Name;
                 var affiliate = await _affiliateService.GetAffiliateByIdAsync(order.AffiliateId);
                 if (affiliate != null)
                 {

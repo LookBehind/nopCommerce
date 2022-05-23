@@ -112,7 +112,8 @@ namespace Nop.Services.Orders
             string orderNotes = null, int pageIndex = 0,
             int pageSize = int.MaxValue, bool getOnlyTotalCount = false,
             bool sendRateNotification = false,
-            bool sortByDeliveryDate = false, DateTime? schedulDate = null);
+            bool sortByDeliveryDate = false, DateTime? schedulDate = null, DateTime? scheduleDateTime = null,
+            string companyName = null, int deliverySlot = 0);
 
         /// <summary>
         /// Inserts an order

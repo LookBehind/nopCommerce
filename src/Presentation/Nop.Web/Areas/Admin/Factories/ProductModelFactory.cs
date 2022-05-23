@@ -16,6 +16,7 @@ using Nop.Core.Domain.Tax;
 using Nop.Core.Domain.Vendors;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
+using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Discounts;
@@ -77,6 +78,7 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly MeasureSettings _measureSettings;
         private readonly TaxSettings _taxSettings;
         private readonly VendorSettings _vendorSettings;
+        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -116,7 +118,8 @@ namespace Nop.Web.Areas.Admin.Factories
             IWorkContext workContext,
             MeasureSettings measureSettings,
             TaxSettings taxSettings,
-            VendorSettings vendorSettings)
+            VendorSettings vendorSettings,
+            ICompanyService companyService)
         {
             _catalogSettings = catalogSettings;
             _currencySettings = currencySettings;
@@ -153,6 +156,7 @@ namespace Nop.Web.Areas.Admin.Factories
             _workContext = workContext;
             _taxSettings = taxSettings;
             _vendorSettings = vendorSettings;
+            _companyService = companyService;
         }
 
         #endregion
@@ -1750,7 +1754,8 @@ namespace Nop.Web.Areas.Admin.Factories
                     {
                         Id = order.Id,
                         CustomerEmail = billingAddress.Email,
-                        CustomOrderNumber = order.CustomOrderNumber
+                        CustomOrderNumber = order.CustomOrderNumber,
+                        DeliverySlot = order.DeliverySlot.ToString()
                     };
 
                     //convert dates to the user time
@@ -1761,7 +1766,7 @@ namespace Nop.Web.Areas.Admin.Factories
                     orderModel.OrderStatus = await _localizationService.GetLocalizedEnumAsync(order.OrderStatus);
                     orderModel.PaymentStatus = await _localizationService.GetLocalizedEnumAsync(order.PaymentStatus);
                     orderModel.ShippingStatus = await _localizationService.GetLocalizedEnumAsync(order.ShippingStatus);
-
+                    orderModel.Company = (await _companyService.GetCompanyByCustomerIdAsync(order.CustomerId)).Name;
                     return orderModel;
                 });
             });

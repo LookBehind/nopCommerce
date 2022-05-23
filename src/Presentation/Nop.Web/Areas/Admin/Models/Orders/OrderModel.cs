@@ -41,6 +41,8 @@ namespace Nop.Web.Areas.Admin.Models.Orders
         public Guid OrderGuid { get; set; }
         [NopResourceDisplayName("Admin.Orders.Fields.CustomOrderNumber")]
         public string CustomOrderNumber { get; set; }
+        public string DeliverySlot { get; set; }
+        public string Company { get; set; }
         
         //store
         [NopResourceDisplayName("Admin.Orders.Fields.Store")]
