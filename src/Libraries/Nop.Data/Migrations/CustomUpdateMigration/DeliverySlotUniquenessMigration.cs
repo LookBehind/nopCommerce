@@ -9,7 +9,7 @@ using Nop.Data.Mapping;
 
 namespace Nop.Data.Migrations.CustomUpdateMigration
 {
-    [NopMigration("2022-05-21 11:30:17:6453226", "4.60.0", UpdateMigrationType.Data)]
+    [NopMigration("2022-05-30 11:30:17:6453226", "4.60.0", UpdateMigrationType.Data)]
     [SkipMigrationOnInstall]
     public class DeliverySlotUniquenessMigration : Migration
     {
@@ -20,7 +20,7 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
                 !Schema.Table(NameCompatibilityManager.GetTableName(typeof(Order))).Index("DeliverSlotUnique").Exists())
             {
                 Create.UniqueConstraint("DeliverSlotUnique").OnTable(NameCompatibilityManager.GetTableName(typeof(Order)))
-                    .Columns(nameof(Order.ScheduleDateTime), nameof(Order.DeliverySlot));
+                    .Columns(nameof(Order.ScheduleDateTime), nameof(Order.DeliverySlot), nameof(Order.CompanyId));
             }
         }
         public override void Down()

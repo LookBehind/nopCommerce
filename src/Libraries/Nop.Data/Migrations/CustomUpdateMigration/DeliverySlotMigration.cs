@@ -16,14 +16,6 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
     public class DeliverySlotMigration : Migration
     {
 
-        private readonly INopDataProvider _dataProvider;
-        private readonly IRepository<Order> _orderRepository;
-
-        public DeliverySlotMigration(INopDataProvider dataProvider, IRepository<Order> orderRepository)
-        {
-            _dataProvider = dataProvider;
-            _orderRepository = orderRepository;
-        }
         public override void Up()
         {
             if (!Schema.Table(NameCompatibilityManager.GetTableName(typeof(Order))).Column(nameof(Order.DeliverySlot)).Exists())

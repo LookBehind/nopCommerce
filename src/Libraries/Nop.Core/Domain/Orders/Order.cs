@@ -309,6 +309,11 @@ namespace Nop.Core.Domain.Orders
         public int? DeliverySlot { get; set; }
 
         /// <summary>
+        /// Gets or sets order CompanyId
+        /// </summary>
+        public int? CompanyId { get; set; }
+
+        /// <summary>
         /// Gets or sets the reward points history record (spent by a customer when placing this order)
         /// </summary>
         public virtual int? RedeemedRewardPointsEntryId { get; set; }

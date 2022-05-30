@@ -36,6 +36,7 @@ using Nop.Services.Shipping;
 using Nop.Services.Tax;
 using Nop.Services.Vendors;
 using TimeZoneConverter;
+using Polly;
 
 namespace Nop.Services.Orders
 {
@@ -395,25 +396,18 @@ namespace Nop.Services.Orders
         /// <returns>A task that represents the asynchronous operation</returns>
         protected virtual async Task AddOrderDeliverSlotAsync(Order order)
         {
-            int maxRetryCount = 5;
-            int counter = 0;
-            bool isSucceed = false;
-            while (!isSucceed && counter < maxRetryCount)
-            {
-                try
-                {
-                    maxRetryCount++;
-                    var orders = (await _orderService.SearchOrdersAsync(scheduleDateTime: order.ScheduleDateTime));
-                    var lastSlot = orders.Count > 0 ? orders.Max(o => o.DeliverySlot) : 0;
-                    order.DeliverySlot = lastSlot > 0 ? lastSlot + 1 : 1;
-                    await _orderService.UpdateOrderAsync(order);
-                    isSucceed = true;
-                }
-                catch
-                {
-                }
 
-            }
+            var retryPolicy = Policy.Handle<Exception>()
+            .WaitAndRetry(retryCount: 5, sleepDurationProvider: _ => TimeSpan.FromSeconds(1));
+            Func<Task> action = async () =>
+                           {
+                               var orders = (await _orderService.SearchOrdersAsync(scheduleDateTime: order.ScheduleDateTime))
+                               .Where(o => o.CompanyId == order.CompanyId);
+                               var lastSlot = orders.Count() > 0 ? orders.Max(o => o.DeliverySlot) : 0;
+                               order.DeliverySlot = lastSlot > 0 ? lastSlot + 1 : 1;
+                               await _orderService.UpdateOrderAsync(order);
+                           };
+            await retryPolicy.Execute(action);
         }
 
         /// <summary>
@@ -1671,7 +1665,7 @@ namespace Nop.Services.Orders
                     order.ScheduleDate = scheduleDate; //TODO: refactor details.ScheduleDate to be DateTime and don't put it here
                     result.PlacedOrder = order;
                     order.ScheduleDateTime = scheduleDate;
-
+                    order.CompanyId = company.Id;
                     //update order delivery slot
                     await AddOrderDeliverSlotAsync(order);
 
