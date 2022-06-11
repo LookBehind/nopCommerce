@@ -12972,6 +12972,12 @@
   <LocaleResource Name="Admin.Orders.Info">
     <Value>Info</Value>
   </LocaleResource>
+  <LocaleResource Name="Admin.Orders.List.DeliverySlot">
+    <Value>Company</Value>
+  </LocaleResource>
+  <LocaleResource Name="Admin.Orders.List.Comapny">
+    <Value>Company</Value>
+  </LocaleResource>
   <LocaleResource Name="Admin.Orders.List.BillingCountry">
     <Value>Billing country</Value>
   </LocaleResource>
@@ -13058,6 +13064,9 @@
   </LocaleResource>
   <LocaleResource Name="Admin.Orders.List.Store">
     <Value>Store</Value>
+  </LocaleResource>
+  <LocaleResource Name="Admin.Orders.List.DeliverySlot">
+    <Value>Delivery Slot</Value>
   </LocaleResource>
   <LocaleResource Name="Admin.Orders.List.Store.Hint">
     <Value>Search by a specific store.</Value>

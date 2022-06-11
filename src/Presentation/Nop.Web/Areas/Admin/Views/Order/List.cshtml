@@ -213,41 +213,38 @@
                                                 <nop-select asp-for="VendorId" asp-items="Model.AvailableVendors" />
                                             </div>
                                         </div>
-                                        @*@if (Model.BillingPhoneEnabled)
-                                            {
-                                                    <div class="form-group row">
-                                                    <div class="col-md-4">
-                                                        <nop-label asp-for="BillingPhone" />
-                                                    </div>
-                                                    <div class="col-md-8">
-                                                        <nop-editor asp-for="BillingPhone" />
-                                                    </div>
-                                                </div>
-                                            }*@
-                                        @*<div class="form-group row">
-                                                <div class="col-md-4">
-                                                    <nop-label asp-for="BillingEmail" />
-                                                </div>
-                                                <div class="col-md-8">
-                                                    <nop-editor asp-for="BillingEmail" />
-                                                </div>
+                                        <div class="form-group row">
+                                            <div class="col-md-4">
+                                                <nop-label asp-for="Company" />
                                             </div>
-                                                <div class="form-group row">
-                                                    <div class="col-md-4">
-                                                        <nop-label asp-for="BillingLastName" />
-                                                    </div>
-                                                    <div class="col-md-8">
-                                                        <nop-editor asp-for="BillingLastName" />
-                                                    </div>
-                                                </div>
-                                                <div class="form-group row" @(Model.AvailableCountries.SelectionIsNotPossible() ? Html.Raw("style=\"display:none\"") : null)>
-                                                <div class="col-md-4">
-                                                    <nop-label asp-for="BillingCountryId" />
-                                                </div>
-                                                <div class="col-md-8">
-                                                    <nop-select asp-for="BillingCountryId" asp-items="Model.AvailableCountries" />
-                                                </div>
-                                            </div>*@
+                                            <div class="col-md-8">
+                                                <nop-editor asp-for="Company" />
+                                            </div>
+                                        </div>
+                                        @*<div class="form-group row">
+            <div class="col-md-4">
+                <nop-label asp-for="BillingEmail" />
+            </div>
+            <div class="col-md-8">
+                <nop-editor asp-for="BillingEmail" />
+            </div>
+        </div>
+            <div class="form-group row">
+                <div class="col-md-4">
+                    <nop-label asp-for="BillingLastName" />
+                </div>
+                <div class="col-md-8">
+                    <nop-editor asp-for="BillingLastName" />
+                </div>
+            </div>
+            <div class="form-group row" @(Model.AvailableCountries.SelectionIsNotPossible() ? Html.Raw("style=\"display:none\"") : null)>
+            <div class="col-md-4">
+                <nop-label asp-for="BillingCountryId" />
+            </div>
+            <div class="col-md-8">
+                <nop-select asp-for="BillingCountryId" asp-items="Model.AvailableCountries" />
+            </div>
+        </div>*@
                                         <div class="form-group row" @(Model.AvailablePaymentMethods.SelectionIsNotPossible() || Model.IsLoggedInAsVendor ? Html.Raw("style='display: none;'") : null)>
                                             <div class="col-md-4">
                                                 <nop-label asp-for="PaymentMethodSystemName" />
@@ -262,6 +259,14 @@
                                             </div>
                                             <div class="col-md-8">
                                                 <nop-editor asp-for="OrderNotes" />
+                                            </div>
+                                        </div>
+                                        <div class="form-group row">
+                                            <div class="col-md-4">
+                                                <nop-label asp-for="DeliverySlot" />
+                                            </div>
+                                            <div class="col-md-8">
+                                                <nop-editor asp-for="DeliverySlot" />
                                             </div>
                                         </div>
                                         <div class="form-group row">
@@ -332,7 +337,7 @@
                                     FooterCallback = !Model.IsLoggedInAsVendor ? "ordersfootercallback" : null,
                                     FooterColumns = !Model.IsLoggedInAsVendor ? 10 : 0,
                                     Filters = new List<FilterParameter>
-                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                    {
                                                     new FilterParameter(nameof(Model.StartDate), typeof(DateTime?)),
                                                     new FilterParameter(nameof(Model.EndDate), typeof(DateTime?)),
                                                     new FilterParameter(nameof(Model.OrderStatusIds)),
@@ -342,8 +347,8 @@
                                                     //new FilterParameter(nameof(Model.WarehouseId)),
                                                     //new FilterParameter(nameof(Model.BillingEmail)),
                                                     //new FilterParameter(nameof(Model.BillingPhone)),
-                                                    //new FilterParameter(nameof(Model.BillingLastName)),
-                                                    //new FilterParameter(nameof(Model.BillingCountryId)),
+                                                    new FilterParameter(nameof(Model.DeliverySlot)),
+                                                    new FilterParameter(nameof(Model.Company)),
                                                     new FilterParameter(nameof(Model.PaymentMethodSystemName)),
                                                     new FilterParameter(nameof(Model.ProductId)),
                                                     new FilterParameter(nameof(Model.OrderNotes)),
@@ -351,7 +356,7 @@
                                                 }
                                 };
                                 gridModel.ColumnCollection = new List<ColumnProperty>
-                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                {
                                 new ColumnProperty(nameof(OrderModel.Id))
                                 {
                                     IsMasterCheckBox = true,
@@ -362,6 +367,11 @@
                                 new ColumnProperty(nameof(OrderModel.CustomOrderNumber))
                                 {
                                     Title = T("Admin.Orders.Fields.CustomOrderNumber").Text,
+                                    Width = "80"
+                                },
+                                new ColumnProperty(nameof(OrderModel.DeliverySlot))
+                                {
+                                    Title = "Delivery slot",
                                     Width = "80"
                                 }
                             };
@@ -389,6 +399,12 @@
                                 {
                                     Title = T("Admin.Orders.Fields.Customer").Text,
                                     Render = new RenderLink(new DataUrl("~/Admin/Customer/Edit", nameof(OrderModel.CustomerId)))
+                                });
+
+                                gridModel.ColumnCollection.Add(new ColumnProperty(nameof(OrderModel.Company))
+                                {
+                                    Title = "Company",
+                                    Width = "80"
                                 });
                                 gridModel.ColumnCollection.Add(new ColumnProperty(nameof(OrderModel.StoreName))
                                 {
@@ -490,6 +506,7 @@
                                     ShippingStatusIds: $('#@Html.IdFor(model => model.ShippingStatusIds)').val(),
                                     StoreId: $('#@Html.IdFor(model => model.StoreId)').val(),
                                     VendorId: $('#@Html.IdFor(model => model.VendorId)').val(),
+                                    DeliverSlot: $('#@Html.IdFor(model => model.DeliverySlot)').val(),
                                     WarehouseId: $('#@Html.IdFor(model => model.WarehouseId)').val(),
                                     @*BillingEmail: $('#@Html.IdFor(model => model.BillingEmail)').val(),
                                     BillingPhone: $('#@Html.IdFor(model => model.BillingPhone)').val(),

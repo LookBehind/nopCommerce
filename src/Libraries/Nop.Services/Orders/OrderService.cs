@@ -18,6 +18,8 @@ using Nop.Data.Extensions;
 using Nop.Services.Catalog;
 using Nop.Services.Orders.CustomExceptions;
 using Nop.Services.Shipping;
+using Nop.Core.Domain.Companies;
+using Nop.Services.Companies;
 
 namespace Nop.Services.Orders
 {
@@ -41,6 +43,8 @@ namespace Nop.Services.Orders
         public readonly IRepository<Vendor> _vendorRepository;
         private readonly IShipmentService _shipmentService;
         private readonly IWorkContext _workContext;
+        private readonly IRepository<CompanyCustomer> _companyCustomerRepository;
+        private readonly ICompanyService _companyService;
 
         #endregion
 
@@ -58,7 +62,9 @@ namespace Nop.Services.Orders
             IRepository<RecurringPaymentHistory> recurringPaymentHistoryRepository,
             IRepository<Vendor> vendorRepositopry,
             IShipmentService shipmentService,
-            IWorkContext workContext)
+            IWorkContext workContext,
+            IRepository<CompanyCustomer> companyCustomerRepository,
+            ICompanyService companyService)
         {
             _productService = productService;
             _addressRepository = addressRepository;
@@ -73,6 +79,8 @@ namespace Nop.Services.Orders
             _vendorRepository = vendorRepositopry;
             _shipmentService = shipmentService;
             _workContext = workContext;
+            _companyCustomerRepository = companyCustomerRepository;
+            _companyService = companyService;
         }
 
         #endregion
@@ -315,7 +323,8 @@ namespace Nop.Services.Orders
             string billingPhone = null, string billingEmail = null, string billingLastName = "",
             string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue,
             bool getOnlyTotalCount = false, bool sendRateNotification = false,
-            bool sortByDeliveryDate = false, DateTime? schedulDate = null)
+            bool sortByDeliveryDate = false, DateTime? schedulDate = null, DateTime? scheduleDateTime = null,
+            string companyName = null, int deliverySlot = 0)
         {
             var query = _orderRepository.Table;
 
@@ -336,6 +345,10 @@ namespace Nop.Services.Orders
             if (customerId > 0)
                 query = query.Where(o => o.CustomerId == customerId);
 
+            if (deliverySlot > 0)
+            {
+                query = query.Where(o => o.DeliverySlot == deliverySlot);
+            }
             if (productId > 0)
                 query = from o in query
                         join oi in _orderItemRepository.Table on o.Id equals oi.OrderId
@@ -363,6 +376,13 @@ namespace Nop.Services.Orders
 
             if (!string.IsNullOrEmpty(paymentMethodSystemName))
                 query = query.Where(o => o.PaymentMethodSystemName == paymentMethodSystemName);
+
+            if (!string.IsNullOrEmpty(companyName))
+            {
+                var company = (await _companyService.GetAllCompaniesAsync(name: companyName)).FirstOrDefault();
+                var customerIds = (await _companyCustomerRepository.GetAllAsync(c => c.Where(i => i.CompanyId == (company == null ? 0 : company.Id)))).Select(c => c.CustomerId);
+                query = query.Where(i => customerIds.Contains(i.CustomerId));
+            }
 
             if (affiliateId > 0)
                 query = query.Where(o => o.AffiliateId == affiliateId);
@@ -409,6 +429,11 @@ namespace Nop.Services.Orders
             if (schedulDate.HasValue)
             {
                 query = query.Where(o => o.ScheduleDate.Date == schedulDate.Value.Date);
+            }
+
+            if (scheduleDateTime.HasValue)
+            {
+                query = query.Where(o => o.ScheduleDateTime.Date == scheduleDateTime.Value.Date);
             }
 
             query = query.Where(o => !o.Deleted);
