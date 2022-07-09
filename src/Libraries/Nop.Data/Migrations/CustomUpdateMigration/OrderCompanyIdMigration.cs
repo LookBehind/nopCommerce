@@ -8,15 +8,9 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
     [SkipMigrationOnInstall]
     public class OrderCompanyIdMigration : Migration
     {
-
         public override void Up()
         {
-            if (!Schema.Table(NameCompatibilityManager.GetTableName(typeof(Order))).Column(nameof(Order.CompanyId)).Exists())
-            {
-                //add new column
-                Alter.Table(NameCompatibilityManager.GetTableName(typeof(Order)))
-                    .AddColumn(nameof(Order.CompanyId)).AsInt32().Nullable();
-            }
+            
         }
 
         public override void Down()
