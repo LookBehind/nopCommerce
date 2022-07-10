@@ -16,13 +16,6 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
     [SkipMigrationOnInstall]
     public class DeliverySlotMigration : Migration
     {
-        private readonly INopDataProvider _dataProvider;
-
-        public DeliverySlotMigration(INopDataProvider dataProvider)
-        {
-            _dataProvider = dataProvider;
-        }
-
         public override void Up()
         {
             if (!Schema

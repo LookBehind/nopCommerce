@@ -6,6 +6,8 @@ namespace Nop.Web.Controllers
 {
     public partial class BaseApiController : Controller
     {
+        public record ErrorMessage(string Message);
+        
         protected object GetModelErrors(ModelStateDictionary modelState)
         {
             var errorList = modelState.Values.SelectMany(m => m.Errors)
