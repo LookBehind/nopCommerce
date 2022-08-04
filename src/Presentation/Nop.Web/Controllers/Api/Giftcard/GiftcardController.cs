@@ -64,6 +64,7 @@ namespace Nop.Web.Controllers.Giftcard
             if (orders.Any(o => o.OrderStatus != OrderStatus.Cancelled))
                 return Conflict(new ErrorMessage("Customer has orders on specified date"));
 
+            var (lastBillingAddressId, lastShippingAddressId) = await GetCustomerLastUsedAddressIdAsync(customer);
             var order = new Order()
             {
                 CompanyId = currentCompany.Id,
@@ -79,7 +80,8 @@ namespace Nop.Web.Controllers.Giftcard
                 ScheduleDateTime = bookRequest.BookingDate,
                 ShippingStatus = ShippingStatus.ShippingNotRequired,
                 StoreId = currentCustomer.RegisteredInStoreId,
-                BillingAddressId = await GetCustomerBillingAddressIdAsync(customer),
+                BillingAddressId = lastBillingAddressId,
+                ShippingAddressId = lastShippingAddressId, 
                 CreatedOnUtc = DateTime.UtcNow,
                 CustomerCurrencyCode = (await _workContext.GetWorkingCurrencyAsync()).CurrencyCode,
                 DeliverySlot = -customer.Id,
@@ -121,10 +123,16 @@ namespace Nop.Web.Controllers.Giftcard
             return paymentMethods.First().ToPluginModel<PaymentMethodModel>().SystemName;
         }
         
-        private async Task<int> GetCustomerBillingAddressIdAsync(Customer customer)
+        private async Task<(int billingAddress, int shippingAddress)> GetCustomerLastUsedAddressIdAsync(Customer customer)
         {
-            return customer.BillingAddressId ??
-                   (await _order.SearchOrdersAsync(customerId: customer.Id)).First().BillingAddressId;
+            if(customer.BillingAddressId.HasValue && customer.ShippingAddressId.HasValue)
+                return (customer.BillingAddressId.Value!, customer.ShippingAddressId.Value!);
+
+            var lastOrder = (await _order.SearchOrdersAsync(customerId: customer.Id, 
+                pageSize: 1, 
+                sortByDeliveryDate: true)).First();
+            
+            return (lastOrder.BillingAddressId, lastOrder.ShippingAddressId.Value!);
         }
         
         public GiftcardController(IGiftCardService giftCard, 
