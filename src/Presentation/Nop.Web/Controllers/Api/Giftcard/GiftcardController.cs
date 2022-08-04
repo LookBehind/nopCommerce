@@ -88,7 +88,7 @@ namespace Nop.Web.Controllers.Giftcard
             };
             
             await _order.InsertOrderAsync(order);
-            _numberFormatter.GenerateOrderCustomNumber(order);
+            order.CustomOrderNumber = _numberFormatter.GenerateOrderCustomNumber(order);
             await _order.UpdateOrderAsync(order);
 
             var nonActivatedGiftCards = 
