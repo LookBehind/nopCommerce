@@ -34,6 +34,7 @@ namespace Nop.Web.Controllers.Giftcard
         private readonly IPaymentPluginManager _paymentPluginManager;
         private readonly ICustomNumberFormatter _numberFormatter;
         private readonly IPermissionService _permission;
+        private readonly IStoreContext _storeContext;
 
         [HttpPost("bookforcustomer")]
         [ProducesResponseType(typeof(ErrorMessage), (int)HttpStatusCode.BadRequest)]
@@ -79,7 +80,7 @@ namespace Nop.Web.Controllers.Giftcard
                 ScheduleDate = bookRequest.BookingDate,
                 ScheduleDateTime = bookRequest.BookingDate,
                 ShippingStatus = ShippingStatus.ShippingNotRequired,
-                StoreId = currentCustomer.RegisteredInStoreId,
+                StoreId = (await _storeContext.GetCurrentStoreAsync()).Id,
                 BillingAddressId = lastBillingAddressId,
                 ShippingAddressId = lastShippingAddressId, 
                 CreatedOnUtc = DateTime.UtcNow,
@@ -141,7 +142,7 @@ namespace Nop.Web.Controllers.Giftcard
             IWorkContext workContext, 
             ICompanyService company, 
             IPaymentPluginManager pluginManager, 
-            ICustomNumberFormatter numberFormatter, IPermissionService permission)
+            ICustomNumberFormatter numberFormatter, IPermissionService permission, IStoreContext storeContext)
         {
             _giftCard = giftCard;
             _customer = customer;
@@ -151,6 +152,7 @@ namespace Nop.Web.Controllers.Giftcard
             _paymentPluginManager = pluginManager;
             _numberFormatter = numberFormatter;
             _permission = permission;
+            _storeContext = storeContext;
         }
     }
 }
