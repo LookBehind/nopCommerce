@@ -397,13 +397,14 @@ namespace Nop.Services.Orders
         protected virtual async Task AddOrderDeliverSlotAsync(Order order)
         {
             var retryPolicy = Policy.Handle<Exception>()
-                .WaitAndRetry(retryCount: 5, 
+                .WaitAndRetry(retryCount: 5,
                     sleepDurationProvider: _ => TimeSpan.FromSeconds(1));
-            
-            await retryPolicy.Execute(async () => {
+
+            await retryPolicy.Execute(async () =>
+            {
                 var orders = (await _orderService.SearchOrdersAsync(scheduleDateTime: order.ScheduleDateTime))
                     .Where(o => o.CompanyId == order.CompanyId);
-                order.DeliverySlot = (orders.Max(o => o.DeliverySlot) ?? 0) + 1;
+                order.DeliverySlot = (orders.Where(o => o.DeliverySlot > 0).Max(o => o.DeliverySlot) ?? 0) + 1;
                 await _orderService.UpdateOrderAsync(order);
             });
         }
@@ -874,7 +875,7 @@ namespace Nop.Services.Orders
             }
 
             //set temporary values for order delivery slot. in checkout will be updated
-            order.DeliverySlot = -order.CustomerId;
+            order.DeliverySlot = -int.Parse(DateTime.UtcNow.ToString("HHmmssfff")) % 1000;
             order.ScheduleDateTime = DateTime.UtcNow;
 
             await _orderService.InsertOrderAsync(order);
