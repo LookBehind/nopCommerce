@@ -15,6 +15,9 @@
   <LocaleResource Name="Admin.Orders.Fields.ScheduleDate3">
     <Value>Schedule Date 3</Value>
   </LocaleResource>
+  <LocaleResource Name="Admin.Orders.Fields.ScheduleDate4">
+    <Value>Schedule Date 4</Value>
+  </LocaleResource>
   <LocaleResource Name="Product.Not.Found">
     <Value>Product not found</Value>
   </LocaleResource>
