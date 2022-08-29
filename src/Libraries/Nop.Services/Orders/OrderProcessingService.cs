@@ -3365,7 +3365,7 @@ namespace Nop.Services.Orders
             var scheduleDate2 = value[1];
             var scheduleDate3 = value[2];
             var scheduleDate4 = value[3];
-            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow.AddHours(5), TimeZoneInfo.Utc, timezoneInfo);
+            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
 
             var firstOrderLastHour = scheduleDate1.Split('-')[1].Split(':');
             var firstOrederLastdate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(firstOrderLastHour[0]), Convert.ToInt32(firstOrderLastHour[1]), Convert.ToInt32(firstOrderLastHour[2]), DateTimeKind.Utc);
