@@ -16,6 +16,7 @@ namespace Nop.Web.Areas.Admin.Models.Orders
 
         public OrderSearchModel()
         {
+            AvailableDeliveryHours = new List<SelectListItem>();
             AvailableOrderStatuses = new List<SelectListItem>();
             AvailablePaymentStatuses = new List<SelectListItem>();
             AvailableShippingStatuses = new List<SelectListItem>();
@@ -40,6 +41,14 @@ namespace Nop.Web.Areas.Admin.Models.Orders
         [NopResourceDisplayName("Admin.Orders.List.EndDate")]
         [UIHint("DateNullable")]
         public DateTime? EndDate { get; set; }
+
+        [NopResourceDisplayName("Delivery Day")]
+        [UIHint("DateNullable")]
+        public DateTime? DeliveryDate { get; set; }
+
+        [NopResourceDisplayName("Delivery Time")]
+        [UIHint("DateNullable")]
+        public int DeliveryHourId { get; set; }
 
         [NopResourceDisplayName("Admin.Orders.List.OrderStatus")]
         public IList<int> OrderStatusIds { get; set; }
@@ -105,6 +114,8 @@ namespace Nop.Web.Areas.Admin.Models.Orders
         public IList<SelectListItem> AvailableStores { get; set; }
 
         public IList<SelectListItem> AvailableVendors { get; set; }
+
+        public IList<SelectListItem> AvailableDeliveryHours { get; set; }
 
         public IList<SelectListItem> AvailableWarehouses { get; set; }
 
