@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Discounts;
@@ -15,6 +16,7 @@ using Nop.Core.Domain.Tax;
 using Nop.Services;
 using Nop.Services.Catalog;
 using Nop.Services.Companies;
+using Nop.Services.Configuration;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Helpers;
@@ -29,6 +31,7 @@ using Nop.Services.Tax;
 using Nop.Services.Topics;
 using Nop.Services.Vendors;
 using Nop.Web.Areas.Admin.Infrastructure.Cache;
+using TimeZoneConverter;
 
 namespace Nop.Web.Areas.Admin.Factories
 {
@@ -63,6 +66,8 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly ITopicTemplateService _topicTemplateService;
         private readonly IVendorService _vendorService;
         private readonly ICompanyService _companyService;
+        private readonly ISettingService _settingService;
+        private readonly IWorkContext _workContext;
 
         #endregion
 
@@ -91,7 +96,9 @@ namespace Nop.Web.Areas.Admin.Factories
             ITaxCategoryService taxCategoryService,
             ITopicTemplateService topicTemplateService,
             IVendorService vendorService,
-            ICompanyService companyService)
+            ICompanyService companyService,
+            ISettingService settingService,
+            IWorkContext workContext)
         {
             _categoryService = categoryService;
             _categoryTemplateService = categoryTemplateService;
@@ -117,6 +124,8 @@ namespace Nop.Web.Areas.Admin.Factories
             _topicTemplateService = topicTemplateService;
             _vendorService = vendorService;
             _companyService = companyService;
+            _settingService = settingService;
+            _workContext = workContext;
         }
 
         #endregion
@@ -348,6 +357,36 @@ namespace Nop.Web.Areas.Admin.Factories
                 items.Add(statusItem);
             }
 
+            //insert special item for the default value
+            await PrepareDefaultItemAsync(items, withSpecialDefaultItem, defaultItemText);
+        }
+        /// <summary>
+        /// Prepare available payment statuses
+        /// </summary>
+        /// <param name="items">Payment status items</param>
+        /// <param name="withSpecialDefaultItem">Whether to insert the first special item for the default value</param>
+        /// <param name="defaultItemText">Default item text; pass null to use default value of the default item text</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public virtual async Task PrepareOrderDeliveryHoursAsync(IList<SelectListItem> items, bool withSpecialDefaultItem = true, string defaultItemText = null)
+        {
+            if (items == null)
+                throw new ArgumentNullException(nameof(items));
+
+            var currentCustomer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
+            var timezoneInfo = company == null ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer) : TZConvert.GetTimeZoneInfo(company.TimeZone);
+            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
+            var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>();
+            var values = orderSettings.ScheduleDate.Split(',').Select(h => h.Split('-')[2]);
+            var hours = values.Select((value, index) => new { value, index })
+                .Select(i => new SelectListItem(i.value, i.value.Split(":")[0])).ToList();
+            foreach (var item in hours)
+            {
+                var userDate = new DateTime(now.Year, now.Month, now.Day, int.Parse(item.Value), 0, 0);
+                var index = _dateTimeHelper.ConvertToUtcTime(userDate, timezoneInfo).Hour.ToString();
+                item.Value = index;
+                items.Add(item);
+            }
             //insert special item for the default value
             await PrepareDefaultItemAsync(items, withSpecialDefaultItem, defaultItemText);
         }
@@ -615,6 +654,8 @@ namespace Nop.Web.Areas.Admin.Factories
             //insert special item for the default value
             await PrepareDefaultItemAsync(items, withSpecialDefaultItem, defaultItemText);
         }
+
+
 
         public virtual async Task PrepareCompaniesAsync(IList<SelectListItem> items, bool withSpecialDefaultItem = true, string defaultItemText = null)
         {

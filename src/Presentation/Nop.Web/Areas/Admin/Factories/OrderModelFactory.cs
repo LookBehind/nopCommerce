@@ -21,6 +21,7 @@ using Nop.Services.Affiliates;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
 using Nop.Services.Companies;
+using Nop.Services.Configuration;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Discounts;
@@ -97,6 +98,7 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly IUrlRecordService _urlRecordService;
         private readonly TaxSettings _taxSettings;
         private readonly ICompanyService _companyService;
+        private readonly ISettingService _settingService;
 
         #endregion
 
@@ -145,7 +147,8 @@ namespace Nop.Web.Areas.Admin.Factories
             ShippingSettings shippingSettings,
             IUrlRecordService urlRecordService,
             TaxSettings taxSettings,
-            ICompanyService companyService)
+            ICompanyService companyService,
+            ISettingService settingService)
         {
             _addressSettings = addressSettings;
             _catalogSettings = catalogSettings;
@@ -191,6 +194,7 @@ namespace Nop.Web.Areas.Admin.Factories
             _urlRecordService = urlRecordService;
             _taxSettings = taxSettings;
             _companyService = companyService;
+            _settingService = settingService;
         }
 
         #endregion
@@ -885,6 +889,10 @@ namespace Nop.Web.Areas.Admin.Factories
                 var currentDay = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, DateTime.UtcNow.Day, 23, 59, 59);
                 searchModel.EndDate = !searchModel.EndDate.HasValue || (searchModel.EndDate.Value - currentDay).Days > 0 ? currentDay : searchModel.EndDate.Value;
             }
+            
+            //prepare available delivery hours todo
+            await _baseAdminModelFactory.PrepareOrderDeliveryHoursAsync(searchModel.AvailableDeliveryHours);
+            
             //prepare available order, payment and shipping statuses
             await _baseAdminModelFactory.PrepareOrderStatusesAsync(searchModel.AvailableOrderStatuses);
             if (searchModel.AvailableOrderStatuses.Any())
@@ -985,7 +993,7 @@ namespace Nop.Web.Areas.Admin.Factories
             var product = await _productService.GetProductByIdAsync(searchModel.ProductId);
             var filterByProductId = product != null && (await _workContext.GetCurrentVendorAsync() == null || product.VendorId == (await _workContext.GetCurrentVendorAsync()).Id)
                 ? searchModel.ProductId : 0;
-
+            var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>();
             //get orders
             var orders = await _orderService.SearchOrdersAsync(storeId: searchModel.StoreId,
                 vendorId: searchModel.VendorId,
@@ -1003,7 +1011,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 //billingCountryId: searchModel.BillingCountryId,
                 orderNotes: searchModel.OrderNotes,
                 pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize, sortByDeliveryDate: searchModel.SortByDeliveryDate,
-                deliverySlot: searchModel.DeliverySlot, companyName: searchModel.Company);
+                deliverySlot: searchModel.DeliverySlot, companyName: searchModel.Company, deliveryHour: searchModel.DeliveryHourId, 
+                schedulDate: searchModel.DeliveryDate);
 
             //prepare list model
             var model = await new OrderListModel().PrepareToGridAsync(searchModel, orders, () =>

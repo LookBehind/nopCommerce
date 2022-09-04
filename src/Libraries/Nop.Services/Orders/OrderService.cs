@@ -324,7 +324,7 @@ namespace Nop.Services.Orders
             string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue,
             bool getOnlyTotalCount = false, bool sendRateNotification = false,
             bool sortByDeliveryDate = false, DateTime? schedulDate = null, DateTime? scheduleDateTime = null,
-            string companyName = null, int deliverySlot = 0)
+            string companyName = null, int deliverySlot = 0, int deliveryHour = 0)
         {
             var query = _orderRepository.Table;
 
@@ -349,6 +349,12 @@ namespace Nop.Services.Orders
             {
                 query = query.Where(o => o.DeliverySlot == deliverySlot);
             }
+
+            if (deliveryHour > 0)
+            {
+                query = query.Where(o => o.ScheduleDate.Hour == deliveryHour);
+            }
+
             if (productId > 0)
                 query = from o in query
                         join oi in _orderItemRepository.Table on o.Id equals oi.OrderId

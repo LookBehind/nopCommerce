@@ -12976,7 +12976,7 @@
     <Value>Info</Value>
   </LocaleResource>
   <LocaleResource Name="Admin.Orders.List.DeliverySlot">
-    <Value>Company</Value>
+    <Value>Delivery Slot</Value>
   </LocaleResource>
   <LocaleResource Name="Admin.Orders.List.Comapny">
     <Value>Company</Value>
@@ -13010,6 +13010,12 @@
   </LocaleResource>
   <LocaleResource Name="Admin.Orders.List.EndDate.Hint">
     <Value>The end date for the search.</Value>
+  </LocaleResource>
+  <LocaleResource Name="Admin.Orders.List.DeliveryDate">
+    <Value>Delivery date</Value>
+  </LocaleResource>
+  <LocaleResource Name="Admin.Orders.List.DeliveryDate.Hint">
+    <Value>Deliver date for the search.</Value>
   </LocaleResource>
   <LocaleResource Name="Admin.Orders.List.SortByDeliveryDate">
     <Value>Order By Delivery Date</Value>
