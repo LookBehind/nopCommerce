@@ -884,15 +884,15 @@ namespace Nop.Web.Areas.Admin.Factories
             searchModel.IsLoggedInAsVendor = await _workContext.GetCurrentVendorAsync() != null;
             //searchModel.BillingPhoneEnabled = _addressSettings.PhoneEnabled;
 
-            if (searchModel.IsLoggedInAsVendor)
+            if (searchModel.IsLoggedInAsVendor && (!searchModel.DeliveryDate.HasValue && (searchModel.Draw == "1" || searchModel.Draw == null)))
             {
-                var currentDay = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, DateTime.UtcNow.Day, 23, 59, 59);
-                searchModel.EndDate = !searchModel.EndDate.HasValue || (searchModel.EndDate.Value - currentDay).Days > 0 ? currentDay : searchModel.EndDate.Value;
+                var timezone = await _dateTimeHelper.GetCustomerTimeZoneAsync(await _workContext.GetCurrentCustomerAsync());
+                searchModel.DeliveryDate = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezone);
             }
-            
+
             //prepare available delivery hours todo
             await _baseAdminModelFactory.PrepareOrderDeliveryHoursAsync(searchModel.AvailableDeliveryHours);
-            
+
             //prepare available order, payment and shipping statuses
             await _baseAdminModelFactory.PrepareOrderStatusesAsync(searchModel.AvailableOrderStatuses);
             if (searchModel.AvailableOrderStatuses.Any())
@@ -981,10 +981,10 @@ namespace Nop.Web.Areas.Admin.Factories
             if (isLoggedAsVendor)
                 searchModel.VendorId = (await _workContext.GetCurrentVendorAsync()).Id;
 
-            if (isLoggedAsVendor)
+            if (isLoggedAsVendor && (!searchModel.DeliveryDate.HasValue && searchModel.Draw == "1"))
             {
-                var currentDay = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, DateTime.UtcNow.Day, 23, 59, 59);
-                searchModel.EndDate = !searchModel.EndDate.HasValue || (searchModel.EndDate.Value - currentDay).Days > 0 ? currentDay : searchModel.EndDate.Value;
+                var timezone = await _dateTimeHelper.GetCustomerTimeZoneAsync(await _workContext.GetCurrentCustomerAsync());
+                searchModel.DeliveryDate = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezone);
             }
             var startDateValue = !searchModel.StartDate.HasValue ? null
                 : (DateTime?)_dateTimeHelper.ConvertToUtcTime(searchModel.StartDate.Value, await _dateTimeHelper.GetCurrentTimeZoneAsync());
@@ -1011,7 +1011,7 @@ namespace Nop.Web.Areas.Admin.Factories
                 //billingCountryId: searchModel.BillingCountryId,
                 orderNotes: searchModel.OrderNotes,
                 pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize, sortByDeliveryDate: searchModel.SortByDeliveryDate,
-                deliverySlot: searchModel.DeliverySlot, companyName: searchModel.Company, deliveryHour: searchModel.DeliveryHourId, 
+                deliverySlot: searchModel.DeliverySlot, companyName: searchModel.Company, deliveryHour: searchModel.DeliveryHourId,
                 schedulDate: searchModel.DeliveryDate);
 
             //prepare list model
