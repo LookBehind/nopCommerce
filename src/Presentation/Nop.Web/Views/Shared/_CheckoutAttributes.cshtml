@@ -333,5 +333,34 @@
         $(".qty-input").on("keyup change", function () {
             checkoutQuantityChange($(this), $(this).val(), true);
         })
+
+
+        function removeItemfromcart(id) {
+            event.preventDefault();
+            if (xhr && xhr.readyState != 4) {
+                xhr.abort();
+            }
+            var $item = $('#removefromcart'+id);
+            var data = $('#shopping-cart-form').serialize() + "&updatecart&removeitemfromcart=true&removefromcart="+id;
+            ($item).closest("button").addClass("disabled");
+            xhr = $.ajax({
+                    cache: false,
+                    url: "@Html.Raw(Url.Action("Cart", "shoppingcart"))",
+                    data: data,
+                    type: "POST",
+                    success: function (data, textStatus, jqXHR, event)
+                    {
+                        ($item).closest("tr").remove();
+                        $(".order-subtotal").find(".value-summary").text(data.OrderSummary.SubTotal);
+                        $(".order-total").find(".value-summary").find("strong").text(data.OrderSummary.OrderTotal);
+                },
+                error: function () {
+
+                }
+                });
+
+        }
+
+
     </script>
 }
