@@ -363,7 +363,7 @@ namespace Nop.Services.Orders
             if (createdFromUtc.HasValue)
                 query = query.Where(o => createdFromUtc.Value <= o.CreatedOnUtc);
             }
-            var isLoggedInAsVendor = await _workContext.GetCurrentVendorAsync() != null;
+            var isLoggedInAsVendor = (await _workContext.GetCurrentVendorAsync()) != null;
             if (isLoggedInAsVendor && vendorId > 0)
             {
                 var currentDay = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, DateTime.UtcNow.Day, 23, 59, 59);
