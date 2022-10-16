@@ -10,6 +10,7 @@ using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
+using Nop.Core.Domain.Vendors;
 using Nop.Core.Html;
 using Nop.Data;
 using Nop.Data.Extensions;
@@ -361,6 +362,7 @@ namespace Nop.Services.Orders
                 query = query.Where(o => o.AffiliateId == affiliateId);
 
             if (createdFromUtc.HasValue)
+            {
                 query = query.Where(o => createdFromUtc.Value <= o.CreatedOnUtc);
             }
             var isLoggedInAsVendor = (await _workContext.GetCurrentVendorAsync()) != null;

@@ -292,7 +292,7 @@
                                     FooterCallback = !Model.IsLoggedInAsVendor ? "ordersfootercallback" : null,
                                     FooterColumns = !Model.IsLoggedInAsVendor ? 10 : 0,
                                     Filters = new List<FilterParameter>
-                                                                                                                                                                                                                                                        {
+                                                {
                                                     new FilterParameter(nameof(Model.StartDate), typeof(DateTime?)),
                                                     new FilterParameter(nameof(Model.EndDate), typeof(DateTime?)),
                                                     new FilterParameter(nameof(Model.OrderStatusIds)),
@@ -309,6 +309,9 @@
                                                     new FilterParameter(nameof(Model.OrderNotes))
                                                 }
                                 };
+                                gridModel.ColumnCollection = new List<ColumnProperty>
+                                {
+                                    new ColumnProperty(nameof(OrderModel.Id))
                                     {
                                         IsMasterCheckBox = true,
                                         Render = new RenderCheckBox("checkbox_orders"),
