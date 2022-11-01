@@ -1,4 +1,4 @@
-namespace Nop.Core.Domain.Messages
+﻿namespace Nop.Core.Domain.Messages
 {
     /// <summary>
     /// Represents message template system names
@@ -35,6 +35,11 @@ namespace Nop.Core.Domain.Messages
         #endregion
 
         #region Order
+
+        /// <summary>
+        /// Represents system name of notification vendor about cancelled order
+        /// </summary>
+        public const string OrderCancelledVendorNotification = "OrderCancelled.VendorNotification";
 
         /// <summary>
         /// Represents system name of notification vendor about placed order

@@ -2395,6 +2395,14 @@ namespace Nop.Services.Orders
             //add a note
             await AddOrderNoteAsync(order, "Order has been cancelled");
 
+            var vendors = await GetVendorsInOrderAsync(order);
+            foreach (var vendor in vendors)
+            {
+                var orderCancelledVendorNotificationQueuedEmailIds = await _workflowMessageService.SendOrderCancelledVendorNotificationAsync(order, vendor, _localizationSettings.DefaultAdminLanguageId);
+                if (orderCancelledVendorNotificationQueuedEmailIds.Any())
+                    await AddOrderNoteAsync(order, $"\"Order Cancelled\" email (to vendor) has been queued. Queued email identifiers: {string.Join(", ", orderCancelledVendorNotificationQueuedEmailIds)}.");
+            }
+
             //return (add) back redeemded reward points
             await ReturnBackRedeemedRewardPointsAsync(order);
 
