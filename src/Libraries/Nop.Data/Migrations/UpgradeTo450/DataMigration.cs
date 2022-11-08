@@ -1,4 +1,7 @@
-﻿using FluentMigrator;
+﻿using System;
+using System.Linq;
+using FluentMigrator;
+using Nop.Core.Domain.Messages;
 
 namespace Nop.Data.Migrations.UpgradeTo450
 {
