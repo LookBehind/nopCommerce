@@ -25,7 +25,7 @@ using Nop.Web.Models.Catalog;
 
 namespace Nop.Plugin.Notifications.Manager.EventConsumer
 {
-    public class MessageTemplateOrderTokenProvider : 
+    public class MessageTemplateOrderTokenProvider :
         IConsumer<EntityTokensAddedEvent<Order, Vendor, Token>>,
         IConsumer<AdditionalTokensAddedEvent>
     {
@@ -45,13 +45,13 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
         };
 
         public MessageTemplateOrderTokenProvider(
-            IOrderService orderService, 
-            IVendorService vendorService, 
-            IProductService productService, 
-            ILocalizationService localizationService, 
-            LocalizationSettings localizationSettings, 
-            ICustomerService customerService, 
-            IDateTimeHelper dateTimeHelper, 
+            IOrderService orderService,
+            IVendorService vendorService,
+            IProductService productService,
+            ILocalizationService localizationService,
+            LocalizationSettings localizationSettings,
+            ICustomerService customerService,
+            IDateTimeHelper dateTimeHelper,
             IProductAttributeFormatter attributeFormatter)
         {
             _orderService = orderService;
@@ -66,9 +66,9 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
 
         public async Task HandleEventAsync(EntityTokensAddedEvent<Order, Vendor, Token> eventMessage)
         {
-            eventMessage.Tokens.Add(new Token("Order.ProductsHumanReadable", 
+            eventMessage.Tokens.Add(new Token("Order.ProductsHumanReadable",
                 await ProductOrdersHumanReadableAsync(eventMessage.Entity, eventMessage.AttachedParam), true));
-            eventMessage.Tokens.Add(new Token("Order.ScheduleDate", 
+            eventMessage.Tokens.Add(new Token("Order.ScheduleDate",
                 await GetScheduleDateForVendorAsync(eventMessage.Entity.ScheduleDate, eventMessage.AttachedParam), true));
         }
 
@@ -78,7 +78,7 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
                 .Single();
             var vendorTimezone = await _dateTimeHelper.GetCustomerTimeZoneAsync(
                 vendorCustomer);
-            
+
             return _dateTimeHelper.ConvertToUserTime(scheduleDate, TimeZoneInfo.Utc,
                     vendorTimezone)
                 .ToString("t", DateTimeFormatInfo.InvariantInfo);
@@ -94,44 +94,48 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
         {
             var languageId = _localizationSettings.DefaultAdminLanguageId;
             var orderItems = await _orderService.GetOrderItemsAsync(order.Id);
-            var productIdsArray = orderItems.Select(o => o.ProductId).ToArray();
+            var productIdsArray = orderItems.GroupBy(o => o.ProductId)
+                .Select(o => o.Key).ToArray();
             var products = (await _productService.GetProductsByIdsAsync(productIdsArray)).AsEnumerable();
-            if(vendor != null)
+
+            if (vendor != null)
+            {
                 products = products.Where(product => product.VendorId == vendor.Id);
+            }
 
             var orderItemProduct = products.Join(orderItems,
                 productKey => productKey.Id,
                 orderItemKey => orderItemKey.ProductId,
-                (product, orderItem) => new Tuple<OrderItem, Product> (
+                (product, orderItem) => new Tuple<OrderItem, Product>(
                      orderItem, product
                 ));
-            
+
             var vendorCustomer = (await _customerService.GetAllCustomersAsync(vendorId: vendor.Id))
                 .SingleOrDefault();
-            
+
             var sb = new StringBuilder();
             foreach (var (orderItem, product) in orderItemProduct)
             {
-                var productName = await _localizationService.GetLocalizedAsync(product, 
-                    x => x.Name, 
+                var productName = await _localizationService.GetLocalizedAsync(product,
+                    x => x.Name,
                     languageId);
 
                 sb.AppendLine($"{await _localizationService.GetResourceAsync("Messages.Order.Product(s).Name", languageId)}: {productName}");
-                
+
                 //attributes
                 if (!string.IsNullOrEmpty(orderItem.AttributesXml))
                 {
                     sb.AppendLine(await _attributeFormatter.FormatAttributesAsync(product, orderItem.AttributesXml,
-                        vendorCustomer, "\n", false, false, true, 
+                        vendorCustomer, "\n", false, false, true,
                         false, false));
                 }
-                
+
                 //SKU
                 var sku = await _productService.FormatSkuAsync(product, orderItem.AttributesXml);
                 if (!string.IsNullOrEmpty(sku))
                 {
                     sb.AppendLine(string.Format(
-                        await _localizationService.GetResourceAsync("Messages.Order.Product(s).SKU", languageId), 
+                        await _localizationService.GetResourceAsync("Messages.Order.Product(s).SKU", languageId),
                         sku));
                 }
 

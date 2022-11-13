@@ -2,7 +2,6 @@
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Nop.Core.Domain.Messages;
@@ -99,22 +98,6 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             }
         }
 
-        private string RemoveDublications(string source, string pattern)
-        {
-            var list = source.Split(pattern).ToList();
-            var newList = list.Distinct().ToList();
-            if (list.Count != newList.Count)
-            {
-                StringBuilder builder = new StringBuilder(newList[0].Trim() + Environment.NewLine);
-                for (int i = 1; i < newList.Count; i++)
-                {
-                    builder.Append(pattern + newList[i].Trim() + Environment.NewLine);
-                }
-                return builder.ToString();
-            }
-            return source;
-        }
-
         public async Task ExecuteAsync()
         {
             await UpdateVendorTelegramGroupsAsync();
@@ -137,8 +120,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
 
                         if (vendorGroupId != 0)
                         {
-                            var body = RemoveDublications(queuedEmail.Body,"Name:");
-                            await _telegramBotClient.SendTextMessageAsync(vendorGroupId, body);
+                            await _telegramBotClient.SendTextMessageAsync(vendorGroupId, queuedEmail.Body);
                         }
                     }
 
