@@ -22,9 +22,9 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         public const string TELEGRAM_NOTIFICATION_SENDER_FRIENDLY_NAME = "Telegram notification sender";
         private const string VENDOR_TELEGRAM_CHANNEL_KEY = nameof(VENDOR_TELEGRAM_CHANNEL_KEY);
         private const string LAST_UPDATE_ID_SEEN_KEY = nameof(LAST_UPDATE_ID_SEEN_KEY);
-        private static readonly string[] _trustedUsernames = {"lkbhnd", "hasmik_bars"};
+        private static readonly string[] _trustedUsernames = { "lkbhnd", "hasmik_bars" };
         private static readonly TimeSpan _deleteEmailsOlderThan = TimeSpan.FromDays(7);
-        
+
         private readonly IQueuedEmailService _queuedEmail;
         private readonly IVendorService _vendor;
         private readonly ITelegramBotClient _telegramBotClient;
@@ -32,11 +32,11 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         private readonly ISettingService _setting;
         private readonly ILogger _logger;
 
-        public TelegramNotificationSenderTask(IQueuedEmailService queuedEmail, 
-            IVendorService vendor, 
-            ITelegramBotClient telegramBotClient, 
-            IGenericAttributeService genericAttribute, 
-            ISettingService setting, 
+        public TelegramNotificationSenderTask(IQueuedEmailService queuedEmail,
+            IVendorService vendor,
+            ITelegramBotClient telegramBotClient,
+            IGenericAttributeService genericAttribute,
+            ISettingService setting,
             ILogger logger)
         {
             _queuedEmail = queuedEmail;
@@ -54,7 +54,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                 var lastSeenUpdateId = await _setting.GetSettingByKeyAsync(LAST_UPDATE_ID_SEEN_KEY, 0);
                 var updates = await _telegramBotClient.GetUpdatesAsync(
                     lastSeenUpdateId, timeout: 0,
-                    allowedUpdates: new[] {UpdateType.Message});
+                    allowedUpdates: new[] { UpdateType.Message });
 
                 foreach (var update in updates)
                 {
@@ -77,9 +77,9 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                                     "Couldn't match with vendor");
                                 continue;
                             }
-                        
+
                             await _genericAttribute.SaveAttributeAsync(vendor,
-                                VENDOR_TELEGRAM_CHANNEL_KEY, update.Message.Chat.Id); 
+                                VENDOR_TELEGRAM_CHANNEL_KEY, update.Message.Chat.Id);
                         }
                         catch (Exception e)
                         {
@@ -89,7 +89,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
 
                     lastSeenUpdateId = Math.Max(lastSeenUpdateId, update.Id);
                 }
-                
+
                 await _setting.SetSettingAsync(LAST_UPDATE_ID_SEEN_KEY, lastSeenUpdateId);
             }
             catch (Exception e)
@@ -97,15 +97,15 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                 await _logger.ErrorAsync("Exception while getting telegram updates, skipping", e);
             }
         }
-        
+
         public async Task ExecuteAsync()
         {
             await UpdateVendorTelegramGroupsAsync();
-            
+
             var maxTries = 3;
-            
-            var queuedEmails = await _queuedEmail.SearchEmailsAsync(null, null, 
-                null, null,true, true, maxTries,
+
+            var queuedEmails = await _queuedEmail.SearchEmailsAsync(null, null,
+                null, null, true, true, maxTries,
                 false);
             foreach (var queuedEmail in queuedEmails)
             {
