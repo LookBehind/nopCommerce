@@ -336,6 +336,12 @@ namespace Nop.Web.Controllers.Api.Security
         [HttpPost("cancel-order/{id}")]
         public async Task<IActionResult> CancelOrder(int id)
         {
+            return Ok(new
+            {
+                success = false, 
+                message = "Cancelling orders is prohibited. Please contact our support in slack."
+            });
+            
             var order = await _orderService.GetOrderByIdAsync(id);
             if (order == null)
                 return Ok(new { success = false, message = await _localizationService.GetResourceAsync("Order.Cancelled.Failed") });
