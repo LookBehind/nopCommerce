@@ -43,7 +43,7 @@ RUN dotnet build Nop.Plugin.Notifications.Manager.csproj -c Release
 
 # publish project
 WORKDIR /src/Presentation/Nop.Web
-RUN dotnet publish Nop.Web.csproj -c Release -o /app/published
+RUN dotnet publish Nop.Web.csproj --no-restore -c Release -o /app/published
 
 # create the runtime instance 
 FROM mcr.microsoft.com/dotnet/aspnet:5.0-alpine AS runtime 
@@ -53,7 +53,10 @@ RUN apk add --no-cache icu-libs
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 # installs required packages
-RUN apk add libgdiplus --no-cache --repository http://dl-3.alpinelinux.org/alpine/edge/testing/ --allow-untrusted
+RUN apk add libtiffxx --no-cache --repository https://dl-3.alpinelinux.org/alpine/edge/main/
+RUN apk add tiff-dev --no-cache --repository https://dl-3.alpinelinux.org/alpine/edge/main/
+RUN apk add tiff --no-cache --repository https://dl-3.alpinelinux.org/alpine/edge/main/
+RUN apk add libgdiplus --no-cache --repository https://dl-3.alpinelinux.org/alpine/edge/community/ --allow-untrusted
 RUN apk add libc-dev --no-cache
 RUN apk add --no-cache tzdata
 
