@@ -3395,7 +3395,7 @@ namespace Nop.Services.Orders
             //var forthDeliveryDate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(forthDeliveryHour[0]), Convert.ToInt32(forthDeliveryHour[1]), Convert.ToInt32(forthDeliveryHour[2]), DateTimeKind.Utc);
 
             //if (now > forthOrederLastdate)
-            if (now > thirdDeliveryDate)
+            if (now > thirdOrederLastdate)
             {
                 list.Add(firstDeliverDate.AddDays(1));
                 list.Add(secondDeliveryDate.AddDays(1));
