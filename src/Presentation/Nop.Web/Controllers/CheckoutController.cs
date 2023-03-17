@@ -1470,6 +1470,7 @@ namespace Nop.Web.Controllers
                 {
                     throw new Exception("Invalid delivery time");
                 }
+                await _genericAttributeService.SaveAttributeAsync<DateTime>(await _workContext.GetCurrentCustomerAsync(), "deliveryTime", deliveryTime, (await _storeContext.GetCurrentStoreAsync()).Id);
                 if (_orderSettings.CheckoutDisabled)
                     throw new Exception(await _localizationService.GetResourceAsync("Checkout.Disabled"));
 
@@ -1721,7 +1722,8 @@ namespace Nop.Web.Controllers
                 await _genericAttributeService.SaveAttributeAsync(await _workContext.GetCurrentCustomerAsync(),
                     NopCustomerDefaults.SelectedPaymentMethodAttribute, paymentmethod, (await _storeContext.GetCurrentStoreAsync()).Id);
 
-                return await OpcLoadStepAfterPaymentMethod(paymentMethodInst, cart);
+                var deliveryTime = await _genericAttributeService.GetAttributeAsync<DateTime>(await _workContext.GetCurrentCustomerAsync(), "deliveryTime", (await _storeContext.GetCurrentStoreAsync()).Id);
+                return await OpcLoadStepAfterPaymentMethod(paymentMethodInst, cart, deliveryTime);
             }
             catch (Exception exc)
             {
