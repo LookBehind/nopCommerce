@@ -657,6 +657,7 @@ namespace Nop.Services.ExportImport
             var orderItemProperties = new[]
             {
                 new PropertyByName<OrderItem>("Name", async oi => (await _productService.GetProductByIdAsync(oi.ProductId)).Name),
+                new PropertyByName<OrderItem>("Vendor", async oi => (await _vendorService.GetVendorByProductIdAsync(oi.ProductId)).Name),
                 new PropertyByName<OrderItem>("Sku", async oi => (await _productService.GetProductByIdAsync(oi.ProductId)).Sku),
                 new PropertyByName<OrderItem>("PriceExclTax", oi => oi.UnitPriceExclTax),
                 new PropertyByName<OrderItem>("PriceInclTax", oi => oi.UnitPriceInclTax),
