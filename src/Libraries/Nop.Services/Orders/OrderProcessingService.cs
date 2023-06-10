@@ -1646,23 +1646,22 @@ namespace Nop.Services.Orders
 
                             var ordersAccordingToScheduleDate = orders.Where(x => x.ScheduleDate.Date == scheduleDate.Date).ToList();
                             var todayOrderTotal = ordersAccordingToScheduleDate.Sum(x => x.OrderTotal) + cartTotal.shoppingCartTotal;
-                            if (todayOrderTotal > company.AmountLimit &&
-                                !(await ShouldAccountLimitationBeIgnoredAsync(details.Customer.Id)))
+                            if (!(await ShouldAccountLimitationBeIgnoredAsync(details.Customer.Id)))
                             {
                                 if (await ordersAccordingToScheduleDate.AnyAwaitAsync(
                                         async o => (await _giftCardService.GetGiftCardUsageHistoryAsync(o)).Any()))
                                 {
                                     result.Errors.Add("You have random lunch today, can't order for specified day");
                                 }
-                                else
-                                {
-                                    result.Errors.Add(string.Format(await _localizationService.GetResourceAsync("Order.Company.AmountLimit"), company.AmountLimit, await _localizationService.GetResourceAsync("Customer.Company.OrderTotal"), todayOrderTotal));
-                                }
+                                //else
+                                //{
+                                //    result.Errors.Add(string.Format(await _localizationService.GetResourceAsync("Order.Company.AmountLimit"), company.AmountLimit, await _localizationService.GetResourceAsync("Customer.Company.OrderTotal"), todayOrderTotal));
+                                //}
                             }
                         }
                         //if there are no previous orders found then checks for company limit
-                        else if (cartTotal.shoppingCartTotal > company.AmountLimit && !(await ShouldAccountLimitationBeIgnoredAsync(details.Customer.Id)))
-                            result.Errors.Add(string.Format(await _localizationService.GetResourceAsync("Order.Company.AmountLimit"), company.AmountLimit, await _localizationService.GetResourceAsync("Customer.Company.OrderTotal"), cartTotal.shoppingCartTotal));
+                        //else if (!(await ShouldAccountLimitationBeIgnoredAsync(details.Customer.Id)))
+                        //    result.Errors.Add(string.Format(await _localizationService.GetResourceAsync("Order.Company.AmountLimit"), company.AmountLimit, await _localizationService.GetResourceAsync("Customer.Company.OrderTotal"), cartTotal.shoppingCartTotal));
                     }
                     else
                         result.Errors.Add(await _localizationService.GetResourceAsync("Company.NotFound"));
