@@ -11,6 +11,7 @@ using Nop.Services.Orders;
 using Nop.Services.Payments;
 using Nop.Services.Plugins;
 using System.Linq;
+using System.Text.Json;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Payments;
 using Nop.Data;
@@ -437,15 +438,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             if (customerCompanyLimit == 0)
                 return 0;
 
-            var store = await _storeContext.GetCurrentStoreAsync();
-            var existingDates = await
-                _genericAttribute.GetAttributeAsync<VoidedAllowanceSettings>(customer,
-                    VoidedAllowancesSettingsKey,
-                    store.Id,
-                    new VoidedAllowanceSettings()
-                    {
-                        UtcDates = new List<DateTime>()
-                    });
+            var existingDates = await LoadAttribute(customer);
 
             if (existingDates.UtcDates.Any(d => d.Date == date.Date))
                 return 0;
@@ -458,29 +451,46 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
 
         public async Task<bool> VoidAllowance(DateTime date, Customer customer = null)
         {
-            var store = await _storeContext.GetCurrentStoreAsync();
             customer ??= await _workContext.GetCurrentCustomerAsync();
 
-            var existingDates = await
-                _genericAttribute.GetAttributeAsync<VoidedAllowanceSettings>(customer,
-                    VoidedAllowancesSettingsKey,
-                    store.Id,
-                    new VoidedAllowanceSettings()
-                    {
-                        UtcDates = new List<DateTime>()
-                    });
+            var existingDates = await LoadAttribute(customer);
 
             existingDates.UtcDates = existingDates.UtcDates
                 .Where(d => d > DateTime.UtcNow.Date.AddDays(-1))
                 .Concat(Enumerable.Repeat(date, 1))
                 .ToList();
 
-            await _genericAttribute.SaveAttributeAsync(customer,
-                VoidedAllowancesSettingsKey,
-                existingDates,
-                store.Id);
-
+            await SaveAttribute(customer, existingDates);
+            
             return true;
+        }
+
+        private async Task<VoidedAllowanceSettings> LoadAttribute(Customer customer)
+        {
+            var store = await _storeContext.GetCurrentStoreAsync();
+
+            VoidedAllowanceSettings result = null;
+            var voidedAllowanceJson = await
+                _genericAttribute.GetAttributeAsync<string>(customer,
+                    VoidedAllowancesSettingsKey,
+                    store.Id);
+
+            return !string.IsNullOrWhiteSpace(voidedAllowanceJson)
+                ? JsonSerializer.Deserialize<VoidedAllowanceSettings>(voidedAllowanceJson)
+                : new VoidedAllowanceSettings()
+                {
+                    UtcDates = new List<DateTime>()
+                };
+        }
+
+        private async Task SaveAttribute(Customer customer, VoidedAllowanceSettings dates)
+        {
+            var store = await _storeContext.GetCurrentStoreAsync();
+            
+            await _genericAttribute.SaveAttributeAsync<string>(customer,
+                VoidedAllowancesSettingsKey,
+                JsonSerializer.Serialize(dates),
+                store.Id);
         }
     }
 }

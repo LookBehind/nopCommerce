@@ -138,11 +138,6 @@ namespace Nop.Web.Controllers.Integration
 
             var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
 
-            var orders = await _order.SearchOrdersAsync(customerId: customer.Id,
-                scheduleDateTime: DateTime.UtcNow);
-            if (orders.Any(o => o.OrderStatus != OrderStatus.Cancelled))
-                return Conflict(new ErrorMessage("Customer has orders on specified date"));
-
             var orderProducts = await UpdateAndGetProducts(storeId, vendor, orderRequest.Products);
             await _shoppingCartService.DeleteShoppingCartItemsAsync(customer, storeId, ShoppingCartType.ShoppingCart);
             foreach (var orderProduct in orderProducts)
