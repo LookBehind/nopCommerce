@@ -134,7 +134,7 @@ namespace Nop.Web.Controllers.Integration
 
             var customer = await _customer.GetCustomerByEmailAsync(orderRequest.CustomerEmail);
             if (customer == null)
-                return BadRequest(new ErrorMessage("Customer not found"));
+                return NotFound(new ErrorMessage("Customer not found"));
 
             var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
 
@@ -172,6 +172,12 @@ namespace Nop.Web.Controllers.Integration
             processPaymentRequest.PaymentMethodSystemName = "Payments.CheckMoneyOrder";
             var placeOrderResult = await _orderProcessingService.PlaceOrderAsync(processPaymentRequest);
 
+            if (!placeOrderResult.Success)
+            {
+                await _logger.ErrorAsync($"Failed to place order, errors: {string.Join(", ", placeOrderResult.Errors)}", 
+                    customer: customer);
+            }
+            
             return placeOrderResult.Success
                 ? Ok()
                 : StatusCode(StatusCodes.Status402PaymentRequired, new ErrorMessage("Insufficient funds"));
@@ -196,7 +202,7 @@ namespace Nop.Web.Controllers.Integration
 
             var customer = await _customer.GetCustomerByEmailAsync(customerEmail);
             if (customer == null)
-                return BadRequest(new ErrorMessage("Customer not found"));
+                return NotFound(new ErrorMessage("Customer not found"));
 
             var allowancePaymentMethod = (ICompanyAllowancePaymentMethod)
                 (await _paymentPluginManager.LoadActivePluginsAsyncAsync(customer))
@@ -205,9 +211,43 @@ namespace Nop.Web.Controllers.Integration
             var remainingAllowance = 
                 await allowancePaymentMethod.GetCustomerRemainingAllowance(DateTime.UtcNow, customer);
 
-            return Ok(new {Allowance = remainingAllowance});
+            return Ok(new { Allowance = remainingAllowance });
         }
+        
+        [HttpPost("voidallowance")]
+        [ProducesResponseType(typeof(ErrorMessage), (int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType(typeof(ErrorMessage), (int)HttpStatusCode.NotFound)]
+        [ProducesResponseType(typeof(ErrorMessage), (int)HttpStatusCode.Unauthorized)]
+        [ProducesResponseType((int)HttpStatusCode.OK)]
+        public async Task<IActionResult> VoidAllowance([FromRoute]string integration, 
+            [FromQuery]string customerEmail,
+            [FromQuery]DateTime dateUtc)
+        {
+            if (!ModelState.IsValid ||
+                !string.Equals(integration, "servicetitan", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new ErrorMessage("Invalid parameters"));
+            }
 
+            if (!await _permission.AuthorizeAsync("CompanyAllowanceVoiding"))
+                return Unauthorized(new ErrorMessage("Insufficient permissions"));
+
+            var customer = await _customer.GetCustomerByEmailAsync(customerEmail);
+            if (customer == null)
+                return NotFound(new ErrorMessage("Customer not found"));
+
+            var allowancePaymentMethod = (ICompanyAllowancePaymentMethod)
+                (await _paymentPluginManager.LoadActivePluginsAsyncAsync(customer))
+                .Single(p => p is ICompanyAllowancePaymentMethod);
+
+            var voided = 
+                await allowancePaymentMethod.VoidAllowance(dateUtc, customer);
+
+            await _logger.InformationAsync($"Voided allowance for {customer.Email} for the day {dateUtc}");
+            
+            return Ok(new { Voided = voided });
+        }
+        
         public OrderController(ICustomerService customer, 
             IOrderService order, 
             IWorkContext workContext, 

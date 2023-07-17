@@ -27,6 +27,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
     {
         // keep in sync with IdramMerchantPaymentProcessor.CompanyBenefitExemptionRole
         private const string CompanyBenefitExemptionRole = "Allowance Excempt";
+        private const string VoidedAllowancesSettingsKey = "VoidedAllowancesSettings";
         
         #region Fields
 
@@ -46,6 +47,11 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
 
         #endregion
 
+        private class VoidedAllowanceSettings
+        {
+            public List<DateTime> UtcDates { get; set; }
+        }
+        
         #region Properties
 
         /// <summary>
@@ -130,24 +136,20 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         /// </returns>
         public async Task<ProcessPaymentResult> ProcessPaymentAsync(ProcessPaymentRequest processPaymentRequest)
         {
-            var customerCompanyLimit = await GetCustomerCompanyLimit();
-            var scheduleDateCustomerOrdersTotal =
-                await GetOrderDayTotal(processPaymentRequest.ScheduleDate);
-
-            var remainingAllowanceForScheduleDate = scheduleDateCustomerOrdersTotal >= customerCompanyLimit
-                ? 0
-                : customerCompanyLimit - scheduleDateCustomerOrdersTotal; 
+            var customer = await _customerService.GetCustomerByIdAsync(processPaymentRequest.CustomerId);
+            var remainingAllowance = 
+                await GetCustomerRemainingAllowance(processPaymentRequest.ScheduleDate, customer);
             
             var result = new ProcessPaymentResult();
             
             // Within the company's allowance
-            if (remainingAllowanceForScheduleDate >= processPaymentRequest.OrderTotal)
+            if (remainingAllowance >= processPaymentRequest.OrderTotal)
             {
                 result.NewPaymentStatus = PaymentStatus.Paid;
             }
             else
             {
-                result.AddError($"Your remaining allowance ({remainingAllowanceForScheduleDate} AMD) is not enough to " +
+                result.AddError($"Your remaining allowance ({remainingAllowance} AMD) is not enough to " +
                                 $"purchase your current order ({processPaymentRequest.OrderTotal} AMD).");
             }
             
@@ -175,23 +177,26 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         /// </returns>
         public async Task<bool> HidePaymentMethodAsync(IList<ShoppingCartItem> cart)
         {
-            if (_checkMoneyOrderPaymentSettings.ShippableProductRequired && !await _shoppingCartService.ShoppingCartRequiresShippingAsync(cart))
+            if (_checkMoneyOrderPaymentSettings.ShippableProductRequired && 
+                !await _shoppingCartService.ShoppingCartRequiresShippingAsync(cart))
                 return true;
 
-            var shoppingCartTotal = await _orderTotalCalculationService.GetShoppingCartTotalAsync(cart);
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var store = await _storeContext.GetCurrentStoreAsync();
+            
+            var shoppingCartTotal = 
+                await _orderTotalCalculationService.GetShoppingCartTotalAsync(cart);
 
-            var todayCustomerLimit = await GetCustomerCompanyLimit();
-            if (shoppingCartTotal.shoppingCartTotal > todayCustomerLimit)
-                return true;
-
-            var orderDayDate = await _genericAttribute.GetAttributeAsync(await _workContext.GetCurrentCustomerAsync(),
+            var orderDayDate = await _genericAttribute.GetAttributeAsync(
+                customer,
                 OrderProcessingService.DeliveryTimeAttributeName,
-                (await _storeContext.GetCurrentStoreAsync()).Id,
+                store.Id,
                 DateTime.UtcNow.Date);
             
-            var totalOrderTotal = await GetOrderDayTotal(orderDayDate);
-            
-            return todayCustomerLimit < totalOrderTotal + shoppingCartTotal.shoppingCartTotal;
+            var remainingAllowance = 
+                await GetCustomerRemainingAllowance(orderDayDate, customer);
+
+            return shoppingCartTotal.shoppingCartTotal > remainingAllowance;
         }
 
         /// <summary>
@@ -414,14 +419,14 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         // Keep in sync with IdramMerchantPaymentProcessor.GetCustomerCompanyLimit
         private async Task<decimal> GetCustomerCompanyLimit(Customer customer = null)
         {
-            var currentCustomer = customer ?? await _workContext.GetCurrentCustomerAsync();
-            var customerRoles = await _customerService.GetCustomerRolesAsync(currentCustomer);
+            customer ??= await _workContext.GetCurrentCustomerAsync();
+            var customerRoles = await _customerService.GetCustomerRolesAsync(customer);
 
             if (customerRoles.Any(role =>
                     string.Equals(role.Name, CompanyBenefitExemptionRole, StringComparison.OrdinalIgnoreCase)))
                 return 0M;
             
-            var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
 
             return company?.AmountLimit ?? 0M;
         }
@@ -432,8 +437,46 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             if (customerCompanyLimit == 0)
                 return 0;
 
+            var store = await _storeContext.GetCurrentStoreAsync();
+            var existingDates = await
+                _genericAttribute.GetAttributeAsync<VoidedAllowanceSettings>(customer,
+                    VoidedAllowancesSettingsKey,
+                    store.Id);
+
+            if (existingDates.UtcDates.Any(d => d.Date == date.Date))
+                return 0;
+
             var orderDayTotal = await GetOrderDayTotal(date, customer);
-            return orderDayTotal > customerCompanyLimit ? 0 : customerCompanyLimit - orderDayTotal;
+            return orderDayTotal > customerCompanyLimit ? 
+                0 : 
+                customerCompanyLimit - orderDayTotal;
+        }
+
+        public async Task<bool> VoidAllowance(DateTime date, Customer customer = null)
+        {
+            var store = await _storeContext.GetCurrentStoreAsync();
+            customer ??= await _workContext.GetCurrentCustomerAsync();
+
+            var existingDates = await
+                _genericAttribute.GetAttributeAsync<VoidedAllowanceSettings>(customer,
+                    VoidedAllowancesSettingsKey,
+                    store.Id,
+                    new VoidedAllowanceSettings()
+                    {
+                        UtcDates = new List<DateTime>()
+                    });
+
+            existingDates.UtcDates = existingDates.UtcDates
+                .Where(d => d > DateTime.UtcNow.Date.AddDays(-1))
+                .Concat(Enumerable.Repeat(date, 1))
+                .ToList();
+
+            await _genericAttribute.SaveAttributeAsync(customer,
+                VoidedAllowancesSettingsKey,
+                existingDates,
+                store.Id);
+
+            return true;
         }
     }
 }

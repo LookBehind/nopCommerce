@@ -7,5 +7,6 @@ namespace Nop.Services.Payments
     public interface ICompanyAllowancePaymentMethod
     {
         Task<decimal> GetCustomerRemainingAllowance(DateTime date, Customer customer = null);
+        Task<bool> VoidAllowance(DateTime date, Customer customer = null);
     }
 }
