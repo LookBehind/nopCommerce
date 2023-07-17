@@ -72,7 +72,7 @@
                                 $.ajax({
                                     cache: false,
                                     type: "POST",
-                                    url: "@(Url.Action("GenerateCouponCode", "GiftCard"))",
+                                    url: "@Url.Action("GenerateCouponCode", "Order")",
                                     data: postData,
                                     success: function (data, textStatus, jqXHR) {
                                         $('#@Html.IdFor(model => model.GiftCardCouponCode)').val(data.CouponCode);

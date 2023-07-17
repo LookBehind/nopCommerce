@@ -16180,7 +16180,7 @@
     <Value>Next</Value>
   </LocaleResource>
   <LocaleResource Name="Checkout.NoPaymentMethods">
-    <Value>No payment methods available</Value>
+    <Value>Your company's allowance of daily orders was exhausted (or you're excempt from allowance by your company) and right now there is no alternative payment method available</Value>
   </LocaleResource>
   <LocaleResource Name="Checkout.OrderNumber">
     <Value>Order number</Value>

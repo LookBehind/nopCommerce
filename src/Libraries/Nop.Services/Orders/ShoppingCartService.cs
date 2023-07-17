@@ -307,7 +307,9 @@ namespace Nop.Services.Orders
         protected virtual async Task<IList<string>> GetStandardWarningsAsync(Customer customer, 
             ShoppingCartType shoppingCartType, Product product, string attributesXml, 
             decimal customerEnteredPrice, int quantity, int shoppingCartItemId, 
-            int storeId, DateTime? scheduledDateUTC)
+            int storeId, 
+            DateTime? scheduledDateUTC,
+            bool ignoreNotPublishedWarning = false)
         {
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));
@@ -325,8 +327,10 @@ namespace Nop.Services.Orders
             }
 
             //published
-            if (!product.Published || (scheduledDateUTC.HasValue && 
-                !(await _productAvailabilityService.IsProductAvailabilityForDateAsync(product, scheduledDateUTC.Value))))
+            if (!ignoreNotPublishedWarning && (!product.Published || (scheduledDateUTC.HasValue &&
+                                                                      !(await _productAvailabilityService
+                                                                          .IsProductAvailabilityForDateAsync(product,
+                                                                              scheduledDateUTC.Value)))))
             {
                 warnings.Add(await _localizationService.GetResourceAsync("ShoppingCart.ProductUnpublished"));
             }
@@ -1081,7 +1085,8 @@ namespace Nop.Services.Orders
             int quantity = 1, bool addRequiredProducts = true, int shoppingCartItemId = 0,
             bool getStandardWarnings = true, bool getAttributesWarnings = true,
             bool getGiftCardWarnings = true, bool getRequiredProductWarnings = true,
-            bool getRentalWarnings = true, DateTime? scheduledDateUTC = default)
+            bool getRentalWarnings = true, DateTime? scheduledDateUTC = default, 
+            bool ignoreNotPublishedWarning = false)
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
@@ -1090,7 +1095,7 @@ namespace Nop.Services.Orders
 
             //standard properties
             if (getStandardWarnings)
-                warnings.AddRange(await GetStandardWarningsAsync(customer, shoppingCartType, product, attributesXml, customerEnteredPrice, quantity, shoppingCartItemId, storeId, scheduledDateUTC));
+                warnings.AddRange(await GetStandardWarningsAsync(customer, shoppingCartType, product, attributesXml, customerEnteredPrice, quantity, shoppingCartItemId, storeId, scheduledDateUTC, ignoreNotPublishedWarning));
 
             //selected attributes
             if (getAttributesWarnings)
@@ -1496,7 +1501,10 @@ namespace Nop.Services.Orders
             ShoppingCartType shoppingCartType, int storeId, string attributesXml = null,
             decimal customerEnteredPrice = decimal.Zero,
             DateTime? rentalStartDate = null, DateTime? rentalEndDate = null,
-            int quantity = 1, bool addRequiredProducts = true, DateTime? scheduledDateUTC = default)
+            int quantity = 1, 
+            bool addRequiredProducts = true, 
+            DateTime? scheduledDateUTC = default,
+            bool ignoreNotPublishedWarning = false)
         {
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));
@@ -1546,7 +1554,8 @@ namespace Nop.Services.Orders
                     storeId, attributesXml,
                     customerEnteredPrice, rentalStartDate, rentalEndDate,
                     newQuantity, addRequiredProducts, shoppingCartItem.Id, 
-                    scheduledDateUTC: scheduledDateUTC));
+                    scheduledDateUTC: scheduledDateUTC,
+                    ignoreNotPublishedWarning: ignoreNotPublishedWarning));
 
                 if (warnings.Any())
                     return warnings;
@@ -1564,7 +1573,8 @@ namespace Nop.Services.Orders
                     storeId, attributesXml, customerEnteredPrice,
                     rentalStartDate, rentalEndDate,
                     quantity, addRequiredProducts, 
-                    scheduledDateUTC: scheduledDateUTC));
+                    scheduledDateUTC: scheduledDateUTC,
+                    ignoreNotPublishedWarning: ignoreNotPublishedWarning));
 
                 if (warnings.Any())
                     return warnings;

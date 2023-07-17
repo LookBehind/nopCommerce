@@ -233,12 +233,11 @@ namespace Nop.Services.Companies
             await _companyCustomerRepository.UpdateAsync(companyCustomer);
 
         }
+        
         public virtual async Task<Company> GetCompanyByCustomerIdAsync(int customerId)
         {
             if (customerId == 0)
                 return null;
-
-            var customer = await _workContext.GetCurrentCustomerAsync();
 
             var companies = _companyRepository.Table;
 
@@ -246,9 +245,10 @@ namespace Nop.Services.Companies
                         join dcm in _companyCustomerRepository.Table on company.Id equals dcm.CompanyId
                         where dcm.CustomerId == customerId
                         select company;
-            return companies.FirstOrDefault();
+            return await companies.FirstOrDefaultAsync();
         }
 
+        
 
         protected virtual async Task<IList<CompanyCustomer>> GetCompanyCustomersByCustomerIdAsync(int customerId, int storeId,
            bool showHidden = false)

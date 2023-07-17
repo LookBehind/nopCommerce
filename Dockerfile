@@ -40,25 +40,17 @@ WORKDIR /src/Plugins/Nop.Plugin.BuyAmScraper
 RUN dotnet build Nop.Plugin.BuyAmScraper.csproj -c Release
 WORKDIR /src/Plugins/Nop.Plugin.Notifications.Manager
 RUN dotnet build Nop.Plugin.Notifications.Manager.csproj -c Release
+WORKDIR /src/Plugins/Nop.Plugin.Payments.Idram
+RUN dotnet build Nop.Plugin.Payments.Idram.csproj -c Release
 
 # publish project
 WORKDIR /src/Presentation/Nop.Web
 RUN dotnet publish Nop.Web.csproj --no-restore -c Release -o /app/published
 
 # create the runtime instance 
-FROM mcr.microsoft.com/dotnet/aspnet:5.0-alpine AS runtime 
+FROM docker.io/eisajanyan/nopcommerce:5.0-alpine-runtime-base AS runtime 
 
-# add globalization support
-RUN apk add --no-cache icu-libs
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
-
-# installs required packages
-RUN apk add libtiffxx --no-cache --repository https://dl-3.alpinelinux.org/alpine/edge/main/
-RUN apk add tiff-dev --no-cache --repository https://dl-3.alpinelinux.org/alpine/edge/main/
-RUN apk add tiff --no-cache --repository https://dl-3.alpinelinux.org/alpine/edge/main/
-RUN apk add libgdiplus --no-cache --repository https://dl-3.alpinelinux.org/alpine/edge/community/ --allow-untrusted
-RUN apk add libc-dev --no-cache
-RUN apk add --no-cache tzdata
 
 # copy entrypoint script
 COPY ./entrypoint.sh /entrypoint.sh

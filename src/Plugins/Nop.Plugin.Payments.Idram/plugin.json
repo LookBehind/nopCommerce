@@ -1,0 +1,11 @@
+﻿{
+  "Group": "Payment methods",
+  "FriendlyName": "Idram Merchant",
+  "SystemName": "Payments.Idram",
+  "Version": "1.66",
+  "SupportedVersions": [ "4.50" ],
+  "Author": "Custom",
+  "DisplayOrder": 1,
+  "FileName": "Nop.Plugin.Payments.Idram.dll",
+  "Description": "This plugin allows paying with Idram Merchant"
+}

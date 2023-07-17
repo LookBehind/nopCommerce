@@ -11,14 +11,23 @@ using Nop.Services.Orders;
 using Nop.Services.Payments;
 using Nop.Services.Plugins;
 using System.Linq;
+using Nop.Core.Domain.Customers;
+using Nop.Core.Domain.Payments;
+using Nop.Data;
+using Nop.Services.Common;
+using Nop.Services.Companies;
+using Nop.Services.Customers;
 
 namespace Nop.Plugin.Payments.CheckMoneyOrder
 {
     /// <summary>
     /// CheckMoneyOrder payment processor
     /// </summary>
-    public class CheckMoneyOrderPaymentProcessor : BasePlugin, IPaymentMethod
+    public class CheckMoneyOrderPaymentProcessor : BasePlugin, IPaymentMethod, ICompanyAllowancePaymentMethod
     {
+        // keep in sync with IdramMerchantPaymentProcessor.CompanyBenefitExemptionRole
+        private const string CompanyBenefitExemptionRole = "Allowance Excempt";
+        
         #region Fields
 
         private readonly CheckMoneyOrderPaymentSettings _checkMoneyOrderPaymentSettings;
@@ -27,11 +36,55 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         private readonly ISettingService _settingService;
         private readonly IShoppingCartService _shoppingCartService;
         private readonly IWebHelper _webHelper;
-        private readonly IOrderService _orderService;
-        private readonly IDateTimeHelper _dateTime;
+        private readonly IWorkContext _workContext;
+        private readonly IRepository<Order> _orderRepository;
+        private readonly IStoreContext _storeContext;
+        private readonly ICompanyService _companyService;
+        private readonly IOrderTotalCalculationService _orderTotalCalculationService;
+        private readonly IGenericAttributeService _genericAttribute;
+        private readonly ICustomerService _customerService;
 
         #endregion
 
+        #region Properties
+
+        /// <summary>
+        /// Gets a value indicating whether capture is supported
+        /// </summary>
+        public bool SupportCapture => false;
+
+        /// <summary>
+        /// Gets a value indicating whether partial refund is supported
+        /// </summary>
+        public bool SupportPartiallyRefund => false;
+
+        /// <summary>
+        /// Gets a value indicating whether refund is supported
+        /// </summary>
+        public bool SupportRefund => false;
+
+        /// <summary>
+        /// Gets a value indicating whether void is supported
+        /// </summary>
+        public bool SupportVoid => false;
+
+        /// <summary>
+        /// Gets a recurring payment type of payment method
+        /// </summary>
+        public RecurringPaymentType RecurringPaymentType => RecurringPaymentType.NotSupported;
+
+        /// <summary>
+        /// Gets a payment method type
+        /// </summary>
+        public PaymentMethodType PaymentMethodType => PaymentMethodType.Standard;
+
+        /// <summary>
+        /// Gets a value indicating whether we should display a payment information page for this plugin
+        /// </summary>
+        public bool SkipPaymentInfo => true;
+
+        #endregion
+        
         #region Ctor
 
         public CheckMoneyOrderPaymentProcessor(CheckMoneyOrderPaymentSettings checkMoneyOrderPaymentSettings,
@@ -40,8 +93,13 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             ISettingService settingService,
             IShoppingCartService shoppingCartService,
             IWebHelper webHelper,
-            IOrderService orderService,
-            IDateTimeHelper dateTime)
+            IWorkContext workContext, 
+            IRepository<Order> orderRepository, 
+            IStoreContext storeContext, 
+            ICompanyService companyService, 
+            IOrderTotalCalculationService orderTotalCalculationService, 
+            IGenericAttributeService genericAttribute, 
+            ICustomerService customerService)
         {
             _checkMoneyOrderPaymentSettings = checkMoneyOrderPaymentSettings;
             _localizationService = localizationService;
@@ -49,8 +107,13 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             _settingService = settingService;
             _shoppingCartService = shoppingCartService;
             _webHelper = webHelper;
-            _orderService = orderService;
-            _dateTime = dateTime;
+            _workContext = workContext;
+            _orderRepository = orderRepository;
+            _storeContext = storeContext;
+            _companyService = companyService;
+            _orderTotalCalculationService = orderTotalCalculationService;
+            _genericAttribute = genericAttribute;
+            _customerService = customerService;
         }
 
         #endregion
@@ -65,35 +128,30 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         /// A task that represents the asynchronous operation
         /// The task result contains the process payment result
         /// </returns>
-        //public async Task<ProcessPaymentResult> ProcessPaymentAsync(ProcessPaymentRequest processPaymentRequest)
-        //{
-        //    var result = new ProcessPaymentResult();
-
-        //    var storeDateTime = await _dateTime.ConvertToUserTimeAsync(DateTime.Now);
-        //    var todayStart = new DateTime(storeDateTime.Year, storeDateTime.Month, storeDateTime.Day, 0, 0, 1);
-        //    var todayEnd = new DateTime(storeDateTime.Year, storeDateTime.Month, storeDateTime.Day, 23, 59, 59);
-            
-        //    var customerTodayOrders = await _orderService.SearchOrdersAsync(
-        //        processPaymentRequest.StoreId, 
-        //        customerId: processPaymentRequest.CustomerId,
-        //        createdFromUtc: _dateTime.ConvertToUtcTime(todayStart),
-        //        createdToUtc: _dateTime.ConvertToUtcTime(todayEnd));
-        //    var customersOrdersTotal = customerTodayOrders.Sum(x => x.OrderTotal);
-
-        //    if(processPaymentRequest.OrderTotal > 4000)
-        //    {
-        //        result.AddError($"Your current order ({processPaymentRequest.OrderTotal} AMD) exceeds daily limit of 4000 AMD");
-        //    }
-        //    else if (customersOrdersTotal + processPaymentRequest.OrderTotal > 4000)
-        //    {
-        //        result.AddError($"Your today's existing orders ({customersOrdersTotal} AMD) + current order ({processPaymentRequest.OrderTotal} AMD) exceeds daily limit of 4000 AMD");
-        //    }
-
-        //    return result;
-        //}
-        public Task<ProcessPaymentResult> ProcessPaymentAsync(ProcessPaymentRequest processPaymentRequest)
+        public async Task<ProcessPaymentResult> ProcessPaymentAsync(ProcessPaymentRequest processPaymentRequest)
         {
-            return Task.FromResult(new ProcessPaymentResult());
+            var customerCompanyLimit = await GetCustomerCompanyLimit();
+            var scheduleDateCustomerOrdersTotal =
+                await GetOrderDayTotal(processPaymentRequest.ScheduleDate);
+
+            var remainingAllowanceForScheduleDate = scheduleDateCustomerOrdersTotal >= customerCompanyLimit
+                ? 0
+                : customerCompanyLimit - scheduleDateCustomerOrdersTotal; 
+            
+            var result = new ProcessPaymentResult();
+            
+            // Within the company's allowance
+            if (remainingAllowanceForScheduleDate >= processPaymentRequest.OrderTotal)
+            {
+                result.NewPaymentStatus = PaymentStatus.Paid;
+            }
+            else
+            {
+                result.AddError($"Your remaining allowance ({remainingAllowanceForScheduleDate} AMD) is not enough to " +
+                                $"purchase your current order ({processPaymentRequest.OrderTotal} AMD).");
+            }
+            
+            return result;
         }
 
         /// <summary>
@@ -117,14 +175,23 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         /// </returns>
         public async Task<bool> HidePaymentMethodAsync(IList<ShoppingCartItem> cart)
         {
-            //you can put any logic here
-            //for example, hide this payment method if all products in the cart are downloadable
-            //or hide this payment method if current customer is from certain country
-
             if (_checkMoneyOrderPaymentSettings.ShippableProductRequired && !await _shoppingCartService.ShoppingCartRequiresShippingAsync(cart))
                 return true;
 
-            return false;
+            var shoppingCartTotal = await _orderTotalCalculationService.GetShoppingCartTotalAsync(cart);
+
+            var todayCustomerLimit = await GetCustomerCompanyLimit();
+            if (shoppingCartTotal.shoppingCartTotal > todayCustomerLimit)
+                return true;
+
+            var orderDayDate = await _genericAttribute.GetAttributeAsync(await _workContext.GetCurrentCustomerAsync(),
+                OrderProcessingService.DeliveryTimeAttributeName,
+                (await _storeContext.GetCurrentStoreAsync()).Id,
+                DateTime.UtcNow.Date);
+            
+            var totalOrderTotal = await GetOrderDayTotal(orderDayDate);
+            
+            return todayCustomerLimit < totalOrderTotal + shoppingCartTotal.shoppingCartTotal;
         }
 
         /// <summary>
@@ -288,7 +355,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 ["Plugins.Payment.CheckMoneyOrder.AdditionalFeePercentage.Hint"] = "Determines whether to apply a percentage additional fee to the order total. If not enabled, a fixed value is used.",
                 ["Plugins.Payment.CheckMoneyOrder.DescriptionText"] = "Description",
                 ["Plugins.Payment.CheckMoneyOrder.DescriptionText.Hint"] = "Enter info that will be shown to customers during checkout",
-                ["Plugins.Payment.CheckMoneyOrder.PaymentMethodDescription"] = "Pay by cheque or money order",
+                ["Plugins.Payment.CheckMoneyOrder.PaymentMethodDescription"] = "Eligible for your company's provided benefits",
                 ["Plugins.Payment.CheckMoneyOrder.ShippableProductRequired"] = "Shippable product required",
                 ["Plugins.Payment.CheckMoneyOrder.ShippableProductRequired.Hint"] = "An option indicating whether shippable products are required in order to display this payment method during checkout."
             });
@@ -326,43 +393,47 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
 
         #endregion
 
-        #region Properties
+        // keep in sync with IdramMerchantPaymentProcessor.GetOrderDayTotal
+        private async Task<decimal> GetOrderDayTotal(DateTime scheduleDateUtc, Customer customer = null)
+        {
+            var store = await _storeContext.GetCurrentStoreAsync();
+            customer ??= await _workContext.GetCurrentCustomerAsync();
 
-        /// <summary>
-        /// Gets a value indicating whether capture is supported
-        /// </summary>
-        public bool SupportCapture => false;
+            var thatDayOrders = await _orderRepository.Table
+                .Where(o => o.StoreId == store.Id && 
+                            o.CustomerId == customer.Id && 
+                            o.ScheduleDate.Date == scheduleDateUtc.Date &&
+                            (OrderStatus)o.OrderStatusId != OrderStatus.Cancelled &&
+                            (PaymentStatus)o.PaymentStatusId == PaymentStatus.Paid &&
+                            !o.Deleted)
+                .SumAsync(x => x.OrderTotal);
 
-        /// <summary>
-        /// Gets a value indicating whether partial refund is supported
-        /// </summary>
-        public bool SupportPartiallyRefund => false;
+            return thatDayOrders;
+        }
 
-        /// <summary>
-        /// Gets a value indicating whether refund is supported
-        /// </summary>
-        public bool SupportRefund => false;
+        // Keep in sync with IdramMerchantPaymentProcessor.GetCustomerCompanyLimit
+        private async Task<decimal> GetCustomerCompanyLimit(Customer customer = null)
+        {
+            var currentCustomer = customer ?? await _workContext.GetCurrentCustomerAsync();
+            var customerRoles = await _customerService.GetCustomerRolesAsync(currentCustomer);
 
-        /// <summary>
-        /// Gets a value indicating whether void is supported
-        /// </summary>
-        public bool SupportVoid => false;
+            if (customerRoles.Any(role =>
+                    string.Equals(role.Name, CompanyBenefitExemptionRole, StringComparison.OrdinalIgnoreCase)))
+                return 0M;
+            
+            var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
 
-        /// <summary>
-        /// Gets a recurring payment type of payment method
-        /// </summary>
-        public RecurringPaymentType RecurringPaymentType => RecurringPaymentType.NotSupported;
+            return company?.AmountLimit ?? 0M;
+        }
 
-        /// <summary>
-        /// Gets a payment method type
-        /// </summary>
-        public PaymentMethodType PaymentMethodType => PaymentMethodType.Standard;
+        public async Task<decimal> GetCustomerRemainingAllowance(DateTime date, Customer customer = null)
+        {
+            var customerCompanyLimit = await GetCustomerCompanyLimit(customer);
+            if (customerCompanyLimit == 0)
+                return 0;
 
-        /// <summary>
-        /// Gets a value indicating whether we should display a payment information page for this plugin
-        /// </summary>
-        public bool SkipPaymentInfo => true;
-
-        #endregion
+            var orderDayTotal = await GetOrderDayTotal(date, customer);
+            return orderDayTotal > customerCompanyLimit ? 0 : customerCompanyLimit - orderDayTotal;
+        }
     }
 }

@@ -45,6 +45,8 @@ namespace Nop.Services.Orders
     /// </summary>
     public partial class OrderProcessingService : IOrderProcessingService
     {
+        public const string DeliveryTimeAttributeName = "deliveryTime";
+        
         #region Fields
 
         private readonly CurrencySettings _currencySettings;
@@ -505,7 +507,8 @@ namespace Nop.Services.Orders
 
                 var sciWarnings = await _shoppingCartService.GetShoppingCartItemWarningsAsync(details.Customer,
                     sci.ShoppingCartType, product, processPaymentRequest.StoreId, sci.AttributesXml,
-                    sci.CustomerEnteredPrice, sci.RentalStartDateUtc, sci.RentalEndDateUtc, sci.Quantity, false, sci.Id);
+                    sci.CustomerEnteredPrice, sci.RentalStartDateUtc, sci.RentalEndDateUtc, sci.Quantity, false, sci.Id,
+                    ignoreNotPublishedWarning: processPaymentRequest.IgnoreNotPublishedWarning);
                 if (sciWarnings.Any())
                     throw new NopException(sciWarnings.Aggregate(string.Empty, (current, next) => $"{current}{next};"));
             }
@@ -853,7 +856,9 @@ namespace Nop.Services.Orders
                 CustomValuesXml = _paymentService.SerializeCustomValues(processPaymentRequest),
                 VatNumber = details.VatNumber,
                 CreatedOnUtc = DateTime.UtcNow,
-                CustomOrderNumber = string.Empty
+                CustomOrderNumber = string.Empty,
+                ScheduleDate = processPaymentRequest.ScheduleDate,
+                ScheduleDateTime = processPaymentRequest.ScheduleDate
             };
 
             if (details.BillingAddress is null)
@@ -1611,13 +1616,6 @@ namespace Nop.Services.Orders
             var result = new PlaceOrderResult();
             try
             {
-                if (string.IsNullOrWhiteSpace(processPaymentRequest.ScheduleDate))
-                    throw new Exception("Delivery time is not selected");
-
-                var scheduleDate = DateTime.SpecifyKind(
-                    Convert.ToDateTime(processPaymentRequest.ScheduleDate),
-                    DateTimeKind.Utc);
-
                 if (processPaymentRequest.OrderGuid == Guid.Empty)
                     throw new Exception("Order GUID is not generated");
 
@@ -1631,51 +1629,11 @@ namespace Nop.Services.Orders
 
                 if (processPaymentResult.Success)
                 {
-                    //Check Customer today orders total amount is greater than company limited amount
-                    var company = await _companyService.GetCompanyByCustomerIdAsync(details.Customer.Id);
-                    if (company != null)
-                    {
-                        var cartTotal =
-                            await _orderTotalCalculationService.GetShoppingCartTotalAsync(details.Cart);
-
-                        var orders = await _orderService.SearchOrdersAsync(customerId: details.Customer.Id,
-                            osIds: new List<int> { (int)OrderStatus.Complete, (int)OrderStatus.Pending, (int)OrderStatus.Processing });
-                        if (orders.Any())
-                        {
-                            //Checks if the schedule date has any previous orders, if yes then checks limit according to that!
-
-                            var ordersAccordingToScheduleDate = orders.Where(x => x.ScheduleDate.Date == scheduleDate.Date).ToList();
-                            var todayOrderTotal = ordersAccordingToScheduleDate.Sum(x => x.OrderTotal) + cartTotal.shoppingCartTotal;
-                            if (todayOrderTotal > company.AmountLimit &&
-                                !(await ShouldAccountLimitationBeIgnoredAsync(details.Customer.Id)))
-                            {
-                                if (await ordersAccordingToScheduleDate.AnyAwaitAsync(
-                                        async o => (await _giftCardService.GetGiftCardUsageHistoryAsync(o)).Any()))
-                                {
-                                    result.Errors.Add("You have random lunch today, can't order for specified day");
-                                }
-                                else
-                                {
-                                    result.Errors.Add(string.Format(await _localizationService.GetResourceAsync("Order.Company.AmountLimit"), company.AmountLimit, await _localizationService.GetResourceAsync("Customer.Company.OrderTotal"), todayOrderTotal));
-                                }
-                            }
-                        }
-                        //if there are no previous orders found then checks for company limit
-                        else if (cartTotal.shoppingCartTotal > company.AmountLimit && !(await ShouldAccountLimitationBeIgnoredAsync(details.Customer.Id)))
-                            result.Errors.Add(string.Format(await _localizationService.GetResourceAsync("Order.Company.AmountLimit"), company.AmountLimit, await _localizationService.GetResourceAsync("Customer.Company.OrderTotal"), cartTotal.shoppingCartTotal));
-                    }
-                    else
-                        result.Errors.Add(await _localizationService.GetResourceAsync("Company.NotFound"));
-
-                    if (result.Errors.Count > 0)
-                        return result;
-
-
                     var order = await SaveOrderDetailsAsync(processPaymentRequest, processPaymentResult, details);
-                    order.ScheduleDate = scheduleDate; //TODO: refactor details.ScheduleDate to be DateTime and don't put it here
                     result.PlacedOrder = order;
-                    order.ScheduleDateTime = scheduleDate;
-                    order.CompanyId = company.Id;
+                    
+                    order.CompanyId = (await _companyService.GetCompanyByCustomerIdAsync(
+                        processPaymentRequest.CustomerId))?.Id ?? 0;
                     //update order delivery slot
                     await AddOrderDeliverSlotAsync(order);
 

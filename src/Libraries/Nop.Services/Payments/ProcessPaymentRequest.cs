@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Orders;
+using OfficeOpenXml.FormulaParsing.Excel.Functions.DateTime;
 
 namespace Nop.Services.Payments
 {
@@ -41,7 +42,9 @@ namespace Nop.Services.Payments
         /// </summary>
         public decimal OrderTotal { get; set; }
 
-        public string ScheduleDate { get; set; }
+        public DateTime ScheduleDate { get; set; }
+        
+        public bool IgnoreNotPublishedWarning { get; set; }
 
         /// <summary>
         /// /// <summary>

@@ -435,12 +435,11 @@ namespace Nop.Web.Controllers.Api.Security
         }
 
         // This is temporary until PlaceOrderAsync is fixed to accept datetime
-        private async Task<string> ConvertCustomerLocalTimeToUTCStringAsync(
+        private async Task<DateTime> ConvertCustomerLocalTimeToUTCStringAsync(
             Core.Domain.Customers.Customer customer,
             string date)
         {
-            return (await ConvertCustomerLocalTimeToUTCAsync(customer, date))
-                .ToString("MM/dd/yyyy HH:mm:ss");
+            return await ConvertCustomerLocalTimeToUTCAsync(customer, date);
         }
         
         [HttpPost("order-confirmation/{scheduleDate}")]
@@ -658,15 +657,12 @@ namespace Nop.Web.Controllers.Api.Security
 
                     var orderItems = await _orderService.GetOrderItemsAsync(order.Id);
                     
-                    
-                    
-                        
-                        
                     foreach (var orderItem in orderItems)
                     {
                         var product = await _productService.GetProductByIdAsync(orderItem.ProductId);
                         var productPicture = await _pictureService.GetPicturesByProductIdAsync(orderItem.ProductId);
-                        var vendor = await _vendorService.GetVendorByProductIdAsync(product.Id);
+                        var vendor = 
+                            await _vendorService.GetVendorByProductIdAsync(product.Id) ;
                         
                         var vendorBriefModel = new VendorBriefInfoModel
                         {

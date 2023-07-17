@@ -149,7 +149,7 @@
                                     @T("Admin.Orders.Products.GiftCards")<text>:</text>
                                     @for (var i = 0; i < item.PurchasedGiftCardIds.Count; i++)
                                     {
-                                        <a asp-controller="GiftCard" asp-action="Edit" asp-route-id="@item.PurchasedGiftCardIds[i]">@item.PurchasedGiftCardIds[i]</a>
+                                        <a asp-controller="Order" asp-action="Edit" asp-route-id="@item.PurchasedGiftCardIds[i]">@item.PurchasedGiftCardIds[i]</a>
                                         if (i != item.PurchasedGiftCardIds.Count - 1)
                                         {
                                             <text>,</text>

@@ -150,7 +150,8 @@ namespace Nop.Services.Orders
             int quantity = 1, bool addRequiredProducts = true, int shoppingCartItemId = 0,
             bool getStandardWarnings = true, bool getAttributesWarnings = true,
             bool getGiftCardWarnings = true, bool getRequiredProductWarnings = true,
-            bool getRentalWarnings = true, DateTime? scheduledDateUTC = default);
+            bool getRentalWarnings = true, DateTime? scheduledDateUTC = default,
+            bool ignoreNotPublishedWarning = false);
 
         /// <summary>
         /// Validates whether this shopping cart is valid
@@ -259,7 +260,8 @@ namespace Nop.Services.Orders
             ShoppingCartType shoppingCartType, int storeId, string attributesXml = null,
             decimal customerEnteredPrice = decimal.Zero,
             DateTime? rentalStartDate = null, DateTime? rentalEndDate = null,
-            int quantity = 1, bool addRequiredProducts = true, DateTime? scheduledDateUTC = default);
+            int quantity = 1, bool addRequiredProducts = true, DateTime? scheduledDateUTC = default,
+            bool ignoreNotPublishedWarning = false);
 
         /// <summary>
         /// Updates the shopping cart item
