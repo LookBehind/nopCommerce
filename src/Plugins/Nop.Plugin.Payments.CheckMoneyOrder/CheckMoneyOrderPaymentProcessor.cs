@@ -441,7 +441,11 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             var existingDates = await
                 _genericAttribute.GetAttributeAsync<VoidedAllowanceSettings>(customer,
                     VoidedAllowancesSettingsKey,
-                    store.Id);
+                    store.Id,
+                    new VoidedAllowanceSettings()
+                    {
+                        UtcDates = new List<DateTime>()
+                    });
 
             if (existingDates.UtcDates.Any(d => d.Date == date.Date))
                 return 0;
