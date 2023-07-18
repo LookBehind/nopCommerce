@@ -44,7 +44,7 @@ namespace Nop.Services.Common
         /// A task that represents the asynchronous operation
         /// The task result contains the address
         /// </returns>
-        Task<Address> GetAddressByIdAsync(int addressId);
+        Task<Address> GetAddressByIdAsync(int? addressId);
 
         /// <summary>
         /// Inserts an address

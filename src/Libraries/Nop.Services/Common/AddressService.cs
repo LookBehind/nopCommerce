@@ -104,7 +104,7 @@ namespace Nop.Services.Common
         /// A task that represents the asynchronous operation
         /// The task result contains the address
         /// </returns>
-        public virtual async Task<Address> GetAddressByIdAsync(int addressId)
+        public virtual async Task<Address> GetAddressByIdAsync(int? addressId)
         {
             return await _addressRepository.GetByIdAsync(addressId,
                 cache => cache.PrepareKeyForShortTermCache(NopEntityCacheDefaults<Address>.ByIdCacheKey, addressId));

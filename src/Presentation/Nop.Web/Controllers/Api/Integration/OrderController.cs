@@ -74,7 +74,8 @@ namespace Nop.Web.Controllers.Integration
                         VendorId = vendorId,
                         ProductType = ProductType.SimpleProduct,
                         OrderMaximumQuantity = 10,
-                        OrderMinimumQuantity = 1
+                        OrderMinimumQuantity = 1,
+                        IsShipEnabled = true
                     };
                     
                     await _productService.InsertProductAsync(newProduct);
