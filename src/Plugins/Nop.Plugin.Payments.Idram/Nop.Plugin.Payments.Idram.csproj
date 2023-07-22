@@ -1,10 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <!--Project was exported from assembly: C:\Workspace\MySnacks\Idram\Nop.Plugin.Payments.Idram.dll-->
   <PropertyGroup>
+    <TargetFramework>net5.0</TargetFramework>
     <Platform>AnyCPU</Platform>
     <ProjectGuid>{1CCF5C06-72E9-4226-93A7-C2CC6A64C8B3}</ProjectGuid>
     <OutputType>Library</OutputType>
-    <TargetFramework>net5.0</TargetFramework>
     <Version>1.0.0.0</Version>
     <OutputPath>..\..\Presentation\Nop.Web\Plugins\Payments.Idram</OutputPath>
     <OutDir>$(OutputPath)</OutDir>

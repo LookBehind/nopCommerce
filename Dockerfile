@@ -1,5 +1,5 @@
 # create the build instance 
-FROM mcr.microsoft.com/dotnet/sdk:5.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:7.0 AS build
 
 WORKDIR /src
 
@@ -48,9 +48,17 @@ WORKDIR /src/Presentation/Nop.Web
 RUN dotnet publish Nop.Web.csproj --no-restore -c Release -o /app/published
 
 # create the runtime instance 
-FROM docker.io/eisajanyan/nopcommerce:5.0-alpine-runtime-base AS runtime 
+FROM mcr.microsoft.com/dotnet/aspnet:7.0-alpine AS runtime 
 
+# add globalization support
+RUN apk add --no-cache icu-libs
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+
+# installs required packages
+RUN apk add tiff --no-cache --repository http://dl-3.alpinelinux.org/alpine/edge/main/ --allow-untrusted
+RUN apk add libgdiplus --no-cache --repository http://dl-3.alpinelinux.org/alpine/edge/community/ --allow-untrusted
+RUN apk add libc-dev --no-cache
+RUN apk add tzdata --no-cache
 
 # copy entrypoint script
 COPY ./entrypoint.sh /entrypoint.sh
