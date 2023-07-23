@@ -142,6 +142,8 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
                 sb.AppendLine($"{await _localizationService.GetResourceAsync("Messages.Order.Product(s).Quantity", languageId)}: {orderItem.Quantity}");
             }
 
+            sb.AppendLine($"{order.CheckoutAttributeDescription ?? ""}");
+            
             return sb.ToString();
         }
     }
