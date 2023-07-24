@@ -28,6 +28,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
     {
         // keep in sync with IdramMerchantPaymentProcessor.CompanyBenefitExemptionRole
         private const string CompanyBenefitExemptionRole = "Allowance Excempt";
+        private const string UnlimitedAccountRoleSystemName = "UnlimitedAccount";
         private const string VoidedAllowancesSettingsKey = "VoidedAllowancesSettings";
         
         #region Fields
@@ -138,13 +139,15 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         public async Task<ProcessPaymentResult> ProcessPaymentAsync(ProcessPaymentRequest processPaymentRequest)
         {
             var customer = await _customerService.GetCustomerByIdAsync(processPaymentRequest.CustomerId);
+
             var remainingAllowance = 
                 await GetCustomerRemainingAllowance(processPaymentRequest.ScheduleDate, customer);
             
             var result = new ProcessPaymentResult();
             
-            // Within the company's allowance
-            if (remainingAllowance >= processPaymentRequest.OrderTotal)
+            // Within the company's allowance or account is unlimited
+            if (await IsUnlimitedAccount(customer) ||
+                remainingAllowance >= processPaymentRequest.OrderTotal)
             {
                 result.NewPaymentStatus = PaymentStatus.Paid;
             }
@@ -183,6 +186,9 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 return true;
 
             var customer = await _workContext.GetCurrentCustomerAsync();
+            if (await IsUnlimitedAccount(customer))
+                return false;
+            
             var store = await _storeContext.GetCurrentStoreAsync();
             
             var shoppingCartTotal = 
@@ -415,6 +421,15 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 .SumAsync(x => x.OrderTotal);
 
             return thatDayOrders;
+        }
+
+        private async Task<bool> IsUnlimitedAccount(Customer customer)
+        {
+            var customerRoles = await _customerService.GetCustomerRolesAsync(customer);
+            return customerRoles?.Any(cr =>
+                       string.Equals(cr.SystemName, UnlimitedAccountRoleSystemName,
+                           StringComparison.OrdinalIgnoreCase)) ==
+                   true;
         }
 
         // Keep in sync with IdramMerchantPaymentProcessor.GetCustomerCompanyLimit
