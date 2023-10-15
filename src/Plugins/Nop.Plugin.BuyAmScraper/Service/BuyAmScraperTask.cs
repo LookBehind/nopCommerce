@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Nop.Plugin.Misc.BuyAmScraper.Models;
 using Nop.Services.Catalog;
 using Nop.Services.Logging;
-using PuppeteerSharp;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Services.Customers;
 using Nop.Services.Vendors;
@@ -230,8 +229,9 @@ namespace Nop.Plugin.BuyAmScraper.Service
             return vendor.Id;
         }
 
-        async Task UpsertProducts(IAsyncEnumerable<object> productDTOs)
+        async Task<int> UpsertProducts(IAsyncEnumerable<object> productDTOs)
         {
+            int updatedCount = 0;
             await foreach (var productDTOObject in productDTOs)
             {
                 var productMiniDTO = productDTOObject as ProductMiniDto;
@@ -244,14 +244,25 @@ namespace Nop.Plugin.BuyAmScraper.Service
                 if (productMiniDTO != null)
                     productDTO = await Convert(productMiniDTO);
                 
-                var existingProduct = await _productService.GetProductBySkuAsync(productCode);
+                Product existingProduct = null;
+                // SKUs have changed, for example from 79857 to CRM-79857
+                if (productCode.StartsWith("CRM-", StringComparison.Ordinal))
+                    existingProduct = await _productService.GetProductBySkuAsync(productCode.Substring(4));
+
+                // Fallback to exact matching
+                if (existingProduct == null)
+                    existingProduct = await _productService.GetProductBySkuAsync(productCode);
+                
                 if (existingProduct != null)
                 {
                     if(!existingProduct.IsEqualHelper(productDTO))
                     {
-                        _logger.InformationAsync($"Updating product with SKU: {existingProduct.Sku}");
+                        await _logger.InformationAsync($"Updating product with SKU: {existingProduct.Sku}, " +
+                                                       $"Old Price: {existingProduct.Price}, New Price: {productDTO.Price}");
                         existingProduct.Update(productDTO);
-                        await _productService.UpdateProductAsync(existingProduct); 
+                        await _productService.UpdateProductAsync(existingProduct);
+                        
+                        updatedCount++;
                     }
                     
                     continue;
@@ -354,40 +365,28 @@ namespace Nop.Plugin.BuyAmScraper.Service
                 });
 
                 await _logger.InformationAsync($"Product Name={productDTO.Name} have been imported");
+                
+                updatedCount++;
             }
             
+            return updatedCount;
         }
 
-        public async Task<int> ScrapeAndAddProducts()
+        private async Task ScrapeAndAddProducts()
         {
-            int result = 0;
-
-            Browser browser = null;
-
-            try
+            foreach (var categoryUrl in _categoryUrlsToScrape)
             {
-                foreach (var categoryUrl in _categoryUrlsToScrape)
-                {
-                    var sw = new Stopwatch();
-                    sw.Start();
+                var sw = new Stopwatch();
+                sw.Start();
 
-                    var products = ExtractProductsFromDownloadedPages(categoryUrl);
-                    await UpsertProducts(products);
-
-                    var count = await products.CountAsync();
-                    result += count;
-                    
-                    sw.Stop();
-                    await _logger.InformationAsync($"Finished category {categoryUrl}, {count} products, took {sw.Elapsed.Seconds} seconds");
-                }
+                var products = ExtractProductsFromDownloadedPages(categoryUrl);
+                var updatedCount = await UpsertProducts(products);
+                
+                sw.Stop();
+                await _logger.InformationAsync($"Finished category {categoryUrl}, " +
+                                               $"{updatedCount} products, " +
+                                               $"took {sw.Elapsed.Seconds} seconds");
             }
-            finally
-            {
-                if (browser != null)
-                    await browser.DisposeAsync();
-            }
-            
-            return result;
         }
 
         public async Task ExecuteAsync()
