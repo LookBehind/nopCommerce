@@ -396,16 +396,23 @@ namespace Nop.Plugin.BuyAmScraper.Service
         {
             foreach (var categoryUrl in _categoryUrlsToScrape)
             {
-                var sw = new Stopwatch();
-                sw.Start();
+                try
+                {
+                    var sw = new Stopwatch();
+                    sw.Start();
 
-                var products = ExtractProductsFromDownloadedPages(categoryUrl);
-                var updatedCount = await UpsertProducts(products);
+                    var products = ExtractProductsFromDownloadedPages(categoryUrl);
+                    var updatedCount = await UpsertProducts(products);
                 
-                sw.Stop();
-                await _logger.InformationAsync($"Finished category {categoryUrl}, " +
-                                               $"{updatedCount} products, " +
-                                               $"took {sw.Elapsed.Seconds} seconds");
+                    sw.Stop();
+                    await _logger.InformationAsync($"Finished category {categoryUrl}, " +
+                                                   $"{updatedCount} products, " +
+                                                   $"took {sw.Elapsed.Seconds} seconds");
+                }
+                catch (Exception e)
+                {
+                    await _logger.ErrorAsync($"Processing URL {categoryUrl} failed, skipping", e);
+                }
             }
         }
 
