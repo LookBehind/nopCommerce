@@ -240,135 +240,155 @@ namespace Nop.Plugin.BuyAmScraper.Service
                     break;
 
                 var productCode = productDTO?.Sku ?? productMiniDTO.Sku;
-
-                if (productMiniDTO != null)
-                    productDTO = await Convert(productMiniDTO);
                 
-                Product existingProduct = null;
-                // SKUs have changed, for example from 79857 to CRM-79857
-                if (productCode.StartsWith("CRM-", StringComparison.Ordinal))
-                    existingProduct = await _productService.GetProductBySkuAsync(productCode.Substring(4));
-
-                // Fallback to exact matching
-                if (existingProduct == null)
-                    existingProduct = await _productService.GetProductBySkuAsync(productCode);
-                
-                if (existingProduct != null)
+                try
                 {
-                    if(!existingProduct.IsEqualHelper(productDTO))
+                    if (productMiniDTO != null)
+                        productDTO = await Convert(productMiniDTO);
+
+                    Product existingProduct = null;
+                    // SKUs have changed, for example from 79857 to CRM-79857
+                    if (productCode.StartsWith("CRM-", StringComparison.Ordinal))
+                        existingProduct = await _productService.GetProductBySkuAsync(productCode.Substring(4));
+
+                    // Fallback to exact matching
+                    if (existingProduct == null)
+                        existingProduct = await _productService.GetProductBySkuAsync(productCode);
+
+                    if (existingProduct != null)
                     {
-                        await _logger.InformationAsync($"Updating product with SKU: {existingProduct.Sku}, " +
-                                                       $"Old Price: {existingProduct.Price}, New Price: {productDTO.Price}");
-                        existingProduct.Update(productDTO);
-                        await _productService.UpdateProductAsync(existingProduct);
-                        
-                        updatedCount++;
+                        if (!existingProduct.IsEqualHelper(productDTO))
+                        {
+                            await _logger.InformationAsync($"Updating product with SKU: {existingProduct.Sku}, " +
+                                                           $"Old Price: {existingProduct.Price}, New Price: {productDTO.Price}");
+                            existingProduct.Update(productDTO);
+                            await _productService.UpdateProductAsync(existingProduct);
+
+                            updatedCount++;
+                        }
+
+                        continue;
                     }
-                    
-                    continue;
-                }
 
-                var vendorId = await GetOrAddVendor(productDTO);
+                    var vendorId = await GetOrAddVendor(productDTO);
 
-                var product = new Product()
-                {
-                    Sku = productDTO.Sku,
-                    Name = productDTO.Name,
-                    Price = productDTO.Price,
-                    ShortDescription = productDTO.ShortDescription,
-                    FullDescription = productDTO.FullDescription,
-                    VendorId = vendorId,
-                    IsShipEnabled = true,
-                    DisableWishlistButton = true,
-                    Published = true,
-                    CreatedOnUtc = DateTime.UtcNow,
-                    UpdatedOnUtc = DateTime.UtcNow,
-                    RibbonEnable = false,
-                    ProductType = Core.Domain.Catalog.ProductType.SimpleProduct,
-                    VisibleIndividually = true,
-                    ProductTemplateId = 1,
-                    OrderMinimumQuantity = 1,
-                    OrderMaximumQuantity = 10_000
-                };
-
-                await _productService.InsertProductAsync(product);
-                
-                var seName = await _urlRecordService.ValidateSeNameAsync(product, null, product.Name, true);
-                await _urlRecordService.SaveSlugAsync(product, seName, 0);
-
-                var partnerName = !string.IsNullOrWhiteSpace(productDTO.Partner) ? productDTO.Partner : CARREFOUR_CUSTOMER_NAME;
-                var vendorCategory = await GetExactCategoryByName(partnerName);
-                if(vendorCategory == null)
-                {
-                    vendorCategory = new Core.Domain.Catalog.Category
+                    var product = new Product()
                     {
-                        Name = partnerName,
-                        IncludeInTopMenu = true,
-                        CreatedOnUtc = DateTime.Now,
-                        UpdatedOnUtc = DateTime.Now,
+                        Sku = productDTO.Sku,
+                        Name = productDTO.Name,
+                        Price = productDTO.Price,
+                        ShortDescription = productDTO.ShortDescription,
+                        FullDescription = productDTO.FullDescription,
+                        VendorId = vendorId,
+                        IsShipEnabled = true,
+                        DisableWishlistButton = true,
                         Published = true,
-                        AllowCustomersToSelectPageSize = true,
-                        PageSizeOptions = "6, 3, 9"
+                        CreatedOnUtc = DateTime.UtcNow,
+                        UpdatedOnUtc = DateTime.UtcNow,
+                        RibbonEnable = false,
+                        ProductType = Core.Domain.Catalog.ProductType.SimpleProduct,
+                        VisibleIndividually = true,
+                        ProductTemplateId = 1,
+                        OrderMinimumQuantity = 1,
+                        OrderMaximumQuantity = 10_000
                     };
 
-                    await _categoryService.InsertCategoryAsync(vendorCategory);
-                    await _urlRecordService.SaveSlugAsync(vendorCategory, await _urlRecordService.ValidateSeNameAsync(vendorCategory, null, vendorCategory.Name, true), 0);
-                }
+                    await _productService.InsertProductAsync(product);
 
-                var productCategory = await GetExactCategoryByName(productDTO.Category, vendorCategory);
-                if(productCategory == null)
-                {
-                    productCategory = new Core.Domain.Catalog.Category
+                    var seName = await _urlRecordService.ValidateSeNameAsync(product, null, product.Name, true);
+                    await _urlRecordService.SaveSlugAsync(product, seName, 0);
+
+                    var partnerName = !string.IsNullOrWhiteSpace(productDTO.Partner)
+                        ? productDTO.Partner
+                        : CARREFOUR_CUSTOMER_NAME;
+                    var vendorCategory = await GetExactCategoryByName(partnerName);
+                    if (vendorCategory == null)
                     {
-                        Name = productDTO.Category,
-                        CreatedOnUtc = DateTime.Now,
-                        UpdatedOnUtc = DateTime.Now,
-                        ParentCategoryId = vendorCategory.Id,
-                        Published = true,
-                        AllowCustomersToSelectPageSize = true,
-                        PageSizeOptions = "6, 3, 9"
-                    };
+                        vendorCategory = new Core.Domain.Catalog.Category
+                        {
+                            Name = partnerName,
+                            IncludeInTopMenu = true,
+                            CreatedOnUtc = DateTime.Now,
+                            UpdatedOnUtc = DateTime.Now,
+                            Published = true,
+                            AllowCustomersToSelectPageSize = true,
+                            PageSizeOptions = "6, 3, 9"
+                        };
 
-                    await _categoryService.InsertCategoryAsync(productCategory);
-                    await _urlRecordService.SaveSlugAsync(productCategory, await _urlRecordService.ValidateSeNameAsync(productCategory, null, productCategory.Name, true), 0);
-                }
+                        await _categoryService.InsertCategoryAsync(vendorCategory);
+                        await _urlRecordService.SaveSlugAsync(vendorCategory,
+                            await _urlRecordService.ValidateSeNameAsync(vendorCategory, null, vendorCategory.Name,
+                                true), 0);
+                    }
 
-                bool subCategorySpecified = !string.IsNullOrEmpty(productDTO.SubCategory) && !productDTO.SubCategory.Equals(productDTO.Category, StringComparison.OrdinalIgnoreCase);
-                var productSubCategory = subCategorySpecified ? await GetExactCategoryByName(productDTO.SubCategory, productCategory) : null;
-                if (subCategorySpecified && productSubCategory == null)
-                {
-                    productSubCategory = new Core.Domain.Catalog.Category
+                    var productCategory = await GetExactCategoryByName(productDTO.Category, vendorCategory);
+                    if (productCategory == null)
                     {
-                        Name = productDTO.SubCategory,
-                        CreatedOnUtc = DateTime.Now,
-                        UpdatedOnUtc = DateTime.Now,
-                        ParentCategoryId = productCategory.Id,
-                        Published = true,
-                        AllowCustomersToSelectPageSize = true,
-                        PageSizeOptions = "6, 3, 9"
-                    };
+                        productCategory = new Core.Domain.Catalog.Category
+                        {
+                            Name = productDTO.Category,
+                            CreatedOnUtc = DateTime.Now,
+                            UpdatedOnUtc = DateTime.Now,
+                            ParentCategoryId = vendorCategory.Id,
+                            Published = true,
+                            AllowCustomersToSelectPageSize = true,
+                            PageSizeOptions = "6, 3, 9"
+                        };
 
-                    await _categoryService.InsertCategoryAsync(productSubCategory);
-                    await _urlRecordService.SaveSlugAsync(productSubCategory, await _urlRecordService.ValidateSeNameAsync(productSubCategory, null, productSubCategory.Name, true), 0);
+                        await _categoryService.InsertCategoryAsync(productCategory);
+                        await _urlRecordService.SaveSlugAsync(productCategory,
+                            await _urlRecordService.ValidateSeNameAsync(productCategory, null, productCategory.Name,
+                                true), 0);
+                    }
+
+                    bool subCategorySpecified = !string.IsNullOrEmpty(productDTO.SubCategory) &&
+                                                !productDTO.SubCategory.Equals(productDTO.Category,
+                                                    StringComparison.OrdinalIgnoreCase);
+                    var productSubCategory = subCategorySpecified
+                        ? await GetExactCategoryByName(productDTO.SubCategory, productCategory)
+                        : null;
+                    if (subCategorySpecified && productSubCategory == null)
+                    {
+                        productSubCategory = new Core.Domain.Catalog.Category
+                        {
+                            Name = productDTO.SubCategory,
+                            CreatedOnUtc = DateTime.Now,
+                            UpdatedOnUtc = DateTime.Now,
+                            ParentCategoryId = productCategory.Id,
+                            Published = true,
+                            AllowCustomersToSelectPageSize = true,
+                            PageSizeOptions = "6, 3, 9"
+                        };
+
+                        await _categoryService.InsertCategoryAsync(productSubCategory);
+                        await _urlRecordService.SaveSlugAsync(productSubCategory,
+                            await _urlRecordService.ValidateSeNameAsync(productSubCategory, null,
+                                productSubCategory.Name, true), 0);
+                    }
+
+                    await _categoryService.InsertProductCategoryAsync(new Core.Domain.Catalog.ProductCategory
+                    {
+                        ProductId = product.Id,
+                        CategoryId = subCategorySpecified ? productSubCategory.Id : productCategory.Id
+                    });
+
+                    var picture = await _pictureService.InsertPictureAsync(productDTO.Image, MimeTypes.ImageJpeg,
+                        productDTO.ImageFileName);
+                    await _productService.InsertProductPictureAsync(new Core.Domain.Catalog.ProductPicture
+                    {
+                        PictureId = picture.Id, ProductId = product.Id
+                    });
+
+                    await _logger.InformationAsync($"Product Name={productDTO.Name} have been imported");
+
+                    updatedCount++;
                 }
-
-                await _categoryService.InsertProductCategoryAsync(new Core.Domain.Catalog.ProductCategory {
-                    ProductId = product.Id,
-                    CategoryId = subCategorySpecified ? productSubCategory.Id : productCategory.Id
-                });
-
-                var picture = await _pictureService.InsertPictureAsync(productDTO.Image, MimeTypes.ImageJpeg, productDTO.ImageFileName);
-                await _productService.InsertProductPictureAsync(new Core.Domain.Catalog.ProductPicture
+                catch (Exception e)
                 {
-                    PictureId = picture.Id,
-                    ProductId = product.Id
-                });
-
-                await _logger.InformationAsync($"Product Name={productDTO.Name} have been imported");
-                
-                updatedCount++;
+                    await _logger.ErrorAsync($"Processing of product with SKU {productCode} failed", e);
+                }
             }
-            
+
             return updatedCount;
         }
 
