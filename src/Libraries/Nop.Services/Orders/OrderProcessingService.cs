@@ -40,6 +40,8 @@ namespace Nop.Services.Orders
     /// </summary>
     public partial class OrderProcessingService : IOrderProcessingService
     {
+        public const string DeliveryTimeAttributeName = "deliveryTime";
+        
         #region Fields
 
         private readonly CurrencySettings _currencySettings;

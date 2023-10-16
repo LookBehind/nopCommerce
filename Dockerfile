@@ -1,5 +1,5 @@
 # create the build instance 
-FROM mcr.microsoft.com/dotnet/sdk:5.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:7.0 AS build
 
 WORKDIR /src
 
@@ -36,22 +36,27 @@ WORKDIR /src/Plugins/Nop.Plugin.Widgets.NivoSlider
 RUN dotnet build Nop.Plugin.Widgets.NivoSlider.csproj -c Release
 WORKDIR /src/Plugins/Nop.Plugin.BuyAmScraper
 RUN dotnet build Nop.Plugin.BuyAmScraper.csproj -c Release
+WORKDIR /src/Plugins/Nop.Plugin.Notifications.Manager
+RUN dotnet build Nop.Plugin.Notifications.Manager.csproj -c Release
+WORKDIR /src/Plugins/Nop.Plugin.Payments.Idram
+RUN dotnet build Nop.Plugin.Payments.Idram.csproj -c Release
 
 # publish project
 WORKDIR /src/Presentation/Nop.Web
-RUN dotnet publish Nop.Web.csproj -c Release -o /app/published
+RUN dotnet publish Nop.Web.csproj --no-restore -c Release -o /app/published
 
 # create the runtime instance 
-FROM mcr.microsoft.com/dotnet/aspnet:5.0-alpine AS runtime 
+FROM mcr.microsoft.com/dotnet/aspnet:7.0-alpine AS runtime 
 
 # add globalization support
 RUN apk add --no-cache icu-libs
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 # installs required packages
-RUN apk add libgdiplus --no-cache --repository http://dl-3.alpinelinux.org/alpine/edge/testing/ --allow-untrusted
+RUN apk add tiff --no-cache --repository http://dl-3.alpinelinux.org/alpine/edge/main/ --allow-untrusted
+RUN apk add libgdiplus --no-cache --repository http://dl-3.alpinelinux.org/alpine/edge/community/ --allow-untrusted
 RUN apk add libc-dev --no-cache
-RUN apk add --no-cache tzdata
+RUN apk add tzdata --no-cache
 
 # copy entrypoint script
 COPY ./entrypoint.sh /entrypoint.sh

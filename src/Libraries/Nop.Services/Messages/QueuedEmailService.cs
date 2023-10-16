@@ -179,6 +179,20 @@ namespace Nop.Services.Messages
             return emails.Length;
         }
 
+        public async Task<int> DeleteAlreadySentOrExpiredEmailsAsync(TimeSpan expiration)
+        {
+            var query = _queuedEmailRepository.Table;
+
+            var deleteBefore = DateTime.UtcNow.Subtract(expiration);
+            query = query.Where(qe => qe.SentOnUtc.HasValue || qe.CreatedOnUtc < deleteBefore);
+            
+            var emails = query.ToArray();
+
+            await DeleteQueuedEmailsAsync(emails);
+
+            return emails.Length;
+        }
+
         /// <summary>
         /// Delete all queued emails
         /// </summary>
