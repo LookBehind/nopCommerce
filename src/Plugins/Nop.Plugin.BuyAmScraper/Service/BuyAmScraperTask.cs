@@ -66,8 +66,8 @@ namespace Nop.Plugin.BuyAmScraper.Service
                 "https://buy.am/hy/carrefour/sweets-snacks",
                 "https://buy.am/hy/carrefour/juices-drinks",
                 "https://buy.am/hy/carrefour/alcoholic-beverages-cigarettes",
+                "https://buy.am/hy/supermarkets/carrefour/sweets-snacks",
 
-                "https://buy.am/hy/carrefour/shop-in-shop",
                 "https://buy.am/hy/carrefour/household-goods",
                 "https://buy.am/hy/12-ktor-pizza?p=1&imRootCategoryId=1316&o=1&n=100&f=9440&sd=9440"
             };
