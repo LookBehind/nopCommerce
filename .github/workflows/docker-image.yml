@@ -22,7 +22,7 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           push: true
-          tags: eisajanyan/nopcommerce:ga-$(date +%s)
+          tags: eisajanyan/nopcommerce:${{ github.run_number }}-${{ github.sha }}
           file: Dockerfile
           context: .
     
