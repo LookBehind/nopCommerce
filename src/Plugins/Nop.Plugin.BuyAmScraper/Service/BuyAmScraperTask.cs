@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -15,6 +16,7 @@ using Nop.Services.Seo;
 using HtmlAgilityPack;
 using System.Text.Json;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Nop.Plugin.Misc.BuyAmScraper.Helpers;
 using Product = Nop.Core.Domain.Catalog.Product;
@@ -37,6 +39,8 @@ namespace Nop.Plugin.BuyAmScraper.Service
     public class BuyAmScraperTask : Services.Tasks.IScheduleTask
     {
         private const string CARREFOUR_CUSTOMER_NAME = "Carrefour";
+        private const string CARREFOUR_ALTERNATE_NAME_TO_UNIFY = "Քարֆուր";
+        private static readonly Regex SkuExtrator = new Regex("([\\d]+)");
         private readonly string[] _categoryUrlsToScrape;
 
         private ReaderWriterLockSlim _lastVendorLock = new ReaderWriterLockSlim();
@@ -170,6 +174,7 @@ namespace Nop.Plugin.BuyAmScraper.Service
                             FullProductUrl = x.SelectSingleNode(".//a[@class='product--title']").Attributes["href"].Value
                         };
                     });
+                
                 if (productSkusCurrent == null || !productSkusCurrent.Any())
                     break;
 
@@ -192,7 +197,7 @@ namespace Nop.Plugin.BuyAmScraper.Service
         private async Task<int> GetOrAddVendor(ProductDTO product)
         {
             string vendorName;
-            if (string.IsNullOrWhiteSpace(product.Partner))
+            if (string.IsNullOrWhiteSpace(product.Partner) || product.Partner.Contains(CARREFOUR_ALTERNATE_NAME_TO_UNIFY, StringComparison.OrdinalIgnoreCase))
                 vendorName = CARREFOUR_CUSTOMER_NAME;
             else
                 vendorName = product.Partner;
@@ -229,6 +234,18 @@ namespace Nop.Plugin.BuyAmScraper.Service
             return vendor.Id;
         }
 
+        private async Task<string?> ExtractSku(string productCode)
+        {
+            var matches = SkuExtrator.Matches(productCode);
+            if (matches.Count != 1)
+            {
+                await _logger.ErrorAsync($"Sku {productCode} doesn't match exactly 1 continous digits format");
+                return null;
+            }
+
+            return matches[0].Groups[1].Value;
+        }
+        
         async Task<int> UpsertProducts(IAsyncEnumerable<object> productDTOs)
         {
             int updatedCount = 0;
@@ -246,14 +263,10 @@ namespace Nop.Plugin.BuyAmScraper.Service
                     if (productMiniDTO != null)
                         productDTO = await Convert(productMiniDTO);
 
-                    Product existingProduct = null;
                     // SKUs have changed, for example from 79857 to CRM-79857
-                    if (productCode.StartsWith("CRM-", StringComparison.Ordinal))
-                        existingProduct = await _productService.GetProductBySkuAsync(productCode.Substring(4));
-
-                    // Fallback to exact matching
-                    if (existingProduct == null)
-                        existingProduct = await _productService.GetProductBySkuAsync(productCode);
+                    productCode = await ExtractSku(productCode);
+                    
+                    var existingProduct = await _productService.GetProductBySkuAsync(productCode);
 
                     if (existingProduct != null)
                     {
@@ -416,9 +429,46 @@ namespace Nop.Plugin.BuyAmScraper.Service
             }
         }
 
+        private async Task LeaveOnlyProductsWithHighestPriceOnDuplicates()
+        {
+            // Duplicates are same SKU or same name
+            
+            var carrefourVendorIds = (await _vendorService.GetAllVendorsAsync())
+                .Where(v => 
+                    v.Name?.Contains(CARREFOUR_ALTERNATE_NAME_TO_UNIFY, StringComparison.OrdinalIgnoreCase) == true ||
+                    v.Name?.Contains(CARREFOUR_CUSTOMER_NAME, StringComparison.OrdinalIgnoreCase) == true)
+                .Select(v => v.Id)
+                .ToImmutableHashSet();
+
+            var allProducts = await _productService.SearchProductsAsync();
+            var allCarrefourProducts = allProducts
+                .Where(p => carrefourVendorIds.Contains(p.VendorId))
+                .ToList();
+            
+            var sameSkuDuplicates = allCarrefourProducts.GroupBy(p => p.Sku);
+            var sameNameDuplicates = allCarrefourProducts.GroupBy(p => p.Name);
+            var allDuplicates = sameSkuDuplicates.Concat(sameNameDuplicates);
+            
+            foreach (var grp in allDuplicates)
+            {
+                var productWithMaxPrice = grp.MaxBy(p => p.Price);
+                foreach (var duplicateToUnpublish in grp.Where(p => p != productWithMaxPrice))
+                {
+                    if (duplicateToUnpublish.Published)
+                    {
+                        duplicateToUnpublish.Published = false;
+                        await _productService.UpdateProductAsync(duplicateToUnpublish);
+                        await _logger.InformationAsync(
+                            $"Unpublished duplicate {duplicateToUnpublish.Name} (price {duplicateToUnpublish.Price}, max price left published {productWithMaxPrice.Price})");
+                    }
+                }
+            }
+        }
+        
         public async Task ExecuteAsync()
         {
             await ScrapeAndAddProducts();
+            await LeaveOnlyProductsWithHighestPriceOnDuplicates();
         }
     }
 }
