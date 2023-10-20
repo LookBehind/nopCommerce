@@ -19,6 +19,7 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Nop.Plugin.Misc.BuyAmScraper.Helpers;
+using Nop.Services.Tax;
 using Product = Nop.Core.Domain.Catalog.Product;
 
 namespace Nop.Plugin.BuyAmScraper.Service
@@ -38,50 +39,24 @@ namespace Nop.Plugin.BuyAmScraper.Service
 
     public class BuyAmScraperTask : Services.Tasks.IScheduleTask
     {
+        private const string STD_TAX_CATEGORY_NAME = "Consumables";
         private const string CARREFOUR_CUSTOMER_NAME = "Carrefour";
         private const string CARREFOUR_ALTERNATE_NAME_TO_UNIFY = "Քարֆուր";
-        private static readonly Regex SkuExtrator = new Regex("([\\d]+)");
+        private static readonly Regex _skuExtractor = new Regex("([\\d]+)");
         private readonly string[] _categoryUrlsToScrape;
 
         private ReaderWriterLockSlim _lastVendorLock = new ReaderWriterLockSlim();
         private Tuple<string, int> _lastVendor;
 
-        private ILogger _logger;
-        private IProductService _productService;
-        private IVendorService _vendorService;
-        private ICategoryService _categoryService;
-        private IPictureService _pictureService;
-        private IUrlRecordService _urlRecordService;
-
-        public BuyAmScraperTask(ILogger logger, 
-            IProductService productService, 
-            IVendorService vendorService,
-            ICategoryService categoryService,
-            IPictureService pictureService,
-            IUrlRecordService urlRecordService)
-        {
-            this._categoryUrlsToScrape = new string[] {
-                "https://buy.am/hy/carrefour/bakery-pastry",
-                "https://buy.am/hy/carrefour/fresh-fruit-vegetable",
-                "https://buy.am/hy/carrefour/dairy-eggs",
-                "https://buy.am/hy/carrefour/frozen-products",
-                "https://buy.am/hy/carrefour/breakfast-coffee-tea",
-                "https://buy.am/hy/carrefour/bio-organic",
-                "https://buy.am/hy/carrefour/sweets-snacks",
-                "https://buy.am/hy/carrefour/juices-drinks",
-                "https://buy.am/hy/carrefour/alcoholic-beverages-cigarettes",
-                "https://buy.am/hy/supermarkets/carrefour/sweets-snacks",
-
-                "https://buy.am/hy/carrefour/household-goods",
-                "https://buy.am/hy/12-ktor-pizza?p=1&imRootCategoryId=1316&o=1&n=100&f=9440&sd=9440"
-            };
-            this._logger = logger;
-            this._productService = productService;
-            this._vendorService = vendorService;
-            this._categoryService = categoryService;
-            this._pictureService = pictureService;
-            this._urlRecordService = urlRecordService;
-        }
+        private int _taxCategoryId;
+        
+        private readonly ILogger _logger;
+        private readonly IProductService _productService;
+        private readonly IVendorService _vendorService;
+        private readonly ICategoryService _categoryService;
+        private readonly IPictureService _pictureService;
+        private readonly IUrlRecordService _urlRecordService;
+        private readonly ITaxCategoryService _taxCategoryService;
 
         private async Task<ProductDTO> Convert(ProductMiniDto miniDto)
         {
@@ -236,7 +211,7 @@ namespace Nop.Plugin.BuyAmScraper.Service
 
         private async Task<string?> ExtractSku(string productCode)
         {
-            var matches = SkuExtrator.Matches(productCode);
+            var matches = _skuExtractor.Matches(productCode);
             if (matches.Count != 1)
             {
                 await _logger.ErrorAsync($"Sku {productCode} doesn't match exactly 1 continous digits format");
@@ -303,7 +278,8 @@ namespace Nop.Plugin.BuyAmScraper.Service
                         VisibleIndividually = true,
                         ProductTemplateId = 1,
                         OrderMinimumQuantity = 1,
-                        OrderMaximumQuantity = 10_000
+                        OrderMaximumQuantity = 10_000,
+                        TaxCategoryId = _taxCategoryId
                     };
 
                     await _productService.InsertProductAsync(product);
@@ -464,11 +440,61 @@ namespace Nop.Plugin.BuyAmScraper.Service
                 }
             }
         }
+
+        private async Task<int> GetTaxCategoryId()
+        {
+            var taxCategories = await _taxCategoryService.GetAllTaxCategoriesAsync();
+            var standardTaxCategory = taxCategories.FirstOrDefault(tc => string.Equals(tc.Name,
+                STD_TAX_CATEGORY_NAME, StringComparison.OrdinalIgnoreCase));
+
+            if (standardTaxCategory == default)
+            {
+                await _logger.WarningAsync($"Couldn't find tax category {STD_TAX_CATEGORY_NAME}");
+                return 0;
+            }
+
+            return standardTaxCategory.Id;
+        }
         
         public async Task ExecuteAsync()
         {
+            _taxCategoryId = await GetTaxCategoryId();
+            
             await ScrapeAndAddProducts();
             await LeaveOnlyProductsWithHighestPriceOnDuplicates();
+        }
+        
+        public BuyAmScraperTask(ILogger logger, 
+            IProductService productService, 
+            IVendorService vendorService,
+            ICategoryService categoryService,
+            IPictureService pictureService,
+            IUrlRecordService urlRecordService, 
+            ITaxCategoryService taxCategoryService)
+        {
+            _categoryUrlsToScrape = new[] {
+                "https://buy.am/hy/carrefour/bakery-pastry",
+                "https://buy.am/hy/carrefour/fresh-fruit-vegetable",
+                "https://buy.am/hy/carrefour/dairy-eggs",
+                "https://buy.am/hy/carrefour/frozen-products",
+                "https://buy.am/hy/carrefour/breakfast-coffee-tea",
+                "https://buy.am/hy/carrefour/bio-organic",
+                "https://buy.am/hy/carrefour/sweets-snacks",
+                "https://buy.am/hy/carrefour/juices-drinks",
+                "https://buy.am/hy/carrefour/alcoholic-beverages-cigarettes",
+                "https://buy.am/hy/supermarkets/carrefour/sweets-snacks",
+
+                "https://buy.am/hy/carrefour/household-goods",
+                "https://buy.am/hy/12-ktor-pizza?p=1&imRootCategoryId=1316&o=1&n=100&f=9440&sd=9440"
+            };
+            
+            _logger = logger;
+            _productService = productService;
+            _vendorService = vendorService;
+            _categoryService = categoryService;
+            _pictureService = pictureService;
+            _urlRecordService = urlRecordService;
+            _taxCategoryService = taxCategoryService;
         }
     }
 }
