@@ -465,12 +465,15 @@ namespace Nop.Web.Controllers.Api.Security
                 .Select(c => c.Id)
                 .Where(id => id != 0)
                 .ToList();
+            
             var products = (await _productService.SearchProductsAsync(
+                pageIndex: searchModel.Page ?? 0,
+                pageSize: searchModel.PageSize ?? int.MaxValue,
                 keywords: searchModel.Keyword,
                 showHidden: true,
                 categoryIds: categoryIds,
-                searchCustomerVendors: true));
-
+                searchCustomerVendors: true,
+                orderBy: searchModel.PriceLow == true ? ProductSortingEnum.PriceAsc : searchModel.PriceHigh == true ? ProductSortingEnum.PriceDesc : ProductSortingEnum.Position));
 
             if (!products.Any())
             {
@@ -483,6 +486,15 @@ namespace Nop.Web.Controllers.Api.Security
 
             //model
             var model = await PrepareApiProductOverviewModels(products);
+            
+            if (searchModel.Popular == true)
+            {
+                model = model.OrderByDescending(p => p.PopularityCount);
+            }
+            else if (searchModel.TopRated == true)
+            {
+                model = model.OrderByDescending(p => p.RatingSum / p.TotalReviews);
+            }
             return Ok(model);
         }
 
@@ -658,6 +670,12 @@ namespace Nop.Web.Controllers.Api.Security
         {
             //Custom Fields
             public string Keyword { get; set; }
+            public bool? PriceHigh { get; set; }
+            public bool? PriceLow { get; set; }
+            public bool? Popular { get; set; }
+            public bool? TopRated { get; set; }
+            public int? Page { get; set; }
+            public int? PageSize { get; set; }
         }
         public partial class ProductReviewsApiModel : BaseEntity
         {
