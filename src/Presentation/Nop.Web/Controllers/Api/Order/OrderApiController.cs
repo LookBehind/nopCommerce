@@ -32,6 +32,7 @@ using Nop.Web.Models.Api.Catalog;
 using Newtonsoft.Json.Linq;
 using System.IO;
 using System.Text;
+using Nop.Core.Domain.Logging;
 using Nop.Web.Extensions.Api;
 using Nop.Web.Models.Api.Order;
 using Nop.Web.Models.Catalog;
@@ -397,7 +398,7 @@ namespace Nop.Web.Controllers.Api.Security
                 currentStoreId, ShoppingCartType.ShoppingCart);
 
             var cartErrorModel = await AddProductsToCartAsync(customer, currentStoreId, orderRequest);
-
+            
             var cart = await _shoppingCartService.GetShoppingCartAsync(customer, 
                 ShoppingCartType.ShoppingCart, 
                 currentStoreId);

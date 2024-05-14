@@ -315,12 +315,6 @@ namespace Nop.Web.Controllers.Api.Security
 
             foreach (var product in products)
             {
-                if (!product.Published &&
-                    !(await _productAvailabilityService.DoesProductHaveAnyAvailabilityModifierAsync(product)))
-                {
-                    continue;
-                }
-
                 var productDetailsModel = await _productModelFactory.PrepareProductDetailsModelAsync(product);
 
                 var popularityByVendor = (await _staticCacheManager.GetAsync(
@@ -461,7 +455,10 @@ namespace Nop.Web.Controllers.Api.Security
         [HttpGet("product-search")]
         public async Task<IActionResult> SearchProducts(SearchProductByFilters searchModel)
         {
-            var categoryIds = (await _categoryService.GetAllCategoriesAsync())
+            var categoryIds = 
+                searchModel.CategoryId.HasValue ? new List<int> {searchModel.CategoryId.Value}
+                    : 
+                (await _categoryService.GetAllCategoriesAsync())
                 .Select(c => c.Id)
                 .Where(id => id != 0)
                 .ToList();
@@ -470,18 +467,16 @@ namespace Nop.Web.Controllers.Api.Security
                 pageIndex: searchModel.Page ?? 0,
                 pageSize: searchModel.PageSize ?? int.MaxValue,
                 keywords: searchModel.Keyword,
-                showHidden: true,
+                showHidden: false,
                 categoryIds: categoryIds,
                 searchCustomerVendors: true,
                 orderBy: searchModel.PriceLow == true ? ProductSortingEnum.PriceAsc : searchModel.PriceHigh == true ? ProductSortingEnum.PriceDesc : ProductSortingEnum.Position));
 
             if (!products.Any())
             {
-                return Ok(new
-                {
-                    success = true,
-                    message = await _localizationService.GetResourceAsync("Product.Not.Found")
-                });
+                return Ok(
+                    Enumerable.Empty<ProductOverviewApiModel>()
+                );
             }
 
             //model
@@ -497,7 +492,7 @@ namespace Nop.Web.Controllers.Api.Security
             }
             return Ok(model);
         }
-
+        
         #endregion
 
         #region Product Review
@@ -676,6 +671,7 @@ namespace Nop.Web.Controllers.Api.Security
             public bool? TopRated { get; set; }
             public int? Page { get; set; }
             public int? PageSize { get; set; }
+            public int? CategoryId { get; set; }
         }
         public partial class ProductReviewsApiModel : BaseEntity
         {
