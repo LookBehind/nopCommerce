@@ -153,8 +153,8 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             }
             else
             {
-                result.AddError($"Your remaining allowance ({remainingAllowance} AMD) is not enough to " +
-                                $"purchase your current order ({processPaymentRequest.OrderTotal} AMD).");
+                result.AddError($"Your remaining allowance ({(int)remainingAllowance} AMD) is not enough to " +
+                                $"purchase your current order ({(int)processPaymentRequest.OrderTotal} AMD).");
             }
             
             return result;
