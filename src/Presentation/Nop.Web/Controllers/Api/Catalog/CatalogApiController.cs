@@ -470,6 +470,7 @@ namespace Nop.Web.Controllers.Api.Security
                 showHidden: false,
                 categoryIds: categoryIds,
                 searchCustomerVendors: true,
+                vendorId: searchModel.VendorId ?? 0,
                 orderBy: searchModel.PriceLow == true ? ProductSortingEnum.PriceAsc : searchModel.PriceHigh == true ? ProductSortingEnum.PriceDesc : ProductSortingEnum.Position));
 
             if (!products.Any())
@@ -672,6 +673,7 @@ namespace Nop.Web.Controllers.Api.Security
             public int? Page { get; set; }
             public int? PageSize { get; set; }
             public int? CategoryId { get; set; }
+            public int? VendorId { get; set; }
         }
         public partial class ProductReviewsApiModel : BaseEntity
         {
