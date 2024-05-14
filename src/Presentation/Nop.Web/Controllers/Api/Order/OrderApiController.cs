@@ -528,7 +528,7 @@ namespace Nop.Web.Controllers.Api.Security
         public async Task<IActionResult> GetTodaysOrdersAsync()
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
-            var orders = await _orderService.SearchOrdersAsync(customerId: customer.Id);
+            var orders = await _orderService.SearchOrdersAsync(customerId: customer.Id, sortByDeliveryDate: true);
             var perviousOrders = orders.Where(x => x.ScheduleDate.Date == DateTime.Now.Date).ToList();
             if (perviousOrders.Any())
             {
@@ -631,7 +631,7 @@ namespace Nop.Web.Controllers.Api.Security
         public async Task<IActionResult> GetPreviousOrdersAsync()
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
-            var orders = await _orderService.SearchOrdersAsync(customerId: customer.Id);
+            var orders = await _orderService.SearchOrdersAsync(customerId: customer.Id, sortByDeliveryDate: true);
             var perviousOrders = orders.Where(x => x.ScheduleDate.Date < DateTime.Now.Date);
             if (perviousOrders.Any())
             {
@@ -737,7 +737,9 @@ namespace Nop.Web.Controllers.Api.Security
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
             var orders = await _orderService.SearchOrdersAsync(customerId: customer.Id);
-            var perviousOrders = orders.Where(x => x.ScheduleDate.Date > DateTime.Now.Date);
+            var perviousOrders = orders
+                .Where(x => x.ScheduleDate.Date > DateTime.Now.Date)
+                .OrderBy(x => x.ScheduleDateTime);
             if (perviousOrders.Any())
             {
                 var languageId = (await _workContext.GetWorkingLanguageAsync()).Id;
