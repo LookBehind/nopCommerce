@@ -11,12 +11,12 @@ using Nop.Services.Localization;
 using Nop.Services.Orders;
 using Nop.Services.Tasks;
 
-namespace Nop.Services.Common
+namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
 {
     /// <summary>
     /// Represents a task for sending reminding notification to customer
     /// </summary>
-    public partial class RateRemainderNotificationTask : IScheduleTask
+    public class RateRemainderNotificationTask : IScheduleTask
     {
         #region Fields
 

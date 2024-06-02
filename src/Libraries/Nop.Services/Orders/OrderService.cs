@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using LinqToDB;
 using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
@@ -193,6 +194,35 @@ namespace Nop.Services.Orders
 
         #region Orders
 
+        public virtual async Task<IDictionary<int, IList<Product>>> GetLastOrderedProductsByCustomerIds(
+            int[] customerIds, OrderStatus[] orderStatuses, int lastOrderedCount, DateTime excludeThoseWhoOrderedFor)
+        {
+            var validOrderStatuses = new List<int>
+            {
+                (int)OrderStatus.Complete, (int)OrderStatus.Pending, (int)OrderStatus.Processing
+            };
+            
+            var lastOrders = await (from oi in _orderItemRepository.Table
+                join o in _orderRepository.Table on oi.OrderId equals o.Id
+                where customerIds.Contains(o.CustomerId) && validOrderStatuses.Contains(o.OrderStatusId) && o.ScheduleDate.Date != excludeThoseWhoOrderedFor.Date
+                join p in _productRepository.Table on oi.ProductId equals p.Id
+                select new
+                {
+                    Product = p,
+                    OrderId = oi.OrderId,
+                    CustomerId = o.CustomerId
+                })
+                .Take(lastOrderedCount)
+                .ToArrayAsync();
+
+            var keyValuePairs = lastOrders
+                .GroupBy((tuple => tuple.CustomerId), tuple => tuple)
+                .Select(products => new KeyValuePair<int, IList<Product>>(products.Key,
+                    products.OrderByDescending(p => p.OrderId).Select(o => o.Product).ToList()));
+
+            return new Dictionary<int, IList<Product>>(keyValuePairs);
+        }
+        
         /// <summary>
         /// Gets an order
         /// </summary>
@@ -237,10 +267,10 @@ namespace Nop.Services.Orders
             if (orderItemId == 0)
                 return null;
 
-            return await (from o in _orderRepository.Table
-                          join oi in _orderItemRepository.Table on o.Id equals oi.OrderId
-                          where oi.Id == orderItemId
-                          select o).FirstOrDefaultAsync();
+            return await AsyncIQueryableExtensions.FirstOrDefaultAsync((from o in _orderRepository.Table
+                join oi in _orderItemRepository.Table on o.Id equals oi.OrderId
+                where oi.Id == orderItemId
+                select o));
         }
 
         /// <summary>
@@ -272,7 +302,7 @@ namespace Nop.Services.Orders
             var query = from o in _orderRepository.Table
                         where o.OrderGuid == orderGuid
                         select o;
-            var order = await query.FirstOrDefaultAsync();
+            var order = await AsyncIQueryableExtensions.FirstOrDefaultAsync(query);
 
             return order;
         }
@@ -631,10 +661,10 @@ namespace Nop.Services.Orders
             if (orderItemId == 0)
                 return null;
 
-            return await (from p in _productRepository.Table
-                          join oi in _orderItemRepository.Table on p.Id equals oi.ProductId
-                          where oi.Id == orderItemId
-                          select p).SingleOrDefaultAsync();
+            return await AsyncIQueryableExtensions.SingleOrDefaultAsync((from p in _productRepository.Table
+                join oi in _orderItemRepository.Table on p.Id equals oi.ProductId
+                where oi.Id == orderItemId
+                select p));
         }
 
         /// <summary>
@@ -679,7 +709,7 @@ namespace Nop.Services.Orders
             var query = from orderItem in _orderItemRepository.Table
                         where orderItem.OrderItemGuid == orderItemGuid
                         select orderItem;
-            var item = await query.FirstOrDefaultAsync();
+            var item = await AsyncIQueryableExtensions.FirstOrDefaultAsync(query);
             return item;
         }
 

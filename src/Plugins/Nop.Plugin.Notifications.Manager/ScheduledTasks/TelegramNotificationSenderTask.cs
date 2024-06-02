@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Nop.Core.Configuration;
 using Nop.Core.Domain.Messages;
 using Nop.Core.Domain.Vendors;
 using Nop.Services.Common;
@@ -31,13 +32,15 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         private readonly IGenericAttributeService _genericAttribute;
         private readonly ISettingService _setting;
         private readonly ILogger _logger;
+        private readonly AppSettings _appSettings;
 
         public TelegramNotificationSenderTask(IQueuedEmailService queuedEmail,
             IVendorService vendor,
             ITelegramBotClient telegramBotClient,
             IGenericAttributeService genericAttribute,
             ISettingService setting,
-            ILogger logger)
+            ILogger logger,
+            AppSettings appSettings)
         {
             _queuedEmail = queuedEmail;
             _vendor = vendor;
@@ -45,6 +48,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             _genericAttribute = genericAttribute;
             _setting = setting;
             _logger = logger;
+            _appSettings = appSettings;
         }
 
         private async Task UpdateVendorTelegramGroupsAsync()
@@ -100,6 +104,9 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
 
         public async Task ExecuteAsync()
         {
+            if (!_appSettings.ExtendedAuthSettings.TelegramBotEnabled)
+                return;
+            
             await UpdateVendorTelegramGroupsAsync();
 
             var maxTries = 3;

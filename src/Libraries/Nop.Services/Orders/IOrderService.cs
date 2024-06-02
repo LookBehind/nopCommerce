@@ -15,8 +15,10 @@ namespace Nop.Services.Orders
     {
         #region Orders
 
+        Task<IDictionary<int, IList<Product>>> GetLastOrderedProductsByCustomerIds(
+            int[] customerIds, OrderStatus[] orderStatuses, int lastOrderedCount, DateTime excludeThoseWhoOrderedFor);
+        
         Task<List<int>> GetOrdersIdsAsync(DateTime? createdFromUtc = null, DateTime? createdToUtc = null);
-
 
         /// <summary>
         /// Gets an order

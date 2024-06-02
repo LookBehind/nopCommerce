@@ -288,8 +288,13 @@ namespace Nop.Services.Customers
         }
 
 
-        public virtual async Task<IPagedList<Customer>> GetAllPushNotificationCustomersAsync(bool isRateReminderNotification = false, bool isRemindMeNotification = false,
-            bool isOrderStatusNotification = false, bool sendToAll = false, int pageIndex = 0, int pageSize = int.MaxValue)
+        public virtual async Task<IPagedList<Customer>> GetAllPushNotificationCustomersAsync(
+            bool isRateReminderNotification = false, 
+            bool isRemindMeNotification = false,
+            bool isOrderStatusNotification = false, 
+            bool sendToAll = false, 
+            int pageIndex = 0,
+            int pageSize = int.MaxValue)
         {
             var customers = await _customerRepository.GetAllPagedAsync(query =>
             {

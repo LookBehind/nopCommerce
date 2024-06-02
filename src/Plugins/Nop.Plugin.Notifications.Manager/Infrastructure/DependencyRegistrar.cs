@@ -1,7 +1,10 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
+using Microsoft.Extensions.DependencyInjection;
 using Nop.Core.Configuration;
 using Nop.Core.Infrastructure;
 using Nop.Core.Infrastructure.DependencyManagement;
+using OllamaSharp;
 using Telegram.Bot;
 
 namespace Nop.Plugin.Notifications.Manager.Infrastructure
@@ -27,8 +30,19 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
         /// <param name="config">Config</param>
         public void Register(IServiceCollection services, ITypeFinder typeFinder, AppSettings appSettings)
         {
-            services.AddSingleton<ITelegramBotClient, TelegramBotClient>(ctx => 
-                appSettings.ExtendedAuthSettings.TelegramBotEnabled ? new TelegramBotClient(appSettings.ExtendedAuthSettings.TelegramBotSecret) : null);
+            services.AddSingleton<ITelegramBotClient>(_ =>
+                appSettings.ExtendedAuthSettings.TelegramBotEnabled
+                    ? new TelegramBotClient(appSettings.ExtendedAuthSettings.TelegramBotSecret)
+                    : new NullTelegramBotClient());
+            
+            services.AddSingleton<FirebaseApp>(_ => FirebaseApp.Create(new AppOptions()
+            {
+                Credential = GoogleCredential.GetApplicationDefault(), 
+                ProjectId = "mysnacks-d8778"
+            }));
+            
+            services.AddScoped<IOllamaApiClient>(_ => new OllamaApiClient("http://localhost:11434", 
+                "llama3:instruct"));
         }
     }
 }

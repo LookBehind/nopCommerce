@@ -28,13 +28,14 @@ using System.Data;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using Nop.Services.Companies;
 
 namespace Nop.Web.Controllers.Api.Security
 {
     [Produces("application/json")]
     [Route("api/catalog")]
     [AuthorizeAttribute]
-    public class CatalogApiController : BaseApiController
+    public partial class CatalogApiController : BaseApiController
     {
         #region Fields
 
@@ -61,7 +62,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly IStaticCacheManager _staticCacheManager;
         private readonly ISettingService _settingService;
         private readonly IProductAttributeService _productAttributeService;
-        private readonly IProductAvailabilityService _productAvailabilityService;
+        private readonly ICompanyService _companyService;
 
         private static readonly AttributeControlType[] _allowedAttributeControlTypes = new[] {
             AttributeControlType.DropdownList,
@@ -97,7 +98,7 @@ namespace Nop.Web.Controllers.Api.Security
             IStaticCacheManager staticCacheManager,
             ISettingService settingService,
             IProductAttributeService productAttributeService,
-            IProductAvailabilityService productAvailabilityService)
+            IProductAvailabilityService productAvailabilityService, ICompanyService companyService)
         {
             _localizationSettings = localizationSettings;
             _workflowMessageService = workflowMessageService;
@@ -122,7 +123,7 @@ namespace Nop.Web.Controllers.Api.Security
             _staticCacheManager = staticCacheManager;
             _settingService = settingService;
             _productAttributeService = productAttributeService;
-            _productAvailabilityService = productAvailabilityService;
+            _companyService = companyService;
         }
 
         #endregion
@@ -613,49 +614,6 @@ namespace Nop.Web.Controllers.Api.Security
         {
             var model = await _topicModelFactory.PrepareTopicModelBySystemNameAsync(systemName);
             return Ok(model);
-        }
-
-        #endregion
-
-        #region Setting
-
-        [HttpGet("get-schedule-dates")]
-        public async Task<IActionResult> GetScheduleDates()
-        {
-            var storeId = await _storeContext.GetActiveStoreScopeConfigurationAsync();
-            var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>(storeId);
-
-            string[] dates = null;
-            var scheduleDateSetting = await _settingService.SettingExistsAsync(orderSettings, x => x.ScheduleDate, storeId);
-            if (scheduleDateSetting)
-            {
-                dates = (await _staticCacheManager.GetAsync(
-                    _staticCacheManager.PrepareKeyForDefaultCache(NopModelCacheDefaults.StoreScheduleDate,
-                        await _storeContext.GetCurrentStoreAsync()),
-                async () =>
-                {
-                    var scheduleDate =
-                        await _settingService.GetSettingAsync("ordersettings.scheduledate",
-                            (await _storeContext.GetCurrentStoreAsync()).Id,
-                            true);
-                    return !string.IsNullOrWhiteSpace(scheduleDate.Value) ?
-                        scheduleDate.Value.Split(',') :
-                        null;
-                }));
-
-                return Ok(new
-                {
-                    success = true,
-                    dates = dates
-                });
-            }
-
-            return Ok(new
-            {
-                success = true,
-                dates = dates,
-                message = await _localizationService.GetResourceAsync("Setting.Not.Found")
-            });
         }
 
         #endregion
