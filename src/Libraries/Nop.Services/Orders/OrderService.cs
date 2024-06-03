@@ -197,10 +197,7 @@ namespace Nop.Services.Orders
         public virtual async Task<IDictionary<int, IList<Product>>> GetLastOrderedProductsByCustomerIds(
             int[] customerIds, OrderStatus[] orderStatuses, int lastOrderedCount, DateTime excludeThoseWhoOrderedFor)
         {
-            var validOrderStatuses = new List<int>
-            {
-                (int)OrderStatus.Complete, (int)OrderStatus.Pending, (int)OrderStatus.Processing
-            };
+            var validOrderStatuses = orderStatuses.Cast<int>().ToArray();
             
             var lastOrders = await (from oi in _orderItemRepository.Table
                 join o in _orderRepository.Table on oi.OrderId equals o.Id
