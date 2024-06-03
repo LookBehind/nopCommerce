@@ -32,10 +32,12 @@ using Nop.Web.Models.Api.Catalog;
 using Newtonsoft.Json.Linq;
 using System.IO;
 using System.Text;
+using Newtonsoft.Json;
 using Nop.Core.Domain.Logging;
 using Nop.Web.Extensions.Api;
 using Nop.Web.Models.Api.Order;
 using Nop.Web.Models.Catalog;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace Nop.Web.Controllers.Api.Security
 {
@@ -67,6 +69,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly IProductAttributeParser _productAttributeParser;
         private readonly IProductAttributeService _productAttributeService;
         private readonly ShoppingCartSettings _shoppingCartSettings;
+        private readonly ILogger _logger;
 
         #endregion
 
@@ -92,7 +95,8 @@ namespace Nop.Web.Controllers.Api.Security
             ICompanyService companyService,
             IProductAttributeParser productAttributeParser,
             ShoppingCartSettings shoppingCartSettings, 
-            IProductAttributeService productAttributeService)
+            IProductAttributeService productAttributeService, 
+            ILogger logger)
         {
             _orderService = orderService;
             _customerService = customerService;
@@ -115,6 +119,7 @@ namespace Nop.Web.Controllers.Api.Security
             _productAttributeParser = productAttributeParser;
             _shoppingCartSettings = shoppingCartSettings;
             _productAttributeService = productAttributeService;
+            _logger = logger;
         }
 
         #endregion
@@ -251,61 +256,77 @@ namespace Nop.Web.Controllers.Api.Security
         {
             var errorList = new List<CartErrorModel>();
 
-            var scheduledDateUTC = await ConvertCustomerLocalTimeToUTCAsync(
-                customer,
-                productOrderRequestApiModel.ScheduleDate);
-            
-            foreach (var currentProductOrder in productOrderRequestApiModel.Products)
+            try
             {
-                try
-                {
-                    var product = await _productService.GetProductByIdAsync(currentProductOrder.ProductId);
-                    if (product == null)
-                    {
-                        errorList.Add(new CartErrorModel
-                        {
-                            Success = false, 
-                            Id = currentProductOrder.ProductId,
-                            Message = "No product found"
-                        });
-                    
-                        continue;
-                    }
-
-                    var attributesXml = await currentProductOrder.ConvertToAttributesXmlAsync(
-                        _productAttributeParser, _productAttributeService);
-
-                    //now let's try adding product to the cart (now including product attribute validation, etc)
-                    var addToCartWarnings = await _shoppingCartService.AddToCartAsync(customer: customer,
-                        product: product,
-                        shoppingCartType: ShoppingCartType.ShoppingCart,
-                        attributesXml: attributesXml,
-                        storeId: storeId,
-                        scheduledDateUTC: scheduledDateUTC,
-                        quantity: currentProductOrder.Quantity
-                    );
+                var scheduledDateUTC = await ConvertCustomerLocalTimeToUTCAsync(
+                    customer,
+                    productOrderRequestApiModel.ScheduleDate);
                 
-                    if (addToCartWarnings.Any())
+                foreach (var currentProductOrder in productOrderRequestApiModel.Products)
+                {
+                    try
                     {
+                        var product = await _productService.GetProductByIdAsync(currentProductOrder.ProductId);
+                        if (product == null)
+                        {
+                            errorList.Add(new CartErrorModel
+                            {
+                                Success = false, 
+                                Id = currentProductOrder.ProductId,
+                                Message = "No product found"
+                            });
+                        
+                            continue;
+                        }
+
+                        var attributesXml = await currentProductOrder.ConvertToAttributesXmlAsync(
+                            _productAttributeParser, _productAttributeService);
+
+                        //now let's try adding product to the cart (now including product attribute validation, etc)
+                        var addToCartWarnings = await _shoppingCartService.AddToCartAsync(customer: customer,
+                            product: product,
+                            shoppingCartType: ShoppingCartType.ShoppingCart,
+                            attributesXml: attributesXml,
+                            storeId: storeId,
+                            scheduledDateUTC: scheduledDateUTC,
+                            quantity: currentProductOrder.Quantity
+                        );
+                    
+                        if (addToCartWarnings.Any())
+                        {
+                            errorList.Add(new CartErrorModel
+                            {
+                                Success = false,
+                                Id = currentProductOrder.ProductId,
+                                Message = string.Join(", ", addToCartWarnings)
+                            });
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        await _logger.ErrorAsync(
+                            $"Failed to add '{JsonSerializer.Serialize(currentProductOrder)}' to the cart", e,
+                            customer);
+                        
                         errorList.Add(new CartErrorModel
                         {
                             Success = false,
                             Id = currentProductOrder.ProductId,
-                            Message = string.Join(", ", addToCartWarnings)
+                            Message = e.Message
                         });
                     }
                 }
-                catch (Exception e)
-                {
-                    errorList.Add(new CartErrorModel
-                    {
-                        Success = false,
-                        Id = currentProductOrder.ProductId,
-                        Message = e.Message
-                    });
-                }
             }
-
+            catch (Exception e)
+            {
+                await _logger.ErrorAsync($"Failed to add products to cart. ProductOrderRequestApiModel is '{JsonSerializer.Serialize(productOrderRequestApiModel)}'", e, customer);
+                errorList.Add(new CartErrorModel
+                {
+                    Success = false,
+                    Message = "Something went wrong"
+                });
+            }
+            
             return errorList;
         }
 

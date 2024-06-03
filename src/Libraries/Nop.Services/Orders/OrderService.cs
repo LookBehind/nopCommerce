@@ -220,7 +220,14 @@ namespace Nop.Services.Orders
                 .Select(products => new KeyValuePair<int, IList<Product>>(products.Key,
                     products.OrderByDescending(p => p.OrderId).Select(o => o.Product).ToList()));
 
-            return new Dictionary<int, IList<Product>>(keyValuePairs);
+            var result = new Dictionary<int, IList<Product>>(keyValuePairs);
+            foreach (var customerId in customerIds)
+            {
+                if (!result.ContainsKey(customerId))
+                    result[customerId] = new List<Product>();
+            }
+
+            return result;
         }
         
         /// <summary>

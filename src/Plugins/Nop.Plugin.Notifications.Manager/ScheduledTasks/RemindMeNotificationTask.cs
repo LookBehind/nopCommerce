@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -134,6 +135,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             public string Reason { get; set; }
         }
         
+        [SuppressMessage("ReSharper", "PossibleMultipleEnumeration")]
         private async Task<Message> GetNotificationMessageForCustomer(
             CustomerNotificationMetadata customerNotificationMetadata, 
             Product[] productsToRecommend)
@@ -145,7 +147,11 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                 customerNotificationMetadata.PreviouslyOrderedProducts.Where(p => 
                     p.Name.All(c => char.IsAsciiLetterOrDigit(c) || char.IsWhiteSpace(c)));
 
-            var previouslyBoughtProductEnglishString = string.Join('\n', previouslyBoughtProductEnglish.Select(p => p.Name));
+            var previouslyBoughtProductEnglishString = 
+                previouslyBoughtProductEnglish.Any() ?
+                string.Join('\n', previouslyBoughtProductEnglish.Select(p => p.Name))
+                :
+                "No previous orders";
             
             var productsToRecommendEnglish =
                 productsToRecommend.Where(p => 
@@ -215,8 +221,8 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         /// </summary>
         public async System.Threading.Tasks.Task ExecuteAsync()
         {
-            var startingHour = await _settingService.GetSettingByKeyAsync("catalogSettings.StartingTimeOfRemindMeTask", 
-                10);
+            // var startingHour = await _settingService.GetSettingByKeyAsync("catalogSettings.StartingTimeOfRemindMeTask", 
+            //     10);
 
             var expensiveProducts = await _productService.SearchProductsAsync(orderBy: ProductSortingEnum.PriceDesc);
             
@@ -229,8 +235,8 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             
             foreach (var notificationMetadata in customerNotificationMetadata)
             {
-                if (notificationMetadata.CurrentTime.Hour == startingHour)
-                {
+                // if (notificationMetadata.CurrentTime.Hour == startingHour)
+                // {
                     await _customerActivityService.InsertActivityAsync("User Reminder",
                         $"Remind user {notificationMetadata.Customer.Email}", notificationMetadata.Customer);
                     
@@ -244,7 +250,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                         await _logger.ErrorAsync(
                             $"Failed to send notification to customer {notificationMetadata.Customer.Email}", e);
                     }
-                }
+                //}
             }
         }
     }
