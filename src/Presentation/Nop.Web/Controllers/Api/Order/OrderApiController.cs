@@ -33,7 +33,9 @@ using Newtonsoft.Json.Linq;
 using System.IO;
 using System.Text;
 using Newtonsoft.Json;
+using Nop.Core.Configuration;
 using Nop.Core.Domain.Logging;
+using Nop.Services.Configuration;
 using Nop.Web.Extensions.Api;
 using Nop.Web.Models.Api.Order;
 using Nop.Web.Models.Catalog;
@@ -70,6 +72,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly IProductAttributeService _productAttributeService;
         private readonly ShoppingCartSettings _shoppingCartSettings;
         private readonly ILogger _logger;
+        private readonly ISettingService _settingsService;
 
         #endregion
 
@@ -96,7 +99,8 @@ namespace Nop.Web.Controllers.Api.Security
             IProductAttributeParser productAttributeParser,
             ShoppingCartSettings shoppingCartSettings, 
             IProductAttributeService productAttributeService, 
-            ILogger logger)
+            ILogger logger, 
+            ISettingService settingsService)
         {
             _orderService = orderService;
             _customerService = customerService;
@@ -120,6 +124,7 @@ namespace Nop.Web.Controllers.Api.Security
             _shoppingCartSettings = shoppingCartSettings;
             _productAttributeService = productAttributeService;
             _logger = logger;
+            _settingsService = settingsService;
         }
 
         #endregion
@@ -443,7 +448,7 @@ namespace Nop.Web.Controllers.Api.Security
                 cartTotal = cartTotal.shoppingCartTotal 
             });
         }
-
+        
         private async Task<DateTime> ConvertCustomerLocalTimeToUTCAsync(
             Core.Domain.Customers.Customer customer,
             string date)
@@ -463,14 +468,85 @@ namespace Nop.Web.Controllers.Api.Security
         {
             return await ConvertCustomerLocalTimeToUTCAsync(customer, date);
         }
+
+        private (int Hour, int Minute, int Second) ParseHourString(string hourString)
+        {
+            var parts = hourString.Split(':');
+            return (int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]));
+        }
+
+        private (DateTime From, DateTime To, DateTime When) SetHoursOnDateTime(DateTime dt, 
+            string rangeHourString)
+        {
+            var rangeSplit = rangeHourString.Split('-');
+            
+            var (hourFrom, minuteFrom, secondFrom) = ParseHourString(rangeSplit[0]);
+            var (hourTo, minuteTo, secondTo) = ParseHourString(rangeSplit[1]);
+            var (hourWhen, minuteWhen, secondWhen) = ParseHourString(rangeSplit[2]);
+            return (
+                new DateTime(dt.Year, dt.Month, dt.Day, hourFrom, minuteFrom, secondFrom),
+                new DateTime(dt.Year, dt.Month, dt.Day, hourTo, minuteTo, secondTo),
+                new DateTime(dt.Year, dt.Month, dt.Day, hourWhen, minuteWhen, secondWhen)
+                );
+        }
+        
+        private async Task<bool> IsScheduleDateAllowed(int storeId, string scheduleDate)
+        {
+            var customerPreferredScheduleDate = Convert.ToDateTime(scheduleDate);
+            
+            var allowedScheduleRangeString =
+                await _settingsService.GetSettingAsync("ordersettings.scheduledate",
+                    storeId,
+                    true);
+
+            if (allowedScheduleRangeString == default || 
+                string.IsNullOrEmpty(allowedScheduleRangeString.Value))
+            {
+                return true;
+            }
+            
+            var splitRange = allowedScheduleRangeString.Value.Split(',');
+            if (splitRange.Length != 3)
+            {
+                return true;
+            }
+
+            var (_, _, when1) = SetHoursOnDateTime(customerPreferredScheduleDate, splitRange[0]);
+            var (_, _, when2) = SetHoursOnDateTime(customerPreferredScheduleDate, splitRange[0]);
+            var (_, _, when3) = SetHoursOnDateTime(customerPreferredScheduleDate, splitRange[0]);
+            
+            // TODO: fix this or rewrite all 
+            return when1 == customerPreferredScheduleDate ||
+                   when2 == customerPreferredScheduleDate ||
+                   when3 == customerPreferredScheduleDate;
+        }
         
         [HttpPost("order-confirmation/{scheduleDate}")]
         public async Task<IActionResult> OrderConfirmation(string scheduleDate)
         {
-            var processPaymentRequest = new ProcessPaymentRequest();
             var customer = await _workContext.GetCurrentCustomerAsync();
+            var store = await _storeContext.GetCurrentStoreAsync();
+
+            await _logger.InformationAsync($"Ordering at {scheduleDate}", customer: customer);
+
+            if (/*!await IsScheduleDateAllowed(store.Id, scheduleDate)*/ false)
+            {
+                await _logger.WarningAsync($"Ordering failed at {scheduleDate}", customer: customer);
+                
+                return Ok(new
+                {
+                    success = false,
+                    code = 1000,
+                    message =
+                        "We're sorry, but looks like your scheduled delivery date had passed (or invalid), it will refreshed, please re-check and order again. " +
+                        "If the issue still persist please notify MySnacks team."
+                });
+            }
+            
+            var processPaymentRequest = new ProcessPaymentRequest();
+            
             _paymentService.GenerateOrderGuid(processPaymentRequest);
-            processPaymentRequest.StoreId = (await _storeContext.GetCurrentStoreAsync()).Id;
+            processPaymentRequest.StoreId = store.Id;
             processPaymentRequest.CustomerId = customer.Id;
             processPaymentRequest.ScheduleDate = 
                 await ConvertCustomerLocalTimeToUTCStringAsync(customer, scheduleDate);
