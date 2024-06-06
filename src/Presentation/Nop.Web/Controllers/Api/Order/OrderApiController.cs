@@ -469,56 +469,19 @@ namespace Nop.Web.Controllers.Api.Security
             return await ConvertCustomerLocalTimeToUTCAsync(customer, date);
         }
 
-        private (int Hour, int Minute, int Second) ParseHourString(string hourString)
+        private async Task<bool> IsScheduleDateAllowed(int storeId, Core.Domain.Customers.Customer customer, 
+            DateTime customerPreferredScheduleDateUtc)
         {
-            var parts = hourString.Split(':');
-            return (int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]));
-        }
+            var firstAvailableDeliveryTimes = await _orderProcessingService.GetAvailableDeliverTimesAsync();
 
-        private (DateTime From, DateTime To, DateTime When) SetHoursOnDateTime(DateTime dt, 
-            string rangeHourString)
-        {
-            var rangeSplit = rangeHourString.Split('-');
-            
-            var (hourFrom, minuteFrom, secondFrom) = ParseHourString(rangeSplit[0]);
-            var (hourTo, minuteTo, secondTo) = ParseHourString(rangeSplit[1]);
-            var (hourWhen, minuteWhen, secondWhen) = ParseHourString(rangeSplit[2]);
-            return (
-                new DateTime(dt.Year, dt.Month, dt.Day, hourFrom, minuteFrom, secondFrom),
-                new DateTime(dt.Year, dt.Month, dt.Day, hourTo, minuteTo, secondTo),
-                new DateTime(dt.Year, dt.Month, dt.Day, hourWhen, minuteWhen, secondWhen)
-                );
-        }
-        
-        private async Task<bool> IsScheduleDateAllowed(int storeId, string scheduleDate)
-        {
-            var customerPreferredScheduleDate = Convert.ToDateTime(scheduleDate);
-            
-            var allowedScheduleRangeString =
-                await _settingsService.GetSettingAsync("ordersettings.scheduledate",
-                    storeId,
-                    true);
-
-            if (allowedScheduleRangeString == default || 
-                string.IsNullOrEmpty(allowedScheduleRangeString.Value))
+            if (customerPreferredScheduleDateUtc < firstAvailableDeliveryTimes.First())
             {
-                return true;
-            }
-            
-            var splitRange = allowedScheduleRangeString.Value.Split(',');
-            if (splitRange.Length != 3)
-            {
-                return true;
+                await _logger.WarningAsync($"Schedule date already passed. customerPreferredScheduleDateUtc = {customerPreferredScheduleDateUtc}, " +
+                                           $"firstAvailableDeliveryTimes = {string.Join(';', firstAvailableDeliveryTimes)}");
+                return false;
             }
 
-            var (_, _, when1) = SetHoursOnDateTime(customerPreferredScheduleDate, splitRange[0]);
-            var (_, _, when2) = SetHoursOnDateTime(customerPreferredScheduleDate, splitRange[0]);
-            var (_, _, when3) = SetHoursOnDateTime(customerPreferredScheduleDate, splitRange[0]);
-            
-            // TODO: fix this or rewrite all 
-            return when1 == customerPreferredScheduleDate ||
-                   when2 == customerPreferredScheduleDate ||
-                   when3 == customerPreferredScheduleDate;
+            return true;
         }
         
         [HttpPost("order-confirmation/{scheduleDate}")]
@@ -527,12 +490,13 @@ namespace Nop.Web.Controllers.Api.Security
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
 
+            var scheduleDateUtc = await ConvertCustomerLocalTimeToUTCStringAsync(customer, scheduleDate);
+            
             await _logger.InformationAsync($"Ordering at {scheduleDate}", customer: customer);
 
-            if (/*!await IsScheduleDateAllowed(store.Id, scheduleDate)*/ false)
+            var scheduleAllowed = await IsScheduleDateAllowed(store.Id, customer, scheduleDateUtc);
+            if (/*!scheduleAllowed*/ false)
             {
-                await _logger.WarningAsync($"Ordering failed at {scheduleDate}", customer: customer);
-                
                 return Ok(new
                 {
                     success = false,
@@ -548,8 +512,7 @@ namespace Nop.Web.Controllers.Api.Security
             _paymentService.GenerateOrderGuid(processPaymentRequest);
             processPaymentRequest.StoreId = store.Id;
             processPaymentRequest.CustomerId = customer.Id;
-            processPaymentRequest.ScheduleDate = 
-                await ConvertCustomerLocalTimeToUTCStringAsync(customer, scheduleDate);
+            processPaymentRequest.ScheduleDate = scheduleDateUtc;
 
             processPaymentRequest.PaymentMethodSystemName = "Payments.CheckMoneyOrder";
             var placeOrderResult = await _orderProcessingService.PlaceOrderAsync(processPaymentRequest);
