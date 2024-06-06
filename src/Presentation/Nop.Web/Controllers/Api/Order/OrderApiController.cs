@@ -495,14 +495,14 @@ namespace Nop.Web.Controllers.Api.Security
             await _logger.InformationAsync($"Ordering at {scheduleDate}", customer: customer);
 
             var scheduleAllowed = await IsScheduleDateAllowed(store.Id, customer, scheduleDateUtc);
-            if (/*!scheduleAllowed*/ false)
+            if (!scheduleAllowed)
             {
                 return Ok(new
                 {
                     success = false,
                     code = 1000,
                     message =
-                        "We're sorry, but looks like your scheduled delivery date had passed (or invalid), it will refreshed, please re-check and order again. " +
+                        "We're sorry, but looks like your scheduled delivery date had passed (or invalid), please refresh the app, check you schedule date again and confirm the order. " +
                         "If the issue still persist please notify MySnacks team."
                 });
             }
