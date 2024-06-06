@@ -92,9 +92,6 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
 
             ICollection<Customer> customers =
                 await _customerService.GetAllPushNotificationCustomersAsync(isRemindMeNotification: true);
-            
-            // TODO: only for debugging
-            customers = customers.Where(c => c.Id == 57061 || c.Id == 326739).ToList();
 
             var previouslyOrderedProductsByCustomerId =
                 await _orderService.GetLastOrderedProductsByCustomerIds(
@@ -235,22 +232,19 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             
             foreach (var notificationMetadata in customerNotificationMetadata)
             {
-                // if (notificationMetadata.CurrentTime.Hour == startingHour)
-                // {
-                    await _customerActivityService.InsertActivityAsync("User Reminder",
-                        $"Remind user {notificationMetadata.Customer.Email}", notificationMetadata.Customer);
-                    
-                    try
-                    {
-                        var message = await GetNotificationMessageForCustomer(notificationMetadata, productsToRecommend);
-                        await FirebaseMessaging.GetMessaging(_firebaseApp).SendAsync(message);
-                    }
-                    catch (Exception e)
-                    {
-                        await _logger.ErrorAsync(
-                            $"Failed to send notification to customer {notificationMetadata.Customer.Email}", e);
-                    }
-                //}
+                await _customerActivityService.InsertActivityAsync("User Reminder",
+                    $"Remind user {notificationMetadata.Customer.Email}", notificationMetadata.Customer);
+                
+                try
+                {
+                    var message = await GetNotificationMessageForCustomer(notificationMetadata, productsToRecommend);
+                    await FirebaseMessaging.GetMessaging(_firebaseApp).SendAsync(message);
+                }
+                catch (Exception e)
+                {
+                    await _logger.ErrorAsync(
+                        $"Failed to send notification to customer {notificationMetadata.Customer.Email}", e);
+                }
             }
         }
     }
