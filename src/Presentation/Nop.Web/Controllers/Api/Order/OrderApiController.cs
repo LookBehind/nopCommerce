@@ -470,13 +470,14 @@ namespace Nop.Web.Controllers.Api.Security
         }
 
         private async Task<bool> IsScheduleDateAllowed(int storeId, Core.Domain.Customers.Customer customer, 
-            DateTime customerPreferredScheduleDateUtc)
+            string customerPreferredScheduleDateString)
         {
             var firstAvailableDeliveryTimes = await _orderProcessingService.GetAvailableDeliverTimesAsync();
 
-            if (customerPreferredScheduleDateUtc < firstAvailableDeliveryTimes.First())
+            var customerPreferredScheduleDate = Convert.ToDateTime(customerPreferredScheduleDateString);
+            if (customerPreferredScheduleDate < firstAvailableDeliveryTimes.First())
             {
-                await _logger.WarningAsync($"Schedule date already passed. customerPreferredScheduleDateUtc = {customerPreferredScheduleDateUtc}, " +
+                await _logger.WarningAsync($"Schedule date already passed. customerPreferredScheduleDate = {customerPreferredScheduleDate}, " +
                                            $"firstAvailableDeliveryTimes = {string.Join(';', firstAvailableDeliveryTimes)}");
                 return false;
             }
@@ -494,7 +495,7 @@ namespace Nop.Web.Controllers.Api.Security
             
             await _logger.InformationAsync($"Ordering at {scheduleDate}", customer: customer);
 
-            var scheduleAllowed = await IsScheduleDateAllowed(store.Id, customer, scheduleDateUtc);
+            var scheduleAllowed = await IsScheduleDateAllowed(store.Id, customer, scheduleDate);
             if (!scheduleAllowed)
             {
                 return Ok(new
