@@ -18,7 +18,7 @@ namespace Nop.Web.Controllers
 
         [HttpPost]
         [IgnoreAntiforgeryToken]
-        public virtual async Task<IActionResult> RunTask(string taskType)
+        public virtual async Task<IActionResult> RunTask(string taskType, bool forceRun = false)
         {
             var scheduleTask = await _scheduleTaskService.GetTaskByTypeAsync(taskType);
             if (scheduleTask == null)
@@ -26,6 +26,8 @@ namespace Nop.Web.Controllers
                 return NoContent();
 
             var task = new Task(scheduleTask);
+            if (forceRun)
+                task.Enabled = true;
             await task.ExecuteAsync();
 
             return NoContent();
