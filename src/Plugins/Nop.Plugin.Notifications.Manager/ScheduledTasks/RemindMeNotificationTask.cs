@@ -232,18 +232,16 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             
             foreach (var notificationMetadata in customerNotificationMetadata)
             {
-                await _customerActivityService.InsertActivityAsync("User Reminder",
-                    $"Remind user {notificationMetadata.Customer.Email}", notificationMetadata.Customer);
-                
                 try
                 {
                     var message = await GetNotificationMessageForCustomer(notificationMetadata, productsToRecommend);
-                    await FirebaseMessaging.GetMessaging(_firebaseApp).SendAsync(message);
+                    var result = await FirebaseMessaging.GetMessaging(_firebaseApp).SendAsync(message);
+                    await _logger.InformationAsync($"Reminder sent to user: {message}, result: {result}", customer: notificationMetadata.Customer)
                 }
                 catch (Exception e)
                 {
                     await _logger.ErrorAsync(
-                        $"Failed to send notification to customer {notificationMetadata.Customer.Email}", e);
+                        $"Failed to send notification to customer {notificationMetadata.Customer.Email}", e, notificationMetadata.Customer);
                 }
             }
         }
