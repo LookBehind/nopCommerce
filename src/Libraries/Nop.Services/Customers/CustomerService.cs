@@ -308,11 +308,11 @@ namespace Nop.Services.Customers
                         query = query.Where(c => c.OrderStatusNotification == isOrderStatusNotification);
                 }
                 
-                query = query.Where(c => !c.Deleted && c.PushToken != null);
+                query = query.Where(c => c.IsSystemAccount == false && c.Active == true && c.PushToken != null);
                 query = query.OrderByDescending(c => c.CreatedOnUtc);
 
                 return query;
-            }, pageIndex, pageSize);
+            }, pageIndex, pageSize, includeDeleted: false);
 
             return customers;
         }
