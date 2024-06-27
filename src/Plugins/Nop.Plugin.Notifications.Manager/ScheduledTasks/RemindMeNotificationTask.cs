@@ -236,7 +236,8 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                 {
                     var message = await GetNotificationMessageForCustomer(notificationMetadata, productsToRecommend);
                     var result = await FirebaseMessaging.GetMessaging(_firebaseApp).SendAsync(message);
-                    await _logger.InformationAsync($"Reminder sent to user: {message}, result: {result}", customer: notificationMetadata.Customer)
+                    await _logger.InformationAsync($"Reminder sent to user: {message}, result: {result}",
+                        customer: notificationMetadata.Customer);
                 }
                 catch (Exception e)
                 {
