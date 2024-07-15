@@ -1,165 +1,293 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using FirebaseAdmin;
+using FirebaseAdmin.Messaging;
 using Nop.Core.Configuration;
 using Nop.Core.Domain.Messages;
+using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Vendors;
 using Nop.Services.Common;
 using Nop.Services.Configuration;
+using Nop.Services.Customers;
 using Nop.Services.Logging;
 using Nop.Services.Messages;
+using Nop.Services.Orders;
 using Nop.Services.Vendors;
 using Telegram.Bot;
+using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Message = FirebaseAdmin.Messaging.Message;
 
-namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
+namespace Nop.Plugin.Notifications.Manager.ScheduledTasks;
+
+public record BotEvent(string FromUsername, Chat Chat, Vendor Vendor);
+
+public record BotAddedToGroupEvent(string FromUsername, Chat Chat, Vendor Vendor)
+    : BotEvent(FromUsername, Chat, Vendor);
+
+public record BotCommandDeliveredEvent(string FromUsername, Chat Chat, Vendor Vendor, string Command)
+    : BotEvent(FromUsername, Chat, Vendor);
+
+public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
 {
-    public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
+    public const string TELEGRAM_NOTIFICATION_SENDER_TASK_NAME = "Nop.Plugin.Notifications.Manager.ScheduledTasks.TelegramNotificationSenderTask";
+    public const string TELEGRAM_NOTIFICATION_SENDER_FRIENDLY_NAME = "Telegram notification sender";
+    private const string VENDOR_TELEGRAM_CHANNEL_KEY = nameof(VENDOR_TELEGRAM_CHANNEL_KEY);
+    private const string LAST_UPDATE_ID_SEEN_KEY = nameof(LAST_UPDATE_ID_SEEN_KEY);
+    private static readonly string[] _trustedUsernames = { "lkbhnd", "hasmik_bars" };
+    private static readonly TimeSpan _deleteEmailsOlderThan = TimeSpan.FromDays(7);
+
+    private readonly IOrderService _orderService;
+    private readonly IQueuedEmailService _queuedEmail;
+    private readonly IVendorService _vendor;
+    private readonly ITelegramBotClient _telegramBotClient;
+    private readonly IGenericAttributeService _genericAttribute;
+    private readonly ISettingService _setting;
+    private readonly ILogger _logger;
+    private readonly AppSettings _appSettings;
+    private readonly FirebaseApp _firebaseApp;
+    private readonly ICustomerService _customerService;
+
+    public TelegramNotificationSenderTask(IQueuedEmailService queuedEmail,
+        IVendorService vendor,
+        ITelegramBotClient telegramBotClient,
+        IGenericAttributeService genericAttribute,
+        ISettingService setting,
+        ILogger logger,
+        AppSettings appSettings, 
+        IOrderService orderService,
+        FirebaseApp firebaseApp, 
+        ICustomerService customerService)
     {
-        public const string TELEGRAM_NOTIFICATION_SENDER_TASK_NAME = "Nop.Plugin.Notifications.Manager.ScheduledTasks.TelegramNotificationSenderTask";
-        public const string TELEGRAM_NOTIFICATION_SENDER_FRIENDLY_NAME = "Telegram notification sender";
-        private const string VENDOR_TELEGRAM_CHANNEL_KEY = nameof(VENDOR_TELEGRAM_CHANNEL_KEY);
-        private const string LAST_UPDATE_ID_SEEN_KEY = nameof(LAST_UPDATE_ID_SEEN_KEY);
-        private static readonly string[] _trustedUsernames = { "lkbhnd", "hasmik_bars" };
-        private static readonly TimeSpan _deleteEmailsOlderThan = TimeSpan.FromDays(7);
+        _queuedEmail = queuedEmail;
+        _vendor = vendor;
+        _telegramBotClient = telegramBotClient;
+        _genericAttribute = genericAttribute;
+        _setting = setting;
+        _logger = logger;
+        _appSettings = appSettings;
+        _orderService = orderService;
+        _firebaseApp = firebaseApp;
+        _customerService = customerService;
+    }
 
-        private readonly IQueuedEmailService _queuedEmail;
-        private readonly IVendorService _vendor;
-        private readonly ITelegramBotClient _telegramBotClient;
-        private readonly IGenericAttributeService _genericAttribute;
-        private readonly ISettingService _setting;
-        private readonly ILogger _logger;
-        private readonly AppSettings _appSettings;
+    private async Task<Vendor?> TryGetVendorFromChatTitle(string chatTitle)
+    {
+        var vendorNameFromMessage = Regex.Match(chatTitle,
+            "(.*?) orders.*",
+            RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.CultureInvariant |
+            RegexOptions.IgnoreCase);
 
-        public TelegramNotificationSenderTask(IQueuedEmailService queuedEmail,
-            IVendorService vendor,
-            ITelegramBotClient telegramBotClient,
-            IGenericAttributeService genericAttribute,
-            ISettingService setting,
-            ILogger logger,
-            AppSettings appSettings)
+        if (!vendorNameFromMessage.Success)
+            return null;
+        
+        return (await _vendor.GetAllVendorsAsync(vendorNameFromMessage.Groups[1].Value)).SingleOrDefault();
+    }
+
+    private async Task HandleBotAddedToGroupEvent(BotAddedToGroupEvent botAddedToGroupEvent)
+    {
+        if (_trustedUsernames.Contains(botAddedToGroupEvent.FromUsername))
         {
-            _queuedEmail = queuedEmail;
-            _vendor = vendor;
-            _telegramBotClient = telegramBotClient;
-            _genericAttribute = genericAttribute;
-            _setting = setting;
-            _logger = logger;
-            _appSettings = appSettings;
+            await _genericAttribute.SaveAttributeAsync(botAddedToGroupEvent.Vendor,
+                VENDOR_TELEGRAM_CHANNEL_KEY, botAddedToGroupEvent.Chat.Id);
+
+            await _telegramBotClient.SendTextMessageAsync(botAddedToGroupEvent.Chat,
+                $"Group chat associated with vendor {botAddedToGroupEvent.Vendor.Name}");
         }
+    }
 
-        private async Task UpdateVendorTelegramGroupsAsync()
+    private async Task HandleBotCommandDeliveredEvent(BotCommandDeliveredEvent botCommandDeliveredEvent)
+    {
+        var pendingStatusOrders = new List<int>() {(int)OrderStatus.Processing, (int)OrderStatus.Pending};
+        if (botCommandDeliveredEvent.Command.StartsWith("/delivered", StringComparison.OrdinalIgnoreCase))
         {
-            try
+            if(!int.TryParse(botCommandDeliveredEvent.Command.Substring(10, 2), out var deliveryHour))
             {
-                var lastSeenUpdateId = await _setting.GetSettingByKeyAsync(LAST_UPDATE_ID_SEEN_KEY, 0);
-                var updates = await _telegramBotClient.GetUpdatesAsync(
-                    lastSeenUpdateId, timeout: 0,
-                    allowedUpdates: new[] { UpdateType.Message });
+                await _logger.ErrorAsync($"Couldn't parse delivery hour from {botCommandDeliveredEvent.Command}");
+                return;
+            }
+            
+            var orders = await _orderService.SearchOrdersAsync(
+                vendorId: botCommandDeliveredEvent.Vendor.Id,
+                osIds: pendingStatusOrders,
+                schedulDate: DateTime.UtcNow.Date,
+                deliveryHour: deliveryHour - 4 /*UTC*/);
 
-                foreach (var update in updates)
+            await _logger.InformationAsync($"Found {orders.Count} orders to notify about delivery");
+            
+            foreach (var order in orders)
+            {
+                var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
+                try
                 {
-                    if (update.Type == UpdateType.Message && update.Message?.Type == MessageType.ChatMembersAdded &&
-                        update.Message?.NewChatMembers?.Any(m => m.Id == _telegramBotClient.BotId) == true &&
-                        _trustedUsernames.Contains(update.Message?.From?.Username))
+                    order.OrderStatus = OrderStatus.Complete;
+                    await _orderService.UpdateOrderAsync(order);
+
+                    await FirebaseMessaging.GetMessaging(_firebaseApp).SendAsync(new Message()
                     {
-                        try
+                        Token = customer.PushToken,
+                        Notification = new Notification()
                         {
-                            var vendorNameFromMessage = Regex.Match(update.Message.Chat.Title,
-                                "(.*?) orders.*",
-                                RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.CultureInvariant |
-                                RegexOptions.IgnoreCase);
-
-                            Vendor vendor;
-                            if (!vendorNameFromMessage.Success ||
-                                (vendor = (await _vendor.GetAllVendorsAsync(vendorNameFromMessage.Groups[1].Value)).SingleOrDefault()) == null)
-                            {
-                                await _telegramBotClient.SendTextMessageAsync(update.Message.Chat,
-                                    "Couldn't match with vendor");
-                                continue;
-                            }
-
-                            await _genericAttribute.SaveAttributeAsync(vendor,
-                                VENDOR_TELEGRAM_CHANNEL_KEY, update.Message.Chat.Id);
+                            Title = "Order delivered",
+                            Body = $"Your order from vendor {botCommandDeliveredEvent.Vendor.Name} has been delivered"
                         }
-                        catch (Exception e)
+                    });
+                }
+                catch (Exception e)
+                {
+                    await _logger.ErrorAsync("Failed to deliver push notification", customer: customer);
+                }
+            }
+        }
+    }
+    
+    private async Task<IEnumerable<BotEvent>> GetUnseenBotEvents()
+    {
+        var events = new List<BotEvent>();
+        
+        try
+        {
+            var lastSeenUpdateId = await _setting.GetSettingByKeyAsync(LAST_UPDATE_ID_SEEN_KEY, 0);
+            var updates = await _telegramBotClient.GetUpdatesAsync(
+                lastSeenUpdateId, timeout: 0,
+                allowedUpdates: new[] { UpdateType.Message });
+
+            foreach (var update in updates)
+            {
+                try
+                {
+                    if (update.Type == UpdateType.Message && 
+                        update.Message?.Type == MessageType.ChatMembersAdded &&
+                        update.Message?.NewChatMembers?.Any(m => m.Id == _telegramBotClient.BotId) == true)
+                    {
+                        var vendor = await TryGetVendorFromChatTitle(update.Message!.Chat.Title);
+                        if (vendor == null)
                         {
-                            await _logger.ErrorAsync("Exception while handling telegram update, skipping", e);
+                            await _logger.ErrorAsync(
+                                $"Unable to associate chat {update.Message!.Chat.Title} with any vendor");
+                            continue;
                         }
+
+                        events.Add(new BotAddedToGroupEvent(update.Message.From!.Username, update.Message.Chat, vendor));
+                    }
+
+                    if (update.Type == UpdateType.Message &&
+                        update.Message!.Entities?.Any(me => me.Type == MessageEntityType.BotCommand) == true)
+                    {
+                        var vendor = await TryGetVendorFromChatTitle(update.Message!.Chat.Title);
+                        if (vendor == null)
+                        {
+                            await _logger.ErrorAsync(
+                                $"Unable to associate chat {update.Message!.Chat.Title} with any vendor");
+                            continue;
+                        }
+                        
+                        events.Add(new BotCommandDeliveredEvent(update.Message.From!.Username, 
+                            update.Message.Chat, 
+                            vendor, 
+                            update.Message.Text!.Split('@').First()));
                     }
 
                     lastSeenUpdateId = Math.Max(lastSeenUpdateId, update.Id);
+                
                 }
+                catch (Exception e)
+                {
+                    await _logger.ErrorAsync("Exception while handling telegram update, skipping", e);
+                }
+            }
 
-                await _setting.SetSettingAsync(LAST_UPDATE_ID_SEEN_KEY, lastSeenUpdateId);
+            await _setting.SetSettingAsync(LAST_UPDATE_ID_SEEN_KEY, lastSeenUpdateId);
+        }
+        catch (Exception e)
+        {
+            await _logger.ErrorAsync("Exception while getting telegram updates, skipping", e);
+        }
+
+        return events;
+    }
+
+    public async Task ExecuteAsync()
+    {
+        if (!_appSettings.ExtendedAuthSettings.TelegramBotEnabled)
+            return;
+
+        var unseenEvents = await GetUnseenBotEvents();
+        foreach (var unseenEvent in unseenEvents)
+        {
+            try
+            {
+                if (unseenEvent is BotAddedToGroupEvent botAddedToGroupEvent)
+                {
+                    await HandleBotAddedToGroupEvent(botAddedToGroupEvent);
+                }
+                else if (unseenEvent is BotCommandDeliveredEvent botCommandDeliveredEvent)
+                {
+                    await HandleBotCommandDeliveredEvent(botCommandDeliveredEvent);
+                }
             }
             catch (Exception e)
             {
-                await _logger.ErrorAsync("Exception while getting telegram updates, skipping", e);
+                await _logger.ErrorAsync("Exception while handling unseen events, skipping", e);
             }
-        }
-
-        public async Task ExecuteAsync()
-        {
-            if (!_appSettings.ExtendedAuthSettings.TelegramBotEnabled)
-                return;
             
-            await UpdateVendorTelegramGroupsAsync();
+        }
 
-            var maxTries = 3;
+        var maxTries = 3;
 
-            var queuedEmails = await _queuedEmail.SearchEmailsAsync(null, null,
-                null, null, true, true, maxTries,
-                false);
-            foreach (var queuedEmail in queuedEmails)
+        var queuedEmails = await _queuedEmail.SearchEmailsAsync(null, null,
+            null, null, true, true, maxTries,
+            false);
+        foreach (var queuedEmail in queuedEmails)
+        {
+            var beingThrottled = false;
+            try
             {
-                var beingThrottled = false;
-                try
+                var (isVendorNotification, vendor) = await IsNotificationForVendorAsync(queuedEmail);
+                if (isVendorNotification)
                 {
-                    var (isVendorNotification, vendor) = await IsNotificationForVendorAsync(queuedEmail);
-                    if (isVendorNotification)
-                    {
-                        var vendorGroupId = await _genericAttribute.GetAttributeAsync<long>(vendor,
-                            VENDOR_TELEGRAM_CHANNEL_KEY, defaultValue: 0);
+                    var vendorGroupId = await _genericAttribute.GetAttributeAsync<long>(vendor,
+                        VENDOR_TELEGRAM_CHANNEL_KEY, defaultValue: 0);
 
-                        if (vendorGroupId != 0)
-                        {
-                            await _telegramBotClient.SendTextMessageAsync(vendorGroupId, queuedEmail.Body);
-                        }
-                    }
-
-                    queuedEmail.SentOnUtc = DateTime.UtcNow;
-                }
-                catch (HttpRequestException exc) when (exc.StatusCode == HttpStatusCode.TooManyRequests)
-                {
-                    await _logger.ErrorAsync($"Telegram is throttling, ending task", exc);
-                    beingThrottled = true;
-                    return;
-                }
-                catch (Exception exc)
-                {
-                    await _logger.ErrorAsync($"Error sending telegram notification", exc);
-                }
-                finally
-                {
-                    if (!beingThrottled)
+                    if (vendorGroupId != 0)
                     {
-                        queuedEmail.SentTries += 1;
-                        await _queuedEmail.UpdateQueuedEmailAsync(queuedEmail);
+                        await _telegramBotClient.SendTextMessageAsync(vendorGroupId, queuedEmail.Body);
                     }
+                }
+
+                queuedEmail.SentOnUtc = DateTime.UtcNow;
+            }
+            catch (HttpRequestException exc) when (exc.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                await _logger.ErrorAsync($"Telegram is throttling, ending task", exc);
+                beingThrottled = true;
+                return;
+            }
+            catch (Exception exc)
+            {
+                await _logger.ErrorAsync($"Error sending telegram notification", exc);
+            }
+            finally
+            {
+                if (!beingThrottled)
+                {
+                    queuedEmail.SentTries += 1;
+                    await _queuedEmail.UpdateQueuedEmailAsync(queuedEmail);
                 }
             }
-
-            await _queuedEmail.DeleteAlreadySentOrExpiredEmailsAsync(_deleteEmailsOlderThan);
         }
 
-        private async Task<(bool, Vendor)> IsNotificationForVendorAsync(QueuedEmail queuedEmail)
-        {
-            var foundVendor = (await _vendor.GetAllVendorsAsync(email: queuedEmail.To)).SingleOrDefault();
-            return foundVendor != null ? (true, foundVendor) : (false, null);
-        }
+        await _queuedEmail.DeleteAlreadySentOrExpiredEmailsAsync(_deleteEmailsOlderThan);
+    }
+
+    private async Task<(bool, Vendor)> IsNotificationForVendorAsync(QueuedEmail queuedEmail)
+    {
+        var foundVendor = (await _vendor.GetAllVendorsAsync(email: queuedEmail.To)).SingleOrDefault();
+        return foundVendor != null ? (true, foundVendor) : (false, null);
     }
 }
