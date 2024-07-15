@@ -118,6 +118,9 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                 schedulDate: DateTime.UtcNow.Date,
                 deliveryHour: deliveryHour - 4 /*UTC*/);
 
+            if (!orders.Any())
+                return;
+            
             await _logger.InformationAsync($"Found {orders.Count} orders to notify about delivery");
             
             foreach (var order in orders)
@@ -128,19 +131,25 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                     order.OrderStatus = OrderStatus.Complete;
                     await _orderService.UpdateOrderAsync(order);
 
-                    await FirebaseMessaging.GetMessaging(_firebaseApp).SendAsync(new Message()
+                    var fcmToken = await FirebaseMessaging.GetMessaging(_firebaseApp).SendAsync(new Message()
                     {
                         Token = customer.PushToken,
                         Notification = new Notification()
                         {
                             Title = "Order delivered",
                             Body = $"Your order from vendor {botCommandDeliveredEvent.Vendor.Name} has been delivered"
-                        }
+                        },
+                        Data = new Dictionary<string, string>() { {"order_delivered", "true"} }
                     });
+
+                    await _logger.InformationAsync($"Delivery notification token = {fcmToken}", customer: customer);
+                    
                 }
                 catch (Exception e)
                 {
-                    await _logger.ErrorAsync("Failed to deliver push notification", customer: customer);
+                    await _logger.ErrorAsync("Failed to deliver push notification", 
+                        customer: customer,
+                        exception: e);
                 }
             }
         }
