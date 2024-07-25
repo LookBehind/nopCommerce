@@ -162,7 +162,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
 
                 var messages = await _ollamaApiClient.SendChat(new ChatRequest()
                     {
-                        Model = "llama3:instruct",
+                        Model = "llama3.1:8b-instruct-q8_0",
                         Stream = false,
                         KeepAlive = "30m",
                         Messages = new List<OllamaSharp.Models.Chat.Message>()
