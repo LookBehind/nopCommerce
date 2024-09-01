@@ -499,6 +499,11 @@ namespace Nop.Web.Controllers.Api.Security
         public async Task<IActionResult> ProductById(int productId)
         {
             var product = await _productService.GetProductByIdAsync(productId);
+
+            if (product == null)
+            {
+                return NotFound(new { success = false, message = $"Product with id {productId} not found" });
+            }
             
             var model = await PrepareApiProductOverviewModels(new []{ product });
             
@@ -642,6 +647,7 @@ namespace Nop.Web.Controllers.Api.Security
             public int? PageSize { get; set; }
             public int? CategoryId { get; set; }
             public int? VendorId { get; set; }
+            public int? ProductId { get; set; }
         }
         public partial class ProductReviewsApiModel : BaseEntity
         {
