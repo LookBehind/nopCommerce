@@ -495,6 +495,16 @@ namespace Nop.Web.Controllers.Api.Security
             return Ok(model);
         }
         
+        [HttpGet("product/{id}")]
+        public async Task<IActionResult> ProductById(int productId)
+        {
+            var product = await _productService.GetProductByIdAsync(productId);
+            
+            var model = await PrepareApiProductOverviewModels(new []{ product });
+            
+            return Ok(model.First());
+        }
+        
         #endregion
 
         #region Product Review
