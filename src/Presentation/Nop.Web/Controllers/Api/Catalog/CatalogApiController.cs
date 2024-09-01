@@ -495,7 +495,7 @@ namespace Nop.Web.Controllers.Api.Security
             return Ok(model);
         }
         
-        [HttpGet("product/{id}")]
+        [HttpGet("product/{productId}")]
         public async Task<IActionResult> ProductById(int productId)
         {
             var product = await _productService.GetProductByIdAsync(productId);
