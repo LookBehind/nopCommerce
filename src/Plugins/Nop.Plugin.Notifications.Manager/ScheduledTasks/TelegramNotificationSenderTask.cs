@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using FirebaseAdmin;
@@ -53,6 +55,8 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
     private readonly FirebaseApp _firebaseApp;
     private readonly ICustomerService _customerService;
 
+    private readonly static ConcurrentDictionary<long, Vendor> _chatIdToVendor = new();
+
     public TelegramNotificationSenderTask(IQueuedEmailService queuedEmail,
         IVendorService vendor,
         ITelegramBotClient telegramBotClient,
@@ -76,9 +80,27 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
         _customerService = customerService;
     }
 
-    private async Task<Vendor?> TryGetVendorFromChatTitle(string chatTitle)
+    private async Task<Vendor?> TryGetVendorFromChat(Chat chat)
     {
-        var vendorNameFromMessage = Regex.Match(chatTitle,
+        if (_chatIdToVendor.TryGetValue(chat.Id, out var cachedVendor))
+            return cachedVendor;
+
+        var allVendors = await _vendor.GetAllVendorsAsync();
+        
+        foreach (var vendor in allVendors)
+        {
+            var channelKey = await _genericAttribute.GetAttributeAsync<long>(vendor, VENDOR_TELEGRAM_CHANNEL_KEY, 0);
+            _chatIdToVendor[channelKey] = vendor;
+        }
+
+        if (chat.Title == null)
+        {
+            await _logger.ErrorAsync(
+                $"Chat with id '{chat.Id}' doesn't have a name, please add mapping manually. {JsonSerializer.Serialize(chat)}");
+            return null;
+        }
+        
+        var vendorNameFromMessage = Regex.Match(chat.Title,
             "(.*?) orders.*",
             RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.CultureInvariant |
             RegexOptions.IgnoreCase);
@@ -174,7 +196,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                         update.Message?.Type == MessageType.ChatMembersAdded &&
                         update.Message?.NewChatMembers?.Any(m => m.Id == _telegramBotClient.BotId) == true)
                     {
-                        var vendor = await TryGetVendorFromChatTitle(update.Message!.Chat.Title);
+                        var vendor = await TryGetVendorFromChat(update.Message!.Chat);
                         if (vendor == null)
                         {
                             await _logger.ErrorAsync(
@@ -188,7 +210,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                     if (update.Type == UpdateType.Message &&
                         update.Message!.Entities?.Any(me => me.Type == MessageEntityType.BotCommand) == true)
                     {
-                        var vendor = await TryGetVendorFromChatTitle(update.Message!.Chat.Title);
+                        var vendor = await TryGetVendorFromChat(update.Message!.Chat);
                         if (vendor == null)
                         {
                             await _logger.ErrorAsync(
