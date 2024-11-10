@@ -622,7 +622,6 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             if (ModelState.IsValid)
             {
-
                 var address = model.Address.ToEntity<Address>();
                 address.CustomAttributes = customAttributes;
                 address.CreatedOnUtc = DateTime.UtcNow;
@@ -638,10 +637,6 @@ namespace Nop.Web.Areas.Admin.Controllers
                 {
                     var customer = await _customerService.GetCustomerByIdAsync(company.CustomerId);
                     await _customerService.InsertCustomerAddressAsync(customer, address);
-                    customer.ShippingAddressId = address.Id;
-                    customer.BillingAddressId = address.Id;
-                    await _customerService.UpdateCustomerAsync(customer);
-
                 }
                 _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Companies.Company.Addresses.Added"));
                 return RedirectToAction("Edit", new { id = companyId });
