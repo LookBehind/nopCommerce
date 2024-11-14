@@ -14,6 +14,7 @@ namespace Nop.Web.Models.Api.Integration
     public class OrderRequest
     {
         public string CustomerEmail { get; set; }
+        public string? Vendor { get; set; }
         public List<ExternalProduct> Products { get; set; }
     }
 }

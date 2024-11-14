@@ -5,6 +5,7 @@ using System.Net;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
@@ -24,6 +25,7 @@ using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Payments;
 using Nop.Web.Framework.Mvc.Filters;
 using Nop.Web.Models.Api.Integration;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace Nop.Web.Controllers.Integration
 {
@@ -129,6 +131,8 @@ namespace Nop.Web.Controllers.Integration
             {
                 return BadRequest(new ErrorMessage("Invalid parameters"));
             }
+
+            await _logger.InformationAsync($"Order from integration {integration}: {JsonSerializer.Serialize(orderRequest)}");
 
             if (!await _permission.AuthorizeAsync("ExternalOrdersCreation"))
                 return Unauthorized(new ErrorMessage("Insufficient permissions"));
