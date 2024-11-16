@@ -125,8 +125,8 @@ namespace Nop.Web.Controllers.Integration
         public async Task<IActionResult> Order([FromRoute]string integration, [FromBody]OrderRequest orderRequest)
         {
             var currentCustomer = await _workContext.GetCurrentCustomerAsync();
-            var vendor = currentCustomer.VendorId;
-
+            var kerpakVendorId = currentCustomer.VendorId;
+            
             if (!ModelState.IsValid ||
                 !string.Equals(integration, "kerpak", StringComparison.OrdinalIgnoreCase))
             {
@@ -143,8 +143,17 @@ namespace Nop.Web.Controllers.Integration
                 return NotFound(new ErrorMessage("Customer not found"));
 
             var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
+            var targetVendorId = (await _vendorService.GetAllVendorsAsync())
+                .FirstOrDefault(v => string.Equals(v.Name, orderRequest.Vendor, StringComparison.OrdinalIgnoreCase))?.Id
+                ?? kerpakVendorId;
 
-            var orderProducts = await UpsertProducts(storeId, vendor, orderRequest.Products);
+            if (targetVendorId == kerpakVendorId)
+            {
+                await _logger.WarningAsync($"Ordering through kerpak and couldn't find vendor with name {orderRequest.Vendor}. " +
+                                           $"Possibly invalid name was passed or vendor needs to be added");
+            }
+            
+            var orderProducts = await UpsertProducts(storeId, targetVendorId, orderRequest.Products);
             await _shoppingCartService.DeleteShoppingCartItemsAsync(customer, storeId, ShoppingCartType.ShoppingCart);
             foreach (var orderProduct in orderProducts)
             {
