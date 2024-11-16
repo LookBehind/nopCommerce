@@ -49,21 +49,22 @@ namespace Nop.Web.Controllers.Integration
         private readonly IVendorService _vendorService;
         private readonly ILogger _logger;
 
-        private async Task<IEnumerable<Product>> UpdateAndGetProducts(int storeId,
+        private async Task<IEnumerable<Product>> UpsertProducts(int storeId,
             int vendorId,
             IEnumerable<ExternalProduct> externalProducts)
         {
             var results = new List<Product>();
             
-            var allProducts = await _productService.SearchProductsAsync(vendorId: vendorId, 
-                storeId: storeId);
+            var existingProductsBySku = (await _productService.SearchProductsAsync(vendorId: vendorId,
+                storeId: storeId,
+                showHidden: true))
+                .ToLookup(p => p.Sku);
 
             foreach (var externalProduct in externalProducts)
             {
-                var existingProduct = allProducts.FirstOrDefault(p => 
-                    string.Equals(p.Sku, externalProduct.Sku, StringComparison.OrdinalIgnoreCase));
+                var existingProduct = existingProductsBySku[externalProduct.Sku].FirstOrDefault();
 
-                if (existingProduct == default)
+                if (existingProduct is null)
                 {
                     var newProduct = new Product()
                     {
@@ -143,7 +144,7 @@ namespace Nop.Web.Controllers.Integration
 
             var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
 
-            var orderProducts = await UpdateAndGetProducts(storeId, vendor, orderRequest.Products);
+            var orderProducts = await UpsertProducts(storeId, vendor, orderRequest.Products);
             await _shoppingCartService.DeleteShoppingCartItemsAsync(customer, storeId, ShoppingCartType.ShoppingCart);
             foreach (var orderProduct in orderProducts)
             {
