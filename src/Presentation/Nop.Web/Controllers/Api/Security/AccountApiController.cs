@@ -260,6 +260,8 @@ namespace Nop.Web.Controllers.Api.Security
                             pushToken = customer.PushToken,
                             shippingAddress,
                             firstName,
+                            customer.Id,
+                            customer.Email,
                             lastName,
                             RemindMeNotification = customer.RemindMeNotification,
                             RateReminderNotification = customer.RateReminderNotification,
