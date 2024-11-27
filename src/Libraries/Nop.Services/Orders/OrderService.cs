@@ -197,33 +197,41 @@ namespace Nop.Services.Orders
         public virtual async Task<IDictionary<int, IList<Product>>> GetLastOrderedProductsByCustomerIds(
             int[] customerIds, OrderStatus[] orderStatuses, int lastOrderedCount, DateTime excludeThoseWhoOrderedFor)
         {
-            var validOrderStatuses = orderStatuses.Cast<int>().ToArray();
+            var result = new Dictionary<int, IList<Product>>();
             
-            var lastOrders = await (from oi in _orderItemRepository.Table
-                join o in _orderRepository.Table on oi.OrderId equals o.Id
-                where customerIds.Contains(o.CustomerId) && validOrderStatuses.Contains(o.OrderStatusId) && o.ScheduleDate.Date != excludeThoseWhoOrderedFor.Date
-                join p in _productRepository.Table on oi.ProductId equals p.Id
-                select new
-                {
-                    Product = p,
-                    OrderId = oi.OrderId,
-                    CustomerId = o.CustomerId
-                })
-                .Take(lastOrderedCount)
-                .ToArrayAsync();
+            var validOrderStatuses = orderStatuses.Cast<int>().ToArray();
 
-            var keyValuePairs = lastOrders
-                .GroupBy((tuple => tuple.CustomerId), tuple => tuple)
-                .Select(products => new KeyValuePair<int, IList<Product>>(products.Key,
-                    products.OrderByDescending(p => p.OrderId).Select(o => o.Product).ToList()));
-
-            var result = new Dictionary<int, IList<Product>>(keyValuePairs);
             foreach (var customerId in customerIds)
             {
-                if (!result.ContainsKey(customerId))
-                    result[customerId] = new List<Product>();
-            }
+                var lastOrdersOfCustomer = await (from oi in _orderItemRepository.Table
+                        join o in _orderRepository.Table on oi.OrderId equals o.Id
+                        where o.CustomerId == customerId &&
+                              validOrderStatuses.Contains(o.OrderStatusId)
+                        join p in _productRepository.Table on oi.ProductId equals p.Id
+                        select new
+                        {
+                            Product = p,
+                            OrderId = oi.OrderId,
+                            OrderScheduleDate = o.ScheduleDate.Date,
+                            CustomerId = o.CustomerId
+                        })
+                    .OrderByDescending(r => r.OrderId)
+                    .Take(lastOrderedCount)
+                    .ToArrayAsync();
 
+                if(lastOrdersOfCustomer.Length != 0 && lastOrdersOfCustomer.First().OrderScheduleDate != excludeThoseWhoOrderedFor.Date)
+                {
+                    result[customerId] = lastOrdersOfCustomer
+                        .OrderByDescending(r => r.OrderId)
+                        .Select(r => r.Product)
+                        .ToList();
+                }
+                else
+                {
+                    result[customerId] = new List<Product>();
+                }
+            }
+            
             return result;
         }
         
