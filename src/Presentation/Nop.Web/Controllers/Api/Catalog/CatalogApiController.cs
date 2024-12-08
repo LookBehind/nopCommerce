@@ -2,11 +2,13 @@
 using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
+using Nop.Core.Domain.Discounts;
 using Nop.Core.Domain.Localization;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Events;
 using Nop.Services.Catalog;
 using Nop.Services.Configuration;
+using Nop.Services.Discounts;
 using Nop.Services.Customers;
 using Nop.Services.Helpers;
 using Nop.Services.Localization;
@@ -63,6 +65,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly ISettingService _settingService;
         private readonly IProductAttributeService _productAttributeService;
         private readonly ICompanyService _companyService;
+        private readonly IDiscountService _discountService;
 
         private static readonly AttributeControlType[] _allowedAttributeControlTypes = new[] {
             AttributeControlType.DropdownList,
@@ -98,7 +101,9 @@ namespace Nop.Web.Controllers.Api.Security
             IStaticCacheManager staticCacheManager,
             ISettingService settingService,
             IProductAttributeService productAttributeService,
-            IProductAvailabilityService productAvailabilityService, ICompanyService companyService)
+            IProductAvailabilityService productAvailabilityService,
+            ICompanyService companyService,
+            IDiscountService discountService)
         {
             _localizationSettings = localizationSettings;
             _workflowMessageService = workflowMessageService;
@@ -124,6 +129,8 @@ namespace Nop.Web.Controllers.Api.Security
             _settingService = settingService;
             _productAttributeService = productAttributeService;
             _companyService = companyService;
+            _discountService = discountService;
+
         }
 
         #endregion
@@ -325,7 +332,7 @@ namespace Nop.Web.Controllers.Api.Security
                         showHidden: true,
                         vendorId: product.VendorId)).ToImmutableDictionary(k => k.ProductId)));
 
-                models.Add(new ProductOverviewApiModel
+                var productOverviewApiModel = new ProductOverviewApiModel()
                 {
                     Id = product.Id,
                     Name = productDetailsModel.Name,
@@ -348,7 +355,17 @@ namespace Nop.Web.Controllers.Api.Security
                     Vendor = productDetailsModel.VendorModel,
                     ProductSpecificationModel = await PrepareProductSpecificationAttributeModelAsync(product),
                     ProductAttributesModel = await PrepareProductAttributesApiModel(product)
-                });
+                };
+
+                if (product.HasDiscountsApplied)
+                {
+                    var appliedDiscounts = await _discountService.GetAppliedDiscountsAsync(product);
+                    productOverviewApiModel.RibbonText = "-" + (int)appliedDiscounts[0].DiscountPercentage + "%";
+                    productOverviewApiModel.RibbonEnable = true;
+
+                }
+
+                models.Add(productOverviewApiModel);
             }
 
             return models;
@@ -456,14 +473,14 @@ namespace Nop.Web.Controllers.Api.Security
         [HttpGet("product-search")]
         public async Task<IActionResult> SearchProducts(SearchProductByFilters searchModel)
         {
-            var categoryIds = 
-                searchModel.CategoryId.HasValue ? new List<int> {searchModel.CategoryId.Value}
-                    : 
+            var categoryIds =
+                searchModel.CategoryId.HasValue ? new List<int> { searchModel.CategoryId.Value }
+                    :
                 (await _categoryService.GetAllCategoriesAsync())
                 .Select(c => c.Id)
                 .Where(id => id != 0)
                 .ToList();
-            
+
             var products = (await _productService.SearchProductsAsync(
                 pageIndex: searchModel.Page ?? 0,
                 pageSize: searchModel.PageSize ?? int.MaxValue,
@@ -483,7 +500,7 @@ namespace Nop.Web.Controllers.Api.Security
 
             //model
             var model = await PrepareApiProductOverviewModels(products);
-            
+
             if (searchModel.Popular == true)
             {
                 model = model.OrderByDescending(p => p.PopularityCount);
@@ -494,7 +511,7 @@ namespace Nop.Web.Controllers.Api.Security
             }
             return Ok(model);
         }
-        
+
         [HttpGet("product/{productId}")]
         public async Task<IActionResult> ProductById(int productId)
         {
@@ -504,12 +521,12 @@ namespace Nop.Web.Controllers.Api.Security
             {
                 return NotFound(new { success = false, message = $"Product with id {productId} not found" });
             }
-            
-            var model = await PrepareApiProductOverviewModels(new []{ product });
-            
+
+            var model = await PrepareApiProductOverviewModels(new[] { product });
+
             return Ok(model.First());
         }
-        
+
         #endregion
 
         #region Product Review
