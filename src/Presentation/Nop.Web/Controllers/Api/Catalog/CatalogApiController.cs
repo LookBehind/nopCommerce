@@ -360,9 +360,17 @@ namespace Nop.Web.Controllers.Api.Security
                 if (product.HasDiscountsApplied)
                 {
                     var appliedDiscounts = await _discountService.GetAppliedDiscountsAsync(product);
-                    productOverviewApiModel.RibbonText = "-" + (int)appliedDiscounts[0].DiscountPercentage + "%";
-                    productOverviewApiModel.RibbonEnable = true;
 
+                    _discountService.GetPreferredDiscount(
+                        appliedDiscounts.Where(d => d.StartDateUtc <= DateTime.UtcNow && d.EndDateUtc > DateTime.UtcNow).ToList(),
+                        product.Price,
+                        out var discountAmount);
+
+                    if (discountAmount != 0)
+                    {
+                        productOverviewApiModel.RibbonText = $"-{(int)(discountAmount/product.Price) * 100}%";
+                        productOverviewApiModel.RibbonEnable = true;
+                    }
                 }
 
                 models.Add(productOverviewApiModel);
