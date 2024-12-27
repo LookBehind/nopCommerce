@@ -368,7 +368,7 @@ namespace Nop.Web.Controllers.Api.Security
 
                     if (discountAmount != 0)
                     {
-                        productOverviewApiModel.RibbonText = $"-{(int)(discountAmount/product.Price) * 100}%";
+                        productOverviewApiModel.RibbonText = $"-{(int)((discountAmount/product.Price) * 100)}%";
                         productOverviewApiModel.RibbonEnable = true;
                     }
                 }
