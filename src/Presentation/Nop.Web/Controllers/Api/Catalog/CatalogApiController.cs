@@ -362,7 +362,7 @@ namespace Nop.Web.Controllers.Api.Security
                     var appliedDiscounts = await _discountService.GetAppliedDiscountsAsync(product);
 
                     _discountService.GetPreferredDiscount(
-                        appliedDiscounts.Where(d => d.StartDateUtc <= DateTime.UtcNow && d.EndDateUtc > DateTime.UtcNow).ToList(),
+                        appliedDiscounts.Where(d => (d.StartDateUtc <= DateTime.UtcNow && d.EndDateUtc > DateTime.UtcNow) || (d.StartDateUtc == null && d.EndDateUtc == null)).ToList(),
                         product.Price,
                         out var discountAmount);
 
