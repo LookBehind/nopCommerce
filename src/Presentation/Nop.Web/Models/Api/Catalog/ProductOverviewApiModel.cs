@@ -25,6 +25,7 @@ namespace Nop.Web.Models.Api.Catalog
         public string ImageUrl { get; set; }
         public string Price { get; set; }
         public decimal PriceValue { get; set; }
+        public int DiscountAmount { get; set; }
         public int RatingSum { get; set; }
         public int TotalReviews { get; set; }
         public int PopularityCount { get; set; }

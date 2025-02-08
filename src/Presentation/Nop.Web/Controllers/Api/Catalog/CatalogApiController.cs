@@ -368,8 +368,9 @@ namespace Nop.Web.Controllers.Api.Security
 
                     if (discountAmount != 0)
                     {
-                        productOverviewApiModel.RibbonText = $"-{(int)((discountAmount/product.Price) * 100)}%";
+                        productOverviewApiModel.RibbonText = $"-{(int)((discountAmount / product.Price) * 100)}%";
                         productOverviewApiModel.RibbonEnable = true;
+                        productOverviewApiModel.DiscountAmount = (int)((discountAmount / product.Price) * 100);
                     }
                 }
 
@@ -516,6 +517,10 @@ namespace Nop.Web.Controllers.Api.Security
             else if (searchModel.TopRated == true)
             {
                 model = model.OrderByDescending(p => p.RatingSum / p.TotalReviews);
+            }
+            else if (searchModel.BestDeals == true)
+            {
+                model = model.OrderByDescending(p => p.DiscountAmount);
             }
             return Ok(model);
         }
@@ -666,6 +671,7 @@ namespace Nop.Web.Controllers.Api.Security
             public string Keyword { get; set; }
             public bool? PriceHigh { get; set; }
             public bool? PriceLow { get; set; }
+            public bool? BestDeals { get; set; }
             public bool? Popular { get; set; }
             public bool? TopRated { get; set; }
             public int? Page { get; set; }
