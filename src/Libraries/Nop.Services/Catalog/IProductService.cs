@@ -175,7 +175,8 @@ namespace Nop.Services.Catalog
             ProductSortingEnum orderBy = ProductSortingEnum.Position,
             bool showHidden = false,
             bool? overridePublished = null,
-            bool searchCustomerVendors = false);
+            bool searchCustomerVendors = false,
+            bool? onlyDiscounted = false);
 
         /// <summary>
         /// Gets products by product attribute
