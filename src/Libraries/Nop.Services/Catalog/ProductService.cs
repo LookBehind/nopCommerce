@@ -806,7 +806,8 @@ namespace Nop.Services.Catalog
             ProductSortingEnum orderBy = ProductSortingEnum.Position,
             bool showHidden = false,
             bool? overridePublished = null,
-            bool searchCustomerVendors = false)
+            bool searchCustomerVendors = false,
+            bool? onlyDiscounted = false)
         {
             //some databases don't support int.MaxValue
             if (pageSize == int.MaxValue)
@@ -930,6 +931,13 @@ namespace Nop.Services.Catalog
                     from p in productsQuery
                     from pbk in LinqToDB.LinqExtensions.InnerJoin(productsByKeywords, pbk => pbk == p.Id)
                     select p;
+            }
+
+            if (onlyDiscounted == true)
+            {
+                productsQuery = from p in productsQuery
+                                where p.HasDiscountsApplied
+                                select p;
             }
 
             if (categoryIds is not null)

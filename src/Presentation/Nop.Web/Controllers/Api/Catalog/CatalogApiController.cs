@@ -498,6 +498,7 @@ namespace Nop.Web.Controllers.Api.Security
                 categoryIds: categoryIds,
                 searchCustomerVendors: true,
                 vendorId: searchModel.VendorId ?? 0,
+                onlyDiscounted: searchModel.BestDeals,
                 orderBy: searchModel.PriceLow == true ? ProductSortingEnum.PriceAsc : searchModel.PriceHigh == true ? ProductSortingEnum.PriceDesc : ProductSortingEnum.Position));
 
             if (!products.Any())
@@ -520,7 +521,7 @@ namespace Nop.Web.Controllers.Api.Security
             }
             else if (searchModel.BestDeals == true)
             {
-                model = model.OrderByDescending(p => p.DiscountAmount);
+                model = model.Where(p => p.RibbonEnable == true);
             }
             return Ok(model);
         }
