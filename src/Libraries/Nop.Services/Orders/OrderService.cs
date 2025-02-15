@@ -194,10 +194,10 @@ namespace Nop.Services.Orders
 
         #region Orders
 
-        public virtual async Task<IDictionary<int, IList<Product>>> GetLastOrderedProductsByCustomerIds(
-            int[] customerIds, OrderStatus[] orderStatuses, int lastOrderedCount, DateTime excludeThoseWhoOrderedFor)
+        public virtual async Task<IDictionary<int, IList<(Product product, Order order)>>> GetLastOrderedProductsByCustomerIds(
+            int[] customerIds, OrderStatus[] orderStatuses, int lastOrderedCount)
         {
-            var result = new Dictionary<int, IList<Product>>();
+            var result = new Dictionary<int, IList<(Product product, Order order)>>();
             
             var validOrderStatuses = orderStatuses.Cast<int>().ToArray();
 
@@ -206,30 +206,21 @@ namespace Nop.Services.Orders
                 var lastOrdersOfCustomer = await (from oi in _orderItemRepository.Table
                         join o in _orderRepository.Table on oi.OrderId equals o.Id
                         where o.CustomerId == customerId &&
-                              validOrderStatuses.Contains(o.OrderStatusId)
+                              validOrderStatuses.Contains(o.OrderStatusId) &&
+                              o.ScheduleDate.Date <= DateTime.UtcNow.Date
                         join p in _productRepository.Table on oi.ProductId equals p.Id
                         select new
                         {
                             Product = p,
-                            OrderId = oi.OrderId,
-                            OrderScheduleDate = o.ScheduleDate.Date,
-                            CustomerId = o.CustomerId
+                            Order = o
                         })
-                    .OrderByDescending(r => r.OrderId)
+                    .OrderByDescending(r => r.Order.Id)
                     .Take(lastOrderedCount)
                     .ToArrayAsync();
 
-                if(lastOrdersOfCustomer.Length != 0 && lastOrdersOfCustomer.First().OrderScheduleDate != excludeThoseWhoOrderedFor.Date)
-                {
-                    result[customerId] = lastOrdersOfCustomer
-                        .OrderByDescending(r => r.OrderId)
-                        .Select(r => r.Product)
-                        .ToList();
-                }
-                else
-                {
-                    result[customerId] = new List<Product>();
-                }
+                result[customerId] = lastOrdersOfCustomer
+                    .Select(r => (r.Product, r.Order))
+                    .ToList();
             }
             
             return result;

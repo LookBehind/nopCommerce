@@ -83,7 +83,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             _firebaseApp = firebaseApp;
         }
 
-        private async Task<ICollection<CustomerNotificationMetadata>> GetCustomersToNotify(int loadLastOrders = 10)
+        private async Task<ICollection<CustomerNotificationMetadata>> GetCustomersToNotify(int loadLastOrders = 40)
         {
             var customersToNotify = new List<CustomerNotificationMetadata>();
             
@@ -93,19 +93,35 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             ICollection<Customer> customers =
                 await _customerService.GetAllPushNotificationCustomersAsync(isRemindMeNotification: true);
 
+            if (customers.Count == 0)
+                return Array.Empty<CustomerNotificationMetadata>();
+            
             var previouslyOrderedProductsByCustomerId =
                 await _orderService.GetLastOrderedProductsByCustomerIds(
                     customers.Select(c => c.Id).ToArray(), 
                     new[] {OrderStatus.Complete, OrderStatus.Pending, OrderStatus.Processing},
-                    loadLastOrders,
-                    // Exclude orders on today
-                    DateTime.UtcNow);
+                    loadLastOrders);
 
-            if (customers.Count == 0)
-                return Array.Empty<CustomerNotificationMetadata>();
+            var lastMonthSameWeekdays = Enumerable.Range(1, 4)
+                .Select(i => DateTime.UtcNow.Date.AddDays(-7 * i))
+                .ToHashSet();
             
             foreach (var customer in customers)
             {
+                var customerOrdersData = previouslyOrderedProductsByCustomerId[customer.Id];
+                
+                // If customer already ordered for today - we're not going to notify
+                if (customerOrdersData.First().order.ScheduleDate.Date == DateTime.UtcNow.Date)
+                { 
+                    continue;
+                }
+                
+                // Never ordered on this weekday, probably doesn't need a reminder
+                if (!customerOrdersData.Any(o => lastMonthSameWeekdays.Contains(o.order.ScheduleDate.Date)))
+                {
+                    continue;
+                }
+                
                 var timezoneInfo = !companies.TryGetValue(customer.Id, out var company) || company.TimeZone == null
                     ? await _dateTimeHelper.GetCustomerTimeZoneAsync(customer)
                     : TZConvert.GetTimeZoneInfo(company.TimeZone);
@@ -117,7 +133,10 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                 {
                     Customer = customer,
                     CurrentTime = customerTime,
-                    PreviouslyOrderedProducts = previouslyOrderedProductsByCustomerId[customer.Id]
+                    PreviouslyOrderedProducts = customerOrdersData
+                        .Select(o => o.product)
+                        .Take(20)
+                        .ToList()
                 });
             }
 
@@ -162,7 +181,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
 
                 var messages = await _ollamaApiClient.SendChat(new ChatRequest()
                     {
-                        Model = "llama3.1:8b-instruct-q8_0",
+                        Model = "llama-3.1-8b-instruct",
                         Stream = false,
                         KeepAlive = "30m",
                         Messages = new List<OllamaSharp.Models.Chat.Message>()
