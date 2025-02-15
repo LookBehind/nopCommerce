@@ -41,8 +41,8 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
                 ProjectId = "mysnacks-d8778"
             }));
             
-            services.AddScoped<IOllamaApiClient>(_ => new OllamaApiClient("http://desktop:11434", 
-                "llama3:instruct"));
+            services.AddScoped<IOllamaApiClient>(_ => new OllamaApiClient("http://litellm:4000", 
+                "llama-3.1-8b-instruct"));
         }
     }
 }
