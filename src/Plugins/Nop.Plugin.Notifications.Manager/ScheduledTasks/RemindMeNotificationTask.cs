@@ -111,14 +111,19 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                 var customerOrdersData = previouslyOrderedProductsByCustomerId[customer.Id];
                 
                 // If customer already ordered for today - we're not going to notify
-                if (customerOrdersData.First().order.ScheduleDate.Date == DateTime.UtcNow.Date)
+                if (customerOrdersData.Any() &&
+                    customerOrdersData.First().order.ScheduleDate.Date == DateTime.UtcNow.Date)
                 { 
+                    await _logger.InformationAsync($"Customer {customer.Email} already ordered for today, skipping notification", 
+                        customer: customer);
                     continue;
                 }
                 
                 // Never ordered on this weekday, probably doesn't need a reminder
                 if (!customerOrdersData.Any(o => lastMonthSameWeekdays.Contains(o.order.ScheduleDate.Date)))
                 {
+                    await _logger.InformationAsync($"Customer {customer.Email} never ordered on this weekday, skipping notification", 
+                        customer: customer);
                     continue;
                 }
                 
@@ -135,7 +140,6 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                     CurrentTime = customerTime,
                     PreviouslyOrderedProducts = customerOrdersData
                         .Select(o => o.product)
-                        .Take(20)
                         .ToList()
                 });
             }
