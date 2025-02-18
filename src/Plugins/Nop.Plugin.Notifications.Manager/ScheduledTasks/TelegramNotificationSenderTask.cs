@@ -54,6 +54,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
     private readonly AppSettings _appSettings;
     private readonly FirebaseApp _firebaseApp;
     private readonly ICustomerService _customerService;
+    private readonly IAddressService _addressService;
 
     private readonly static ConcurrentDictionary<long, Vendor> _chatIdToVendor = new();
 
@@ -66,7 +67,8 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
         AppSettings appSettings, 
         IOrderService orderService,
         FirebaseApp firebaseApp, 
-        ICustomerService customerService)
+        ICustomerService customerService,
+        IAddressService addressService)
     {
         _queuedEmail = queuedEmail;
         _vendor = vendor;
@@ -78,6 +80,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
         _orderService = orderService;
         _firebaseApp = firebaseApp;
         _customerService = customerService;
+        _addressService = addressService;
     }
 
     private async Task<Vendor?> TryGetVendorFromChat(Chat chat)
@@ -127,25 +130,52 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
     {
         var pendingStatusOrders = new List<int>() {(int)OrderStatus.Processing, (int)OrderStatus.Pending};
         if (botCommandDeliveredEvent.Command.StartsWith("/delivered", StringComparison.OrdinalIgnoreCase))
-        {
-            if(!int.TryParse(botCommandDeliveredEvent.Command.Substring(10, 2), out var deliveryHour))
-            {
-                await _logger.ErrorAsync($"Couldn't parse delivery hour from {botCommandDeliveredEvent.Command}");
-                return;
-            }
-            
+        {           
             var orders = await _orderService.SearchOrdersAsync(
                 vendorId: botCommandDeliveredEvent.Vendor.Id,
                 osIds: pendingStatusOrders,
-                schedulDate: DateTime.UtcNow.Date,
-                deliveryHour: deliveryHour - 4 /*UTC*/);
+                schedulDate: DateTime.UtcNow.Date);
 
             if (!orders.Any())
                 return;
-            
+
+            var qualifyingOrders = new List<Order>();
+            foreach(var order in orders)
+            {
+                var shippingAddress = await _addressService.GetAddressByIdAsync(order.ShippingAddressId);
+
+                var botCommandParts = botCommandDeliveredEvent.Command.Split('_');
+                var scheduleHour = botCommandParts[1];
+                var addressShortCode = botCommandParts[2];
+
+                if (int.Parse(scheduleHour) == order.ScheduleDate.Hour + 4)
+                {
+                    if (string.Equals(addressShortCode, "melik3", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (string.Equals(shippingAddress.Address1, "Melik Adamyan 2/2", StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(shippingAddress.Address2, "3rd floor", StringComparison.OrdinalIgnoreCase))
+                            qualifyingOrders.Add(order);
+                    }
+                    else if (string.Equals(addressShortCode, "melik5", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (string.Equals(shippingAddress.Address1, "Melik Adamyan 2/2", StringComparison.OrdinalIgnoreCase) && 
+                            string.Equals(shippingAddress.Address2, "5th floor", StringComparison.OrdinalIgnoreCase))
+                            qualifyingOrders.Add(order);
+                    }
+                    else if (string.Equals(addressShortCode, "cascade", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (string.Equals(shippingAddress.Address1, "Cascade Antarayin 11/1", StringComparison.OrdinalIgnoreCase))
+                            qualifyingOrders.Add(order);
+                    }
+                }
+            }
+
+            if (!qualifyingOrders.Any())
+                return;
+
             await _logger.InformationAsync($"Found {orders.Count} orders to notify about delivery");
-            
-            foreach (var order in orders)
+
+            foreach (var order in qualifyingOrders)
             {
                 var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
                 try
@@ -174,6 +204,8 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                         exception: e);
                 }
             }
+
+            await _telegramBotClient.SendTextMessageAsync(botCommandDeliveredEvent.Chat, $"Marked {qualifyingOrders.Count} as delivered");
         }
     }
     
@@ -321,4 +353,6 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
         var foundVendor = (await _vendor.GetAllVendorsAsync(email: queuedEmail.To)).SingleOrDefault();
         return foundVendor != null ? (true, foundVendor) : (false, null);
     }
+
+    
 }
