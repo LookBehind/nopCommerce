@@ -12,6 +12,7 @@ using FirebaseAdmin.Messaging;
 using Nop.Core.Configuration;
 using Nop.Core.Domain.Messages;
 using Nop.Core.Domain.Orders;
+using Nop.Core.Domain.Stores;
 using Nop.Core.Domain.Vendors;
 using Nop.Services.Common;
 using Nop.Services.Configuration;
@@ -19,6 +20,7 @@ using Nop.Services.Customers;
 using Nop.Services.Logging;
 using Nop.Services.Messages;
 using Nop.Services.Orders;
+using Nop.Services.Stores;
 using Nop.Services.Vendors;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -40,6 +42,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
     public const string TELEGRAM_NOTIFICATION_SENDER_TASK_NAME = "Nop.Plugin.Notifications.Manager.ScheduledTasks.TelegramNotificationSenderTask";
     public const string TELEGRAM_NOTIFICATION_SENDER_FRIENDLY_NAME = "Telegram notification sender";
     private const string VENDOR_TELEGRAM_CHANNEL_KEY = nameof(VENDOR_TELEGRAM_CHANNEL_KEY);
+    private const string STORE_TELEGRAM_CHANNEL_KEY = nameof(STORE_TELEGRAM_CHANNEL_KEY);
     private const string LAST_UPDATE_ID_SEEN_KEY = nameof(LAST_UPDATE_ID_SEEN_KEY);
     private static readonly string[] _trustedUsernames = { "lkbhnd", "hasmik_bars" };
     private static readonly TimeSpan _deleteEmailsOlderThan = TimeSpan.FromDays(7);
@@ -55,6 +58,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
     private readonly FirebaseApp _firebaseApp;
     private readonly ICustomerService _customerService;
     private readonly IAddressService _addressService;
+    private readonly IEmailAccountService _emailAccountService;
 
     private readonly static ConcurrentDictionary<long, Vendor> _chatIdToVendor = new();
 
@@ -68,7 +72,8 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
         IOrderService orderService,
         FirebaseApp firebaseApp, 
         ICustomerService customerService,
-        IAddressService addressService)
+        IAddressService addressService,
+        IEmailAccountService emailAccountService)
     {
         _queuedEmail = queuedEmail;
         _vendor = vendor;
@@ -81,6 +86,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
         _firebaseApp = firebaseApp;
         _customerService = customerService;
         _addressService = addressService;
+        _emailAccountService = emailAccountService;
     }
 
     private async Task<Vendor?> TryGetVendorFromChat(Chat chat)
@@ -312,6 +318,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
             try
             {
                 var (isVendorNotification, vendor) = await IsNotificationForVendorAsync(queuedEmail);
+                var (isStoreNotification, emailAccount) = await IsNotificationforStoreAsync(queuedEmail);
                 if (isVendorNotification)
                 {
                     var vendorGroupId = await _genericAttribute.GetAttributeAsync<long>(vendor,
@@ -320,6 +327,16 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                     if (vendorGroupId != 0)
                     {
                         await _telegramBotClient.SendTextMessageAsync(vendorGroupId, queuedEmail.Body);
+                    }
+                }
+                else if (isStoreNotification)
+                {
+                    var emailAccountGroupId = await _genericAttribute.GetAttributeAsync<long>(emailAccount,
+                        STORE_TELEGRAM_CHANNEL_KEY, defaultValue: 0);
+
+                    if (emailAccountGroupId != 0)
+                    {
+                        await _telegramBotClient.SendTextMessageAsync(emailAccountGroupId, queuedEmail.Body);
                     }
                 }
 
@@ -350,9 +367,18 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
 
     private async Task<(bool, Vendor)> IsNotificationForVendorAsync(QueuedEmail queuedEmail)
     {
+        // TODO: use memory cache (IDistributedMemoryCache, or MemoryCache)
         var foundVendor = (await _vendor.GetAllVendorsAsync(email: queuedEmail.To)).SingleOrDefault();
         return foundVendor != null ? (true, foundVendor) : (false, null);
     }
 
+    private async Task<(bool, EmailAccount?)> IsNotificationforStoreAsync(QueuedEmail queuedEmail)
+    {
+        // TODO: use memory cache (IDistributedMemoryCache, or MemoryCache)
+        var storeEmailAccounts = await _emailAccountService.GetAllEmailAccountsAsync();
+        var matchingEmailAccount = storeEmailAccounts.FirstOrDefault(e => string.Equals(e.Email, queuedEmail.To, StringComparison.OrdinalIgnoreCase));
+
+        return matchingEmailAccount == default ? (false, null) : (true, matchingEmailAccount);
+    }
     
 }
