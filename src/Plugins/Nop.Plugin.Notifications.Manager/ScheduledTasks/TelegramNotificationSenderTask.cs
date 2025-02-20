@@ -318,7 +318,6 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
             try
             {
                 var (isVendorNotification, vendor) = await IsNotificationForVendorAsync(queuedEmail);
-                var (isStoreNotification, emailAccount) = await IsNotificationforStoreAsync(queuedEmail);
                 if (isVendorNotification)
                 {
                     var vendorGroupId = await _genericAttribute.GetAttributeAsync<long>(vendor,
@@ -329,14 +328,17 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                         await _telegramBotClient.SendTextMessageAsync(vendorGroupId, queuedEmail.Body);
                     }
                 }
-                else if (isStoreNotification)
+                else
                 {
-                    var emailAccountGroupId = await _genericAttribute.GetAttributeAsync<long>(emailAccount,
-                        STORE_TELEGRAM_CHANNEL_KEY, defaultValue: 0);
+                    var (isStoreNotification, emailAccount) = await IsNotificationforStoreAsync(queuedEmail);
+                    if (isStoreNotification) {
+                        var emailAccountGroupId = await _genericAttribute.GetAttributeAsync<long>(emailAccount,
+                            STORE_TELEGRAM_CHANNEL_KEY, defaultValue: 0);
 
-                    if (emailAccountGroupId != 0)
-                    {
-                        await _telegramBotClient.SendTextMessageAsync(emailAccountGroupId, queuedEmail.Body);
+                        if (emailAccountGroupId != 0)
+                        {
+                            await _telegramBotClient.SendTextMessageAsync(emailAccountGroupId, queuedEmail.Body);
+                        }
                     }
                 }
 
