@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -2581,13 +2582,39 @@ namespace Nop.Services.Messages
                 CreatedOnUtc = DateTime.UtcNow,
                 EmailAccountId = emailAccount.Id,
                 DontSendBeforeDateUtc = !messageTemplate.DelayBeforeSend.HasValue ? null
-                    : (DateTime?)(DateTime.UtcNow + TimeSpan.FromHours(messageTemplate.DelayPeriod.ToHours(messageTemplate.DelayBeforeSend.Value)))
+                    : GetMessageSendingDateTime(messageTemplate, tokens)
             };
 
             await _queuedEmailService.InsertQueuedEmailAsync(email);
             return email.Id;
         }
 
+        private DateTime GetMessageSendingDateTime(MessageTemplate messageTemplate, IList<Token> tokens)
+        {
+            switch (messageTemplate.DelayPeriod)
+            {
+                case MessageDelayPeriod.Days:
+                    return DateTime.UtcNow.AddDays(messageTemplate.DelayBeforeSend!.Value);
+                case MessageDelayPeriod.Hours:
+                    return DateTime.UtcNow.AddHours(messageTemplate.DelayBeforeSend!.Value);
+                case MessageDelayPeriod.OrderScheduleDate:
+                {
+                    var scheduleDateUtc = DateTime.Parse((string)tokens
+                            .First(t => string.Equals(t.Key, "Order.ScheduleDateUtc")).Value,
+                        styles: DateTimeStyles.AssumeUniversal);
+                    return new DateTime(scheduleDateUtc.Year,
+                        scheduleDateUtc.Month,
+                        scheduleDateUtc.Day,
+                        messageTemplate.DelayBeforeSend!.Value,
+                        0,
+                        0,
+                        DateTimeKind.Utc);
+                }
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(messageTemplate.DelayPeriod));
+            };
+        }
+        
         #endregion
 
         #endregion

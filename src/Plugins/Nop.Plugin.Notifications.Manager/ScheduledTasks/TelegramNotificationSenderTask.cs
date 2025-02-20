@@ -309,8 +309,13 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
 
         var maxTries = 3;
 
-        var queuedEmails = await _queuedEmail.SearchEmailsAsync(null, null,
-            null, null, true, true, maxTries,
+        var queuedEmails = await _queuedEmail.SearchEmailsAsync(null, 
+            null,
+            null, 
+            null, 
+            true, 
+            true, 
+            maxTries,
             false);
         foreach (var queuedEmail in queuedEmails)
         {

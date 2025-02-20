@@ -41,7 +41,8 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
         private readonly string[] _allowedTokens =
         {
             "%Order.ProductsHumanReadable%",
-            "%Order.ScheduleDate%"
+            "%Order.ScheduleDateUtc%",
+            "%Order.ScheduleTime%"
         };
 
         public MessageTemplateOrderTokenProvider(
@@ -68,20 +69,28 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer
         {
             eventMessage.Tokens.Add(new Token("Order.ProductsHumanReadable",
                 await ProductOrdersHumanReadableAsync(eventMessage.Entity, eventMessage.AttachedParam), true));
-            eventMessage.Tokens.Add(new Token("Order.ScheduleDate",
-                await GetScheduleDateForVendorAsync(eventMessage.Entity.ScheduleDate, eventMessage.AttachedParam), true));
+            
+            await AddScheduleDateForVendorAsync(eventMessage);
         }
 
-        private async Task<string> GetScheduleDateForVendorAsync(DateTime scheduleDate, Vendor vendor)
+        private async Task AddScheduleDateForVendorAsync(EntityTokensAddedEvent<Order, Vendor, Token> eventMessage)
         {
+            var vendor = eventMessage.AttachedParam;
+            var scheduleDateUtc = eventMessage.Entity.ScheduleDate;
+            
             var vendorCustomer = (await _customerService.GetAllCustomersAsync(vendorId: vendor.Id))
                 .Single();
             var vendorTimezone = await _dateTimeHelper.GetCustomerTimeZoneAsync(
                 vendorCustomer);
 
-            return _dateTimeHelper.ConvertToUserTime(scheduleDate, TimeZoneInfo.Utc,
+            var formattedScheduleTime = _dateTimeHelper.ConvertToUserTime(scheduleDateUtc, 
+                    TimeZoneInfo.Utc,
                     vendorTimezone)
                 .ToString("t", DateTimeFormatInfo.InvariantInfo);
+
+            eventMessage.Tokens.Add(new Token("Order.ScheduleDateUtc",
+                scheduleDateUtc.ToString(DateTimeFormatInfo.InvariantInfo), true));
+            eventMessage.Tokens.Add(new Token("Order.ScheduleTime", formattedScheduleTime, true));
         }
 
         public Task HandleEventAsync(AdditionalTokensAddedEvent eventMessage)

@@ -13,6 +13,8 @@
         /// <summary>
         /// Days
         /// </summary>
-        Days = 1
+        Days = 1,
+        
+        OrderScheduleDate = 2
     }
 }
