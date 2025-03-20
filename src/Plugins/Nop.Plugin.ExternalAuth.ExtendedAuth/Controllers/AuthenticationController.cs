@@ -284,28 +284,29 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuthentication.Controllers
                 RedirectUri = "/" + socialMediaList.SocialMedias.Where(x => x.Name.ToLower() == authentication.ToLower()).Select(x => x.CallBackPath.ToLower()).FirstOrDefault() + "?returnUrl=" + returnUrl  //Url.Action("LoginCallback", "Authentication", new { returnUrl = returnUrl })
             };
 
-
             authenticationProperties.SetString(AuthenticationDefaults.ErrorCallback, Url.RouteUrl("Login", new { returnUrl }));
-
 
             return Challenge(authenticationProperties, authentication);
         }
 
-        // TODO: allow configurable whitelisting for Google
-        private bool RefactorMe_IsGoogleEmailDomainWhitelisted(string authenticationName, string email)
+        private async Task<Company?> TryDetectCompany(string authenticationName, string email)
         {
-            if (authenticationName.Equals(AuthenticationDefaults.GoogleAuthenticationScheme,
-                StringComparison.InvariantCultureIgnoreCase) &&
-                email.EndsWith("@servicetitan.com"))
-            {
-                return true;
-            }
-            return false;
+            if (!authenticationName.Equals(AuthenticationDefaults.GoogleAuthenticationScheme,
+                    StringComparison.OrdinalIgnoreCase)) 
+                return null;
+            
+            var companies = await _companyService.GetAllCompaniesAsync(
+                email: email.Split('@')[1]);
+            
+            return companies.SingleOrDefault();
         }
 
+        private bool IsApproved(Company? company) =>
+            company != null;
+        
         public async Task<IActionResult> LoginCallback(string returnUrl)
         {
-            string authenticationName = string.Empty;
+            var authenticationName = string.Empty;
             var urlPath = _httpContextAccessor.HttpContext.Request.Path;
             if (urlPath.HasValue)
             {
@@ -318,15 +319,19 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuthentication.Controllers
             if (!authenticateResult.Succeeded || !authenticateResult.Principal.Claims.Any())
                 return RedirectToRoute("Login");
 
-            bool isApproved = false;
             //create external authentication parameters
-            string email = authenticateResult.Principal.FindFirst(claim => claim.Type == ClaimTypes.Email)?.Value;
+            var email = authenticateResult.Principal
+                .FindFirst(claim => claim.Type == ClaimTypes.Email)?
+                .Value;
+            
+            var company = await TryDetectCompany(authenticationName, email);
+            
             var authenticationParameters = new ExternalAuthenticationParameters
             {
                 ProviderSystemName = AuthenticationDefaults.PluginSystemName,
                 AccessToken = await this.HttpContext.GetTokenAsync(authenticationName, "access_token"),
                 Email = email,
-                IsApproved = !isApproved ? RefactorMe_IsGoogleEmailDomainWhitelisted(authenticationName, email) : isApproved,
+                IsApproved = IsApproved(company),
                 ExternalIdentifier = authenticateResult.Principal.FindFirst(claim => claim.Type == ClaimTypes.NameIdentifier)?.Value,
                 ExternalDisplayIdentifier = authenticateResult.Principal.FindFirst(claim => claim.Type == ClaimTypes.Name)?.Value,
                 Claims = authenticateResult.Principal.Claims.Select(claim => new ExternalAuthenticationClaim(claim.Type, claim.Value)).ToList()
@@ -334,29 +339,25 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuthentication.Controllers
             var result = await _externalAuthenticationService.AuthenticateAsync(authenticationParameters, returnUrl);
             if (!string.IsNullOrEmpty(email))
             {
-                await _logger.InsertLogAsync(Nop.Core.Domain.Logging.LogLevel.Debug, "Email Found = " + email);
                 //get current logged-in user
                 var currentLoggedInUser = await _customerService.IsRegisteredAsync(await _workContext.GetCurrentCustomerAsync()) ? await _workContext.GetCurrentCustomerAsync() : null;
                 if (currentLoggedInUser != null)
                 {
-                    await _logger.InsertLogAsync(Nop.Core.Domain.Logging.LogLevel.Debug, "User Found" + currentLoggedInUser.Id);
-                    var companies = await _companyService.GetAllCompaniesAsync(email: email.Split('@')[1]);
-                    if (companies.Any())
+                    await _logger.InsertLogAsync(Nop.Core.Domain.Logging.LogLevel.Debug, 
+                        "User Found", customer: currentLoggedInUser);
+                    if (company != null)
                     {
-                        var companyId = companies.FirstOrDefault().Id;
-
                         //whether product Company with such parameters already exists
                         var checkCustomerCompanyMappingExist = await _companyService.GetCompanyCustomersByCustomerIdAsync(currentLoggedInUser.Id);
                         if (!checkCustomerCompanyMappingExist.Any())
                         {
                             await _logger.InsertLogAsync(Nop.Core.Domain.Logging.LogLevel.Debug, "Company Matched");
-                            await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = companyId, CustomerId = currentLoggedInUser.Id });
-                            isApproved = true;
-
-                            var companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(companyId);
+                            await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = company.Id, CustomerId = currentLoggedInUser.Id });
+                            
+                            var companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(company.Id);
                             if (companyCustomers.Any())
                             {
-                                var addresses = await _customerService.GetAddressesByCustomerIdAsync(companyCustomers.FirstOrDefault().CustomerId);
+                                var addresses = await _customerService.GetAddressesByCustomerIdAsync(companyCustomers.First().CustomerId);
                                 foreach (var address in addresses)
                                 {
                                     await _customerService.InsertCustomerAddressAsync(currentLoggedInUser, address);
@@ -365,7 +366,6 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuthentication.Controllers
                         }
                     }
                 }
-                email = authenticateResult.Principal.FindFirst(claim => claim.Type == ClaimTypes.Name)?.Value + "@" + authenticateResult.Principal.Identity.AuthenticationType + ".com";
             }
             //authenticate Nop user
             return result;
