@@ -231,7 +231,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                 try
                 {
                     if (update.Type == UpdateType.Message && 
-                        update.Message?.Type == MessageType.ChatMembersAdded &&
+                        update.Message?.Type == MessageType.NewChatMembers &&
                         update.Message?.NewChatMembers?.Any(m => m.Id == _telegramBotClient.BotId) == true)
                     {
                         var vendor = await TryGetVendorFromChat(update.Message!.Chat);
