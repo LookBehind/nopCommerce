@@ -6,15 +6,47 @@ using Telegram.Bot;
 using Telegram.Bot.Args;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Requests.Abstractions;
+using Telegram.Bot.Types;
 
 namespace Nop.Plugin.Notifications.Manager.Infrastructure;
 
 public class NullTelegramBotClient : ITelegramBotClient
 {
+    private long _botId;
+
+    public Task<TResponse> SendRequest<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = new CancellationToken())
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<TResponse> MakeRequest<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = new CancellationToken())
+    {
+        throw new NotImplementedException();
+    }
+
     public Task<TResponse> MakeRequestAsync<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = new CancellationToken())
     {
         throw new NotImplementedException();
     }
+
+    public Task<bool> TestApi(CancellationToken cancellationToken = new CancellationToken())
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task DownloadFile(string filePath, Stream destination, CancellationToken cancellationToken = new CancellationToken())
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task DownloadFile(TGFile file, Stream destination, CancellationToken cancellationToken = new CancellationToken())
+    {
+        throw new NotImplementedException();
+    }
+
+    public bool LocalBotServer { get; }
+
+    long ITelegramBotClient.BotId => _botId;
 
     public Task<bool> TestApiAsync(CancellationToken cancellationToken = new CancellationToken())
     {

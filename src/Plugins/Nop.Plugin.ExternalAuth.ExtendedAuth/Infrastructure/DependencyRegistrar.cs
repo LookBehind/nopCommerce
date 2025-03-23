@@ -9,7 +9,6 @@ using Nop.Core.Infrastructure;
 using Nop.Core.Infrastructure.DependencyManagement;
 using Nop.Plugin.ExternalAuth.ExtendedAuth.Service;
 using Nop.Services.Authentication.External;
-using Telegram.Bot;
 
 namespace Nop.Plugin.ExternalAuth.ExtendedAuth.Infrastructure
 {
