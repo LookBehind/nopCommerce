@@ -1916,7 +1916,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 var value = orderSettings.ScheduleDate.Split(',');//orderscheduleDate1.ResourceValue.Split(',');
                 model.ScheduleDate1 = value[0];
                 model.ScheduleDate2 = value[1];
-                model.ScheduleDate3 = value[2];
+                //model.ScheduleDate3 = value[2];
                 //model.ScheduleDate4 = value[3];
             }
             return View(model);
@@ -1937,10 +1937,10 @@ namespace Nop.Web.Areas.Admin.Controllers
             combineValue += model.ScheduleDate1 + ",";
 
             model.ScheduleDate2 = model.ScheduleDate2.Trim();
-            combineValue += model.ScheduleDate2 + ",";
+            combineValue += model.ScheduleDate2;// + ",";
 
-            model.ScheduleDate3 = model.ScheduleDate3.Trim();
-            combineValue += model.ScheduleDate3;// + ",";
+            // model.ScheduleDate3 = model.ScheduleDate3.Trim();
+            // combineValue += model.ScheduleDate3;// + ",";
 
             //model.ScheduleDate4 = model.ScheduleDate4.Trim();
             //combineValue += model.ScheduleDate4;
@@ -2027,7 +2027,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             if (isErrorExist)
                 return View(model);
 
-            orderSettings.ScheduleDate = model.ScheduleDate1 + "," + model.ScheduleDate2 + "," + model.ScheduleDate3; //+ "," + model.ScheduleDate4;
+            orderSettings.ScheduleDate = model.ScheduleDate1 + "," + model.ScheduleDate2;// + "," + model.ScheduleDate3; //+ "," + model.ScheduleDate4;
             await _settingService.SaveSettingAsync(orderSettings, x => x.ScheduleDate, clearCache: true);
             _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Orders.ScheduleDate.Updated"));
 

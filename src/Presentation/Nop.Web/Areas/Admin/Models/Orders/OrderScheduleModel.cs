@@ -11,8 +11,8 @@ namespace Nop.Web.Areas.Admin.Models.Orders
         [NopResourceDisplayName("Admin.Orders.Fields.ScheduleDate2")]
         public string ScheduleDate2 { get; set; }
 
-        [NopResourceDisplayName("Admin.Orders.Fields.ScheduleDate3")]
-        public string ScheduleDate3 { get; set; }
+        //[NopResourceDisplayName("Admin.Orders.Fields.ScheduleDate3")]
+        //public string ScheduleDate3 { get; set; }
 
         //[NopResourceDisplayName("Admin.Orders.Fields.ScheduleDate4")]
         //public string ScheduleDate4 { get; set; }
