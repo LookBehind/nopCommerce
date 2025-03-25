@@ -262,7 +262,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                             update.Message.Text!.Split('@').First()));
                     }
 
-                    lastSeenUpdateId = Math.Max(lastSeenUpdateId, update.Id);
+                    lastSeenUpdateId = Math.Max(lastSeenUpdateId, update.Id + 1);
                 
                 }
                 catch (Exception e)
