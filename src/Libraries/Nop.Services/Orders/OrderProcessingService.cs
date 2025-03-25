@@ -3329,7 +3329,7 @@ namespace Nop.Services.Orders
             var value = _orderSettings.ScheduleDate.Split(',');
             var scheduleDate1 = value[0];
             var scheduleDate2 = value[1];
-            var scheduleDate3 = value[2];
+            //var scheduleDate3 = value[2];
             //var scheduleDate4 = value[3];
             var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
 
@@ -3337,27 +3337,27 @@ namespace Nop.Services.Orders
             var firstOrederLastdate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(firstOrderLastHour[0]), Convert.ToInt32(firstOrderLastHour[1]), Convert.ToInt32(firstOrderLastHour[2]), DateTimeKind.Utc);
             var secondOrderLastHour = scheduleDate2.Split('-')[1].Split(':');
             var secondOrederLastdate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(secondOrderLastHour[0]), Convert.ToInt32(secondOrderLastHour[1]), Convert.ToInt32(secondOrderLastHour[2]), DateTimeKind.Utc);
-            var thirdOrderLastHour = scheduleDate3.Split('-')[1].Split(':');
-            var thirdOrederLastdate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(thirdOrderLastHour[0]), Convert.ToInt32(thirdOrderLastHour[1]), Convert.ToInt32(thirdOrderLastHour[2]), DateTimeKind.Utc);
+            //var thirdOrderLastHour = scheduleDate3.Split('-')[1].Split(':');
+            //var thirdOrederLastdate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(thirdOrderLastHour[0]), Convert.ToInt32(thirdOrderLastHour[1]), Convert.ToInt32(thirdOrderLastHour[2]), DateTimeKind.Utc);
             //var forthOrderLastHour = scheduleDate4.Split('-')[1].Split(':');
             //var forthOrederLastdate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(forthOrderLastHour[0]), Convert.ToInt32(forthOrderLastHour[1]), Convert.ToInt32(forthOrderLastHour[2]), DateTimeKind.Utc);
 
             var firstDeliveryHour = scheduleDate1.Split('-')[2].Split(':');
             var secondDeliverHour = scheduleDate2.Split('-')[2].Split(':');
-            var thirdDeliveryHour = scheduleDate3.Split('-')[2].Split(':');
+            //var thirdDeliveryHour = scheduleDate3.Split('-')[2].Split(':');
             //var forthDeliveryHour = scheduleDate4.Split('-')[2].Split(':');
 
             var firstDeliverDate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(firstDeliveryHour[0]), Convert.ToInt32(firstDeliveryHour[1]), Convert.ToInt32(firstDeliveryHour[2]), DateTimeKind.Utc);
             var secondDeliveryDate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(secondDeliverHour[0]), Convert.ToInt32(secondDeliverHour[1]), Convert.ToInt32(secondDeliverHour[2]), DateTimeKind.Utc);
-            var thirdDeliveryDate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(thirdDeliveryHour[0]), Convert.ToInt32(thirdDeliveryHour[1]), Convert.ToInt32(thirdDeliveryHour[2]), DateTimeKind.Utc);
+            //var thirdDeliveryDate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(thirdDeliveryHour[0]), Convert.ToInt32(thirdDeliveryHour[1]), Convert.ToInt32(thirdDeliveryHour[2]), DateTimeKind.Utc);
             //var forthDeliveryDate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(forthDeliveryHour[0]), Convert.ToInt32(forthDeliveryHour[1]), Convert.ToInt32(forthDeliveryHour[2]), DateTimeKind.Utc);
 
             //if (now > forthOrederLastdate)
-            if (now > thirdOrederLastdate)
+            if (now > secondDeliveryDate)
             {
                 list.Add(firstDeliverDate.AddDays(1));
                 list.Add(secondDeliveryDate.AddDays(1));
-                list.Add(thirdDeliveryDate.AddDays(1));
+                //list.Add(thirdDeliveryDate.AddDays(1));
                 //list.Add(forthDeliveryDate.AddDays(1));
             }
             else
@@ -3366,19 +3366,19 @@ namespace Nop.Services.Orders
                 {
                     list.Add(firstDeliverDate);
                     list.Add(secondDeliveryDate);
-                    list.Add(thirdDeliveryDate);
+                    //list.Add(thirdDeliveryDate);
                     //list.Add(forthDeliveryDate);
                 }
                 else if (now <= secondOrederLastdate)
                 {
                     list.Add(secondDeliveryDate);
-                    list.Add(thirdDeliveryDate);
+                    //list.Add(thirdDeliveryDate);
                     //list.Add(forthDeliveryDate);
                 }
                 //else if (now <= thirdOrederLastdate)
                 else
                 {
-                    list.Add(thirdDeliveryDate);
+                    //list.Add(thirdDeliveryDate);
                     //list.Add(forthDeliveryDate);
                 }
                 // else
