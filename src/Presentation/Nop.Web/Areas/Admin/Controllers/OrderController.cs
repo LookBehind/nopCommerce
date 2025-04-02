@@ -1913,11 +1913,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             var scheduleDateSetting = await _settingService.SettingExistsAsync(orderSettings, x => x.ScheduleDate, storeId);
             if (scheduleDateSetting && !string.IsNullOrWhiteSpace(orderSettings.ScheduleDate))
             {
-                var value = orderSettings.ScheduleDate.Split(',');//orderscheduleDate1.ResourceValue.Split(',');
-                model.ScheduleDate1 = value[0];
-                model.ScheduleDate2 = value[1];
-                model.ScheduleDate3 = value[2];
-                //model.ScheduleDate4 = value[3];
+                model.ScheduleDates = orderSettings.ScheduleDate.Split(',').ToList();
             }
             return View(model);
         }
@@ -1928,30 +1924,15 @@ namespace Nop.Web.Areas.Admin.Controllers
             if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
                 return AccessDeniedView();
 
-            if (string.IsNullOrWhiteSpace(model.ScheduleDate1))
+            if (model.ScheduleDates == null || model.ScheduleDates.All(string.IsNullOrWhiteSpace))
                 return View(model);
-
-            var combineValue = "";
-
-            model.ScheduleDate1 = model.ScheduleDate1.Trim();
-            combineValue += model.ScheduleDate1 + ",";
-
-            model.ScheduleDate2 = model.ScheduleDate2.Trim();
-            combineValue += model.ScheduleDate2 + ",";
-
-            model.ScheduleDate3 = model.ScheduleDate3.Trim();
-            combineValue += model.ScheduleDate3;// + ",";
-
-            //model.ScheduleDate4 = model.ScheduleDate4.Trim();
-            //combineValue += model.ScheduleDate4;
 
             var storeId = await _storeContext.GetActiveStoreScopeConfigurationAsync();
             var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>(storeId);
-            var storeScope = await _storeContext.GetActiveStoreScopeConfigurationAsync();
             long ticksPerMinute = 600000000;
-            var array = combineValue.Split(',');
-            bool isErrorExist = false;
-            for (int i = 0; i <= array.Length; i++)
+            var array = model.ScheduleDates;
+            var isErrorExist = false;
+            for (var i = 0; i <= array.Count; i++)
             {
                 if (i == 0)
                 {
@@ -1972,7 +1953,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                         break;
                     }
                 }
-                if (i > 0 && (i + 1) < array.Length)
+                if (i > 0 && (i + 1) < array.Count)
                 {
                     var prevRow = Array.ConvertAll(array[i - 1].Split('-'), s => TimeSpan.Parse(s));
                     var currentRow = Array.ConvertAll(array[i].Split('-'), s => TimeSpan.Parse(s));
@@ -1999,14 +1980,14 @@ namespace Nop.Web.Areas.Admin.Controllers
                     }
                 }
 
-                if ((i + 1) == array.Length)
+                if ((i + 1) == array.Count)
                 {
                     var firstRow = Array.ConvertAll(array[0].Split('-'), s => TimeSpan.Parse(s));
                     var prevRow = Array.ConvertAll(array[i - 1].Split('-'), s => TimeSpan.Parse(s));
-                    var currRow = Array.ConvertAll(array[array.Length - 1].Split('-'), s => TimeSpan.Parse(s));
+                    var currRow = Array.ConvertAll(array[array.Count - 1].Split('-'), s => TimeSpan.Parse(s));
                     if (currRow[0].Ticks > currRow[1].Ticks || currRow[2].Ticks < currRow[1].Ticks)
                     {
-                        _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[array.Length - 1].ToString()));
+                        _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[array.Count - 1].ToString()));
                         isErrorExist = true;
                         break;
                     }
@@ -2024,10 +2005,11 @@ namespace Nop.Web.Areas.Admin.Controllers
                     }
                 }
             }
+            
             if (isErrorExist)
                 return View(model);
 
-            orderSettings.ScheduleDate = model.ScheduleDate1 + "," + model.ScheduleDate2 + "," + model.ScheduleDate3; //+ "," + model.ScheduleDate4;
+            orderSettings.ScheduleDate = string.Join(',', model.ScheduleDates);
             await _settingService.SaveSettingAsync(orderSettings, x => x.ScheduleDate, clearCache: true);
             _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Orders.ScheduleDate.Updated"));
 

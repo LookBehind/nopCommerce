@@ -3324,68 +3324,77 @@ namespace Nop.Services.Orders
         {
             var currentCustomer = await _workContext.GetCurrentCustomerAsync();
             var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
-            var timezoneInfo = company == null ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer) : TZConvert.GetTimeZoneInfo(company.TimeZone);
+            var timezoneInfo = company == null
+                ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
+                : TZConvert.GetTimeZoneInfo(company.TimeZone);
+            
             var list = new List<DateTime>();
-            var value = _orderSettings.ScheduleDate.Split(',');
-            var scheduleDate1 = value[0];
-            var scheduleDate2 = value[1];
-            var scheduleDate3 = value[2];
-            //var scheduleDate4 = value[3];
-            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
+            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, 
+                TimeZoneInfo.Utc, 
+                timezoneInfo);
 
-            var firstOrderLastHour = scheduleDate1.Split('-')[1].Split(':');
-            var firstOrederLastdate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(firstOrderLastHour[0]), Convert.ToInt32(firstOrderLastHour[1]), Convert.ToInt32(firstOrderLastHour[2]), DateTimeKind.Utc);
-            var secondOrderLastHour = scheduleDate2.Split('-')[1].Split(':');
-            var secondOrederLastdate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(secondOrderLastHour[0]), Convert.ToInt32(secondOrderLastHour[1]), Convert.ToInt32(secondOrderLastHour[2]), DateTimeKind.Utc);
-            var thirdOrderLastHour = scheduleDate3.Split('-')[1].Split(':');
-            var thirdOrederLastdate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(thirdOrderLastHour[0]), Convert.ToInt32(thirdOrderLastHour[1]), Convert.ToInt32(thirdOrderLastHour[2]), DateTimeKind.Utc);
-            //var forthOrderLastHour = scheduleDate4.Split('-')[1].Split(':');
-            //var forthOrederLastdate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(forthOrderLastHour[0]), Convert.ToInt32(forthOrderLastHour[1]), Convert.ToInt32(forthOrderLastHour[2]), DateTimeKind.Utc);
+            // Parse all schedule dates from settings
+            var scheduleDateValues = _orderSettings.ScheduleDate.Split(',');
+            var deliverySlots = new List<(DateTime lastOrderTime, DateTime deliveryTime)>();
 
-            var firstDeliveryHour = scheduleDate1.Split('-')[2].Split(':');
-            var secondDeliverHour = scheduleDate2.Split('-')[2].Split(':');
-            var thirdDeliveryHour = scheduleDate3.Split('-')[2].Split(':');
-            //var forthDeliveryHour = scheduleDate4.Split('-')[2].Split(':');
-
-            var firstDeliverDate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(firstDeliveryHour[0]), Convert.ToInt32(firstDeliveryHour[1]), Convert.ToInt32(firstDeliveryHour[2]), DateTimeKind.Utc);
-            var secondDeliveryDate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(secondDeliverHour[0]), Convert.ToInt32(secondDeliverHour[1]), Convert.ToInt32(secondDeliverHour[2]), DateTimeKind.Utc);
-            var thirdDeliveryDate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(thirdDeliveryHour[0]), Convert.ToInt32(thirdDeliveryHour[1]), Convert.ToInt32(thirdDeliveryHour[2]), DateTimeKind.Utc);
-            //var forthDeliveryDate = new DateTime(now.Year, now.Month, now.Day, Convert.ToInt32(forthDeliveryHour[0]), Convert.ToInt32(forthDeliveryHour[1]), Convert.ToInt32(forthDeliveryHour[2]), DateTimeKind.Utc);
-
-            //if (now > forthOrederLastdate)
-            if (now > thirdOrederLastdate)
+            // Process each schedule date entry
+            foreach (var scheduleDate in scheduleDateValues)
             {
-                list.Add(firstDeliverDate.AddDays(1));
-                list.Add(secondDeliveryDate.AddDays(1));
-                list.Add(thirdDeliveryDate.AddDays(1));
-                //list.Add(forthDeliveryDate.AddDays(1));
+                // Each schedule date format is expected to be like "label-lastOrderTime-deliveryTime"
+                var parts = scheduleDate.Split('-');
+                if (parts.Length < 3)
+                {
+                    await _logger.ErrorAsync($"Delivery schedule is of invalid format, {scheduleDate}");
+                    continue;
+                }
+
+                var lastOrderHourParts = parts[1].Split(':');
+                var deliveryHourParts = parts[2].Split(':');
+
+                // Create DateTime objects for last order time and delivery time
+                var lastOrderTime = new DateTime(
+                    now.Year, now.Month, now.Day,
+                    Convert.ToInt32(lastOrderHourParts[0]),
+                    Convert.ToInt32(lastOrderHourParts[1]),
+                    Convert.ToInt32(lastOrderHourParts[2]),
+                    DateTimeKind.Utc);
+
+                var deliveryTime = new DateTime(
+                    now.Year, now.Month, now.Day,
+                    Convert.ToInt32(deliveryHourParts[0]),
+                    Convert.ToInt32(deliveryHourParts[1]),
+                    Convert.ToInt32(deliveryHourParts[2]),
+                    DateTimeKind.Utc);
+
+                deliverySlots.Add((lastOrderTime, deliveryTime));
+            }
+
+            // If current time is past all delivery times of today, add all slots for tomorrow
+            if (now > deliverySlots.Max(slot => slot.lastOrderTime))
+            {
+                foreach (var slot in deliverySlots)
+                {
+                    list.Add(slot.deliveryTime.AddDays(1));
+                }
             }
             else
             {
-                if (now <= firstOrederLastdate)
+                // Add all applicable delivery times based on current time
+                for (var i = 0; i < deliverySlots.Count; i++)
                 {
-                    list.Add(firstDeliverDate);
-                    list.Add(secondDeliveryDate);
-                    list.Add(thirdDeliveryDate);
-                    //list.Add(forthDeliveryDate);
+                    if (now <= deliverySlots[i].lastOrderTime)
+                    {
+                        // If we're before this slot's cutoff time, add all remaining delivery slots
+                        for (var j = i; j < deliverySlots.Count; j++)
+                        {
+                            list.Add(deliverySlots[j].deliveryTime);
+                        }
+
+                        break;
+                    }
                 }
-                else if (now <= secondOrederLastdate)
-                {
-                    list.Add(secondDeliveryDate);
-                    list.Add(thirdDeliveryDate);
-                    //list.Add(forthDeliveryDate);
-                }
-                //else if (now <= thirdOrederLastdate)
-                else
-                {
-                    list.Add(thirdDeliveryDate);
-                    //list.Add(forthDeliveryDate);
-                }
-                // else
-                // {
-                //     list.Add(forthDeliveryDate);
-                // }
             }
+
             return list;
         }
         #endregion

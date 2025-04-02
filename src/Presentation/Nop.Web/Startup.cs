@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Nop.Core.Configuration;
@@ -108,14 +109,17 @@ namespace Nop.Web
 		/// <param name="application">Builder for configuring an application's request pipeline</param>
 		public void Configure(IApplicationBuilder application)
 		{
-			application.UseSwagger();
-			// Enable middleware to serve swagger-ui (HTML, JS, CSS, etc.), 
-			// specifying the Swagger JSON endpoint.
-			application.UseSwaggerUI(c =>
-			{
-				c.SwaggerEndpoint("/swagger/v1/swagger.json", "My Snacks LLC API");
-				c.RoutePrefix = "swagger";
-			});
+            if(_webHostEnvironment.IsDevelopment())
+            {
+                application.UseSwagger();
+                // Enable middleware to serve swagger-ui (HTML, JS, CSS, etc.), 
+                // specifying the Swagger JSON endpoint.
+                application.UseSwaggerUI(c =>
+                {
+                    c.SwaggerEndpoint("/swagger/v1/swagger.json", "My Snacks LLC API");
+                    c.RoutePrefix = "swagger";
+                });
+            }
 			 // global cors policy
 			application.UseCors(x => x
 				.AllowAnyOrigin()

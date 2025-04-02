@@ -6,17 +6,8 @@
   <LocaleResource Name="Admin.Orders.EditOrderScheduleDetails">
     <Value>Edit Schedule Dates</Value>
   </LocaleResource>
-  <LocaleResource Name="Admin.Orders.Fields.ScheduleDate1">
-    <Value>Schedule Date 1</Value>
-  </LocaleResource>
-  <LocaleResource Name="Admin.Orders.Fields.ScheduleDate2">
-    <Value>Schedule Date 2</Value>
-  </LocaleResource>
-  <LocaleResource Name="Admin.Orders.Fields.ScheduleDate3">
-    <Value>Schedule Date 3</Value>
-  </LocaleResource>
-  <LocaleResource Name="Admin.Orders.Fields.ScheduleDate4">
-    <Value>Schedule Date 4</Value>
+  <LocaleResource Name="Admin.Orders.Fields.ScheduleDate">
+    <Value>Schedule Date</Value>
   </LocaleResource>
   <LocaleResource Name="Product.Not.Found">
     <Value>Product not found</Value>
