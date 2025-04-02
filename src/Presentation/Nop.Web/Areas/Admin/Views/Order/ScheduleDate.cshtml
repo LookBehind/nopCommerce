@@ -30,62 +30,24 @@
             <div class="panel-body">
                 <div class="panel panel-default sub-panel">
                     <div class="panel-body">
-                        <div class="form-group row">
-                            <div class="col-md-2">
-                                <nop-label asp-for="ScheduleDate1" />
-                            </div>
-                            <div class="col-md-6">
-                                <div class="input-group timerange">
-                                    <nop-editor asp-for="ScheduleDate1" />
-                                    <span class="input-group-addon" style="">
-                                        <i aria-hidden="true" class="far fa-calendar"></i>
-                                    </span>
+                        @for (var i = 0; i < Model.ScheduleDates.Count; i++)
+                        {
+                            <div class="form-group row">
+                                <div class="col-md-2">
+                                    <nop-label asp-for="ScheduleDates[i]" />
                                 </div>
-                                <span asp-validation-for="ScheduleDate1"></span>
-                            </div>
-                        </div>
-                        <div class="form-group row">
-                            <div class="col-md-2">
-                                <nop-label asp-for="ScheduleDate2" />
-                            </div>
-                            <div class="col-md-6">
-                                <div class="input-group timerange">
-                                    <nop-editor asp-for="ScheduleDate2" />
-                                    <span class="input-group-addon" style="">
-                                        <i aria-hidden="true" class="far fa-calendar"></i>
-                                    </span>
+                                <div class="col-md-6">
+                                    <div class="input-group timerange">
+                                        @Html.EditorFor(m => m.ScheduleDates[i])
+                                        @* <nop-editor asp-for="ScheduleDates[i]" /> *@
+                                        <span class="input-group-addon" style="">
+                                            <i aria-hidden="true" class="far fa-calendar"></i>
+                                        </span>
+                                    </div>
+                                    <span asp-validation-for="ScheduleDates[i]"></span>
                                 </div>
-                                <span asp-validation-for="ScheduleDate2"></span>
                             </div>
-                        </div>
-                        @* <div class="form-group row"> *@
-                        @*     <div class="col-md-2"> *@
-                        @*         <nop-label asp-for="ScheduleDate3" /> *@
-                        @*     </div> *@
-                        @*     <div class="col-md-6"> *@
-                        @*         <div class="input-group timerange"> *@
-                        @*             <nop-editor asp-for="ScheduleDate3" /> *@
-                        @*             <span class="input-group-addon" style=""> *@
-                        @*                 <i aria-hidden="true" class="far fa-calendar"></i> *@
-                        @*             </span> *@
-                        @*         </div> *@
-                        @*         <span asp-validation-for="ScheduleDate3"></span> *@
-                        @*     </div> *@
-                        @* </div> *@
-                        @* <div class="form-group row"> *@
-                        @*     <div class="col-md-2"> *@
-                        @*         <nop-label asp-for="ScheduleDate4" /> *@
-                        @*     </div> *@
-                        @*     <div class="col-md-6"> *@
-                        @*         <div class="input-group timerange"> *@
-                        @*             <nop-editor asp-for="ScheduleDate4" /> *@
-                        @*             <span class="input-group-addon" style=""> *@
-                        @*                 <i aria-hidden="true" class="far fa-calendar"></i> *@
-                        @*             </span> *@
-                        @*         </div> *@
-                        @*         <span asp-validation-for="ScheduleDate4"></span> *@
-                        @*     </div> *@
-                        @* </div> *@
+                        }
                     </div>
                 </div>
             </div>
