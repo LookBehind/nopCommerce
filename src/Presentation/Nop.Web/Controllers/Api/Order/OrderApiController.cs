@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 using Expo.Server.Client;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
@@ -12,7 +10,9 @@ using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Tax;
 using Nop.Services.Catalog;
+using Nop.Services.Common;
 using Nop.Services.Companies;
+using Nop.Services.Configuration;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Helpers;
@@ -23,29 +23,21 @@ using Nop.Services.Orders;
 using Nop.Services.Payments;
 using Nop.Services.Seo;
 using Nop.Services.Vendors;
+using Nop.Web.Extensions.Api;
 using Nop.Web.Framework.Mvc.Filters;
+using Nop.Web.Models.Api.Catalog;
+using Nop.Web.Models.Api.Order;
 using Nop.Web.Models.Api.Security;
+using Nop.Web.Models.Catalog;
 using Nop.Web.Models.Order;
 using TimeZoneConverter;
-using System.Collections.Generic;
-using Nop.Web.Models.Api.Catalog;
-using Newtonsoft.Json.Linq;
-using System.IO;
-using System.Text;
-using Newtonsoft.Json;
-using Nop.Core.Configuration;
-using Nop.Core.Domain.Logging;
-using Nop.Services.Configuration;
-using Nop.Web.Extensions.Api;
-using Nop.Web.Models.Api.Order;
-using Nop.Web.Models.Catalog;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
-namespace Nop.Web.Controllers.Api.Security
+namespace Nop.Web.Controllers.Api.Order
 {
     [Produces("application/json")]
     [Route("api/order")]
-    [AuthorizeAttribute]
+    [Authorize]
     public class OrderApiController : BaseApiController
     {
         #region Fields
@@ -72,7 +64,10 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly IProductAttributeService _productAttributeService;
         private readonly ShoppingCartSettings _shoppingCartSettings;
         private readonly ILogger _logger;
-        private readonly ISettingService _settingsService;
+        private readonly ICheckoutAttributeService _checkoutAttributeService;
+        private readonly IGenericAttributeService _genericAttributeService;
+        private readonly ICheckoutAttributeParser _checkoutAttributeParser;
+        
 
         #endregion
 
@@ -100,7 +95,9 @@ namespace Nop.Web.Controllers.Api.Security
             ShoppingCartSettings shoppingCartSettings, 
             IProductAttributeService productAttributeService, 
             ILogger logger, 
-            ISettingService settingsService)
+            ICheckoutAttributeService checkoutAttributeService, 
+            IGenericAttributeService genericAttributeService, 
+            ICheckoutAttributeParser checkoutAttributeParser)
         {
             _orderService = orderService;
             _customerService = customerService;
@@ -124,7 +121,9 @@ namespace Nop.Web.Controllers.Api.Security
             _shoppingCartSettings = shoppingCartSettings;
             _productAttributeService = productAttributeService;
             _logger = logger;
-            _settingsService = settingsService;
+            _checkoutAttributeService = checkoutAttributeService;
+            _genericAttributeService = genericAttributeService;
+            _checkoutAttributeParser = checkoutAttributeParser;
         }
 
         #endregion
@@ -486,7 +485,8 @@ namespace Nop.Web.Controllers.Api.Security
         }
         
         [HttpPost("order-confirmation/{scheduleDate}")]
-        public async Task<IActionResult> OrderConfirmation(string scheduleDate)
+        public async Task<IActionResult> OrderConfirmation(string scheduleDate, 
+            [FromBody]OrderConfirmationApiModel? orderConfirmationApiModel)
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
@@ -507,6 +507,43 @@ namespace Nop.Web.Controllers.Api.Security
                         "If the issue still persist please notify MySnacks team."
                 });
             }
+            
+            // Replace checkout attributes
+            if(orderConfirmationApiModel != null)
+            {
+                var allCheckoutAttributes = await _checkoutAttributeService.GetAllCheckoutAttributesAsync(store.Id);
+                
+                // Notes
+                if(!string.IsNullOrEmpty(orderConfirmationApiModel.Notes))
+                {
+                    var notesAttribute = allCheckoutAttributes.SingleOrDefault(a =>
+                        string.Equals(a.Name, nameof(orderConfirmationApiModel.Notes), StringComparison.OrdinalIgnoreCase));
+
+                    if (notesAttribute != null)
+                    {
+                        var checkoutAttributesXml =
+                            await _genericAttributeService.GetAttributeAsync<string>(customer, 
+                                NopCustomerDefaults.CheckoutAttributes,
+                                store.Id);
+
+                        checkoutAttributesXml = _checkoutAttributeParser.RemoveCheckoutAttribute(checkoutAttributesXml, 
+                            notesAttribute);
+                        checkoutAttributesXml = _checkoutAttributeParser.AddCheckoutAttribute(checkoutAttributesXml, 
+                            notesAttribute, orderConfirmationApiModel.Notes);
+                        
+                        await _genericAttributeService.SaveAttributeAsync(customer, 
+                            NopCustomerDefaults.CheckoutAttributes,
+                            checkoutAttributesXml, 
+                            store.Id);
+                    }
+                    else
+                    {
+                        await _logger.ErrorAsync("Notes checkout attribute was provided but wasn't found in store configuration.",
+                            customer: customer);
+                    }
+                }
+            }
+            
             
             var processPaymentRequest = new ProcessPaymentRequest();
             
