@@ -25,6 +25,7 @@ using Nop.Services.Security;
 
 namespace Nop.Web.Controllers.Api.Security
 {
+    [Authorize]
     [Produces("application/json")]
     [Route("api/account")]
     public class AccountApiController : BaseApiController
@@ -285,7 +286,6 @@ namespace Nop.Web.Controllers.Api.Security
             }
         }
 
-        [AllowAnonymous]
         [HttpPost("logout")]
         public async Task<IActionResult> Logout()
         {
@@ -302,7 +302,6 @@ namespace Nop.Web.Controllers.Api.Security
             return Ok(new { success = true, message = await _localizationService.GetResourceAsync("Customer.Logout.Successfully") });
         }
 
-        [AllowAnonymous]
         [HttpGet("check-customer-token")]
         public async Task<IActionResult> CheckCustomerToken()
         {
