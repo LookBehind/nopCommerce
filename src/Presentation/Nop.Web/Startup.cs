@@ -1,9 +1,12 @@
-﻿using System.Net;
+﻿using System.Linq;
+using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -132,7 +135,17 @@ namespace Nop.Web
                 var response = context.HttpContext.Response;
                 if (response.StatusCode == (int)HttpStatusCode.Unauthorized ||
                     response.StatusCode == (int)HttpStatusCode.Forbidden)
-                    response.Redirect("/Login");
+                {
+                    if (context.HttpContext.Request.Headers.Accept.Contains("application/json"))
+                    {
+                        response.ContentType = "application/json";
+                        response.WriteAsync(JsonSerializer.Serialize(new { status = false, message = "Unauthorized" }));
+                    }
+                    else
+                    {
+                        response.Redirect("/Login");                        
+                    }
+                }
                 return Task.CompletedTask;
             });
             application.ConfigureRequestPipeline();
