@@ -136,15 +136,15 @@ namespace Nop.Web
                 if (response.StatusCode == (int)HttpStatusCode.Unauthorized ||
                     response.StatusCode == (int)HttpStatusCode.Forbidden)
                 {
-                    if (context.HttpContext.Request.Headers.Accept.Contains("application/json"))
-                    {
-                        response.ContentType = "application/json";
-                        response.WriteAsync(JsonSerializer.Serialize(new { status = false, message = "Unauthorized" }));
-                    }
-                    else
-                    {
+                    // if (context.HttpContext.Request.Headers.Accept.Contains("application/json"))
+                    // {
+                    //     response.ContentType = "application/json";
+                    //     response.WriteAsync(JsonSerializer.Serialize(new { status = false, message = "Unauthorized" }));
+                    // }
+                    // else
+                    // {
                         response.Redirect("/Login");                        
-                    }
+                    //}
                 }
                 return Task.CompletedTask;
             });
