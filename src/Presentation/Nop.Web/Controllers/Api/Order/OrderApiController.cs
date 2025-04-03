@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Expo.Server.Client;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
@@ -486,7 +487,8 @@ namespace Nop.Web.Controllers.Api.Order
         
         [HttpPost("order-confirmation/{scheduleDate}")]
         public async Task<IActionResult> OrderConfirmation(string scheduleDate, 
-            [FromBody]OrderConfirmationApiModel? orderConfirmationApiModel)
+            [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)]
+            OrderConfirmationApiModel? orderConfirmationApiModel = null)
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
