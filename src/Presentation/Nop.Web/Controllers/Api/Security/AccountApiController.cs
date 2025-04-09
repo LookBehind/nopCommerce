@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
@@ -18,6 +21,7 @@ using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Localization;
+using Nop.Services.Logging;
 using Nop.Services.Media;
 using Nop.Services.Messages;
 using Nop.Services.Orders;
@@ -37,18 +41,16 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly CustomerSettings _customerSettings;
         private readonly IGenericAttributeService _genericAttributeService;
         private readonly ILocalizationService _localizationService;
-        private readonly IWorkflowMessageService _workflowMessageService;
         private readonly IWorkContext _workContext;
-        private readonly ICountryService _countryService;
-        private readonly IStateProvinceService _stateProvinceService;
         private readonly IAuthenticationService _authenticationService;
         private readonly IShoppingCartService _shoppingCartService;
         private readonly IConfiguration _config;
         private readonly IAddressService _addressService;
-        private readonly IEncryptionService _encryptionService;
         private readonly MediaSettings _mediaSettings;
         private readonly IPictureService _pictureService;
         private readonly ICompanyService _companyService;
+        private readonly ILogger _logger;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
         #endregion
 
@@ -59,19 +61,17 @@ namespace Nop.Web.Controllers.Api.Security
             CustomerSettings customerSettings,
             IGenericAttributeService genericAttributeService,
             ILocalizationService localizationService,
-            IWorkflowMessageService workflowMessageService,
-             ICountryService countryService,
-            IStateProvinceService stateProvinceService,
             IStoreContext storeContext,
             IWorkContext workContext,
             IAuthenticationService authenticationService,
             IShoppingCartService shoppingCartService,
             IConfiguration config,
             IAddressService addressService,
-            IEncryptionService encryptionService,
             MediaSettings mediaSettings,
             IPictureService pictureService,
-            ICompanyService companyService)
+            ICompanyService companyService,
+            ILogger logger,
+            IHttpContextAccessor httpContextAccessor)
         {
             _storeContext = storeContext;
             _customerRegistrationService = customerRegistrationService;
@@ -79,18 +79,16 @@ namespace Nop.Web.Controllers.Api.Security
             _customerSettings = customerSettings;
             _genericAttributeService = genericAttributeService;
             _localizationService = localizationService;
-            _workflowMessageService = workflowMessageService;
             _workContext = workContext;
-            _countryService = countryService;
-            _stateProvinceService = stateProvinceService;
             _authenticationService = authenticationService;
             _shoppingCartService = shoppingCartService;
             _config = config;
             _addressService = addressService;
-            _encryptionService = encryptionService;
             _mediaSettings = mediaSettings;
             _pictureService = pictureService;
             _companyService = companyService;
+            _logger = logger;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         #endregion
@@ -245,7 +243,7 @@ namespace Nop.Web.Controllers.Api.Security
                         //sign in new customer
                         await _authenticationService.SignInAsync(customer, false);
 
-                        var jwt = new JwtService(_config);
+                        var jwt = new JwtService(_config, _logger);
                         var token = jwt.GenerateSecurityToken(customer.Email, customer.Id);
 
                         var shippingAddress = customer.ShippingAddressId.HasValue ? await _addressService.GetAddressByIdAsync(customer.ShippingAddressId.Value) : null;
@@ -307,16 +305,21 @@ namespace Nop.Web.Controllers.Api.Security
         [HttpGet("check-customer-token")]
         public async Task<IActionResult> CheckCustomerToken()
         {
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            if (customer == null)
-                return Ok(new { success = false, message = await _localizationService.GetResourceAsync("Customer.Not.Found") });
-
-            var jwt = new JwtService(_config);
+            // TODO: FIX THIS!
+            if (_httpContextAccessor.HttpContext?.Items.TryGetValue("User", out var customerObj) != true ||
+                customerObj is not Nop.Core.Domain.Customers.Customer customer)
+            {
+                return Ok(new { success = false, message = await _localizationService.GetResourceAsync("Account.Login.WrongCredentials") });
+            }
+            
+            var jwt = new JwtService(_config, _logger);
+            
             var token = jwt.GenerateSecurityToken(customer.Email, customer.Id);
+            
             var shippingAddress = customer.ShippingAddressId.HasValue ? await _addressService.GetAddressByIdAsync(customer.ShippingAddressId.Value) : null;
             var firstName = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.FirstNameAttribute);
             var lastName = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.LastNameAttribute);
-
+            
             return Ok(new
             {
                 success = true,
@@ -328,7 +331,9 @@ namespace Nop.Web.Controllers.Api.Security
                 RemindMeNotification = customer.RemindMeNotification,
                 RateReminderNotification = customer.RateReminderNotification,
                 OrderStatusNotification = customer.OrderStatusNotification,
-                avatar = await _pictureService.GetPictureUrlAsync(await _genericAttributeService.GetAttributeAsync<int>(customer, NopCustomerDefaults.AvatarPictureIdAttribute), _mediaSettings.AvatarPictureSize, true)
+                avatar = await _pictureService.GetPictureUrlAsync(
+                    await _genericAttributeService.GetAttributeAsync<int>(customer, NopCustomerDefaults.AvatarPictureIdAttribute), 
+                    _mediaSettings.AvatarPictureSize, true)
             });
         }
 
