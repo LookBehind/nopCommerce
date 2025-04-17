@@ -144,16 +144,16 @@ namespace Nop.Web.Controllers.Integration
 
             var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
             var targetVendorId = (await _vendorService.GetAllVendorsAsync())
-                .FirstOrDefault(v => string.Equals(v.Name, orderRequest.Vendor, StringComparison.OrdinalIgnoreCase))?.Id
-                ?? kerpakVendorId;
+                .FirstOrDefault(v => string.Equals(v.Name, orderRequest.Vendor, StringComparison.OrdinalIgnoreCase))?.Id;
 
-            if (targetVendorId == kerpakVendorId)
+            if (targetVendorId == null)
             {
-                await _logger.WarningAsync($"Ordering through kerpak and couldn't find vendor with name {orderRequest.Vendor}. " +
+                await _logger.ErrorAsync($"Ordering through kerpak and couldn't find vendor with name {orderRequest.Vendor}. " +
                                            $"Possibly invalid name was passed or vendor needs to be added");
+                return Problem("Something went wrong");
             }
             
-            var orderProducts = await UpsertProducts(storeId, targetVendorId, orderRequest.Products);
+            var orderProducts = await UpsertProducts(storeId, targetVendorId.Value, orderRequest.Products);
             await _shoppingCartService.DeleteShoppingCartItemsAsync(customer, storeId, ShoppingCartType.ShoppingCart);
             foreach (var orderProduct in orderProducts)
             {
