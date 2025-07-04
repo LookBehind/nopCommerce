@@ -1309,6 +1309,25 @@ namespace Nop.Services.Catalog
         }
 
         /// <summary>
+        /// Gets number of products by vendor identifiers
+        /// </summary>
+        /// <param name="vendorIds">Vendor identifiers</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the number of products
+        /// </returns>
+        public async Task<IDictionary<int, int>> GetNumberOfPublishedProductsByVendorIdsAsync(int[] vendorIds)
+        {
+            if (vendorIds == null || !vendorIds.Any())
+                return new Dictionary<int, int>();
+            
+            return await _productRepository.Table
+                .Where(p => p.Published && vendorIds.Contains(p.VendorId) && !p.Deleted)
+                .GroupBy(p => p.VendorId)
+                .ToDictionaryAsync(g => g.Key, g => g.Count());;
+        }
+
+        /// <summary>
         /// Parse "required product Ids" property
         /// </summary>
         /// <param name="product">Product</param>

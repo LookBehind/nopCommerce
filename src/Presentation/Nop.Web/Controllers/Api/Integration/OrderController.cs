@@ -54,10 +54,11 @@ namespace Nop.Web.Controllers.Integration
             IEnumerable<ExternalProduct> externalProducts)
         {
             var results = new List<Product>();
-            
-            var existingProductsBySku = (await _productService.SearchProductsAsync(vendorId: vendorId,
-                storeId: storeId,
-                showHidden: true))
+
+            var existingProductsBySku = (await _productService.SearchProductsAsync(
+                    vendorId: vendorId,
+                    storeId: storeId,
+                    showHidden: true))
                 .ToLookup(p => p.Sku);
 
             foreach (var externalProduct in externalProducts)
@@ -140,7 +141,7 @@ namespace Nop.Web.Controllers.Integration
                 return NotFound(new ErrorMessage("Customer not found"));
 
             var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
-            var targetVendorId = (await _vendorService.GetAllVendorsAsync())
+            var targetVendorId = (await _vendorService.GetAllVendorsAsync(showHidden: true))
                 .FirstOrDefault(v => string.Equals(v.Name, orderRequest.Vendor, StringComparison.OrdinalIgnoreCase))?.Id;
 
             if (targetVendorId == null)

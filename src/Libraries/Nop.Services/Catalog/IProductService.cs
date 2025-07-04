@@ -286,6 +286,16 @@ namespace Nop.Services.Catalog
         /// The task result contains the number of products
         /// </returns>
         Task<int> GetNumberOfProductsByVendorIdAsync(int vendorId);
+        
+        /// <summary>
+        /// Gets number of products by vendor identifiers
+        /// </summary>
+        /// <param name="vendorId">Vendor identifier</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the number of products
+        /// </returns>
+        Task<IDictionary<int, int>> GetNumberOfPublishedProductsByVendorIdsAsync(int[] vendorIds);
 
         //TODO: migrate to an extension method
         /// <summary>
