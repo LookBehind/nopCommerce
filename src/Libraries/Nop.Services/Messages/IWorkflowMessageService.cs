@@ -89,6 +89,8 @@ namespace Nop.Services.Messages
         /// The task result contains the queued email identifier
         /// </returns>
         Task<IList<int>> SendOrderPlacedVendorNotificationAsync(Order order, Vendor vendor, int languageId);
+        
+        Task<IList<int>> ReplaceOrderPlacedVendorNotificationAsync(Order oldOrder, Order newOrder, Vendor vendor, int languageId);
 
         /// <summary>
         /// Sends an order Cancelled notification to a vendor

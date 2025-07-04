@@ -11,6 +11,7 @@
             toggleChangeOrderStatus(false);
             toggleOrderTotals(false);
             toggleCC(false);
+            toggleScheduleDate(false);
         });
 
         function toggleChangeOrderStatus(editmode) {
@@ -70,6 +71,16 @@
                 $('#btnEditCC').showElement();
                 $('#btnSaveCC').hideElement();
                 $('#btnCancelCC').hideElement();
+            }
+        }
+
+        function toggleScheduleDate(editmode) {
+            if (editmode) {
+                $('#pnlChangeScheduleDate').showElement();
+                $('#btnChangeScheduleDate').hideElement();
+            } else {
+                $('#pnlChangeScheduleDate').hideElement();
+                $('#btnChangeScheduleDate').showElement();
             }
         }
     </script>
@@ -164,7 +175,28 @@
                     <nop-label asp-for="ScheduleDate" />
                 </div>
                 <div class="col-md-9">
-                    <div class="form-text-row">@Model.ScheduleDate</div>
+                    <div class="input-group input-group-short">
+                        <div class="input-group-text align-items-start">
+                            <div class="form-text-row">@Model.ScheduleDate</div>
+                        </div>
+                        @if(!Model.IsLoggedInAsVendor) {
+                            <div class="input-group-btn">
+                                <button type="submit" name="btnChangeScheduleDate" onclick="toggleScheduleDate(true);return false;" id="btnChangeScheduleDate" class="btn btn-primary">
+                                    @T("Admin.Common.Change")
+                                </button>
+                                <div id="pnlChangeScheduleDate">
+                                    <nop-editor asp-for="ScheduleDate" />
+                                    <button type="submit" name="btnSaveScheduleDate" id="btnSaveScheduleDate" class="btn btn-primary mt-1 mr-1">
+                                        @T("Admin.Common.Save")
+                                    </button>
+                                    <nop-action-confirmation asp-button-id="btnSaveScheduleDate" />
+                                    <button type="submit" name="btnCancelScheduleDate" onclick="toggleScheduleDate(false);return false;" id="btnCancelScheduleDate" class="btn btn-secondary mt-1">
+                                        @T("Admin.Common.Cancel")
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
 

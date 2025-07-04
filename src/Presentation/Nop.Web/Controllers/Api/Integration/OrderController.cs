@@ -124,9 +124,6 @@ namespace Nop.Web.Controllers.Integration
         [ProducesResponseType((int)HttpStatusCode.OK)]
         public async Task<IActionResult> Order([FromRoute]string integration, [FromBody]OrderRequest orderRequest)
         {
-            var currentCustomer = await _workContext.GetCurrentCustomerAsync();
-            var kerpakVendorId = currentCustomer.VendorId;
-            
             if (!ModelState.IsValid ||
                 !string.Equals(integration, "kerpak", StringComparison.OrdinalIgnoreCase))
             {

@@ -447,7 +447,14 @@ namespace Nop.Services.Messages
                 return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
             }).ToListAsync();
         }
-        
+
+        public async Task<IList<int>> ReplaceOrderPlacedVendorNotificationAsync(Order oldOrder, 
+            Order newOrder, 
+            Vendor vendor, 
+            int languageId)
+        {
+            throw new NotImplementedException();
+        }
 
         /// <summary>
         /// Sends an order cancelled notification to a vendor

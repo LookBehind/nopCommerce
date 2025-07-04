@@ -1005,6 +1005,74 @@ namespace Nop.Web.Areas.Admin.Controllers
                 return View(model);
             }
         }
+        
+        [HttpPost, ActionName("Edit")]
+        [FormValueRequired("btnSaveScheduleDate")]
+        public virtual async Task<IActionResult> SaveScheduleDate(int id, OrderModel model)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
+                return AccessDeniedView();
+
+            //try to get an order with the specified id
+            var order = await _orderService.GetOrderByIdAsync(id);
+            if (order == null)
+                return RedirectToAction("List");
+
+            //try to get an customer with the order id
+            var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
+            if (customer == null)
+                return RedirectToAction("List");
+
+            //a vendor does not have access to this functionality
+            if (await _workContext.GetCurrentVendorAsync() != null)
+                return RedirectToAction("Edit", "Order", new { id });
+
+            try
+            {
+                var customerTimezone = await _dateTimeHelper.GetCustomerTimeZoneAsync(customer);
+                var scheduleDate = _dateTimeHelper.ConvertToUtcTime(model.ScheduleDate, customerTimezone);
+                
+                
+                
+                order.ScheduleDateTime = order.ScheduleDate = scheduleDate;
+                await _orderService.UpdateOrderAsync(order);
+
+                //add a note
+                await _orderService.InsertOrderNoteAsync(new OrderNote
+                {
+                    OrderId = order.Id,
+                    Note = $"Order schedule date has been edited. New value: {order.ScheduleDate}",
+                    DisplayToCustomer = false,
+                    CreatedOnUtc = DateTime.UtcNow
+                });
+
+                await LogEditOrderAsync(order.Id);
+
+                // if (customer.OrderStatusNotification)
+                // {
+                //     var expoSDKClient = new PushApiClient();
+                //     var pushTicketReq = new PushTicketRequest()
+                //     {
+                //         PushTo = new List<string>() { customer.PushToken },
+                //         PushTitle = await _localizationService.GetResourceAsync("PushNotification.OrderStatusChangeTitle"),
+                //         PushBody = string.Format(await _localizationService.GetResourceAsync("PushNotification.OrderStatusChangeBody"), await _localizationService.GetLocalizedEnumAsync(order.OrderStatus))
+                //     };
+                //     var result = await expoSDKClient.PushSendAsync(pushTicketReq);
+                // }
+                //prepare model
+                model = await _orderModelFactory.PrepareOrderModelAsync(model, order);
+
+                return View(model);
+            }
+            catch (Exception exc)
+            {
+                //prepare model
+                model = await _orderModelFactory.PrepareOrderModelAsync(model, order);
+
+                await _notificationService.ErrorNotificationAsync(exc);
+                return View(model);
+            }
+        }
 
         #endregion
 

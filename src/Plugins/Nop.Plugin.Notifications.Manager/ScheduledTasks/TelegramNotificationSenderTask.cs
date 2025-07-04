@@ -45,7 +45,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
     private const string STORE_TELEGRAM_CHANNEL_KEY = nameof(STORE_TELEGRAM_CHANNEL_KEY);
     private const string LAST_UPDATE_ID_SEEN_KEY = nameof(LAST_UPDATE_ID_SEEN_KEY);
     private static readonly string[] _trustedUsernames = { "lkbhnd", "hasmik_bars" };
-    private static readonly TimeSpan _deleteEmailsOlderThan = TimeSpan.FromDays(7);
+    private static readonly TimeSpan _deleteEmailsOlderThan = TimeSpan.FromDays(30);
 
     private readonly IOrderService _orderService;
     private readonly IQueuedEmailService _queuedEmail;
