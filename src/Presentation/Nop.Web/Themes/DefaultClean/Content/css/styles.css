@@ -7150,6 +7150,46 @@ pre {
     clear: both;
   }
 
+  .product-item .picture {
+    position: relative;
+  }
+
+  .product-ribbon {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background-image: url('/icons/icons_0/discount.svg');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    color: white;
+    padding: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    z-index: 2;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Optional: Different colors based on ribbon content */
+  .product-ribbon[data-type="spicy"] {
+    background-color: #ff4757;
+  }
+
+  .product-ribbon[data-type="discount"] {
+    background-color: #2ed573;
+  }
+
+  .product-ribbon[data-type="new"] {
+    background-color: #3742fa;
+  }
+
   .product-list .item-box .picture {
     float: left;
     width: 220px;
@@ -8262,6 +8302,7 @@ pre {
 
   .gallery .picture {
     width: auto;
+    position: relative;
   }
 
   .overview {

@@ -21,6 +21,12 @@
         {
             <img alt="@Model.DefaultPictureModel.AlternateText" src="@Model.DefaultPictureModel.ImageUrl" title="@Model.DefaultPictureModel.Title" id="main-product-img-@Model.Id" />
         }
+        @if (Model.RibbonEnable && !string.IsNullOrEmpty(Model.Ribbon))
+        {
+            <div class="product-ribbon">
+                @Model.Ribbon
+            </div>
+        }
     </div>
     @if (Model.PictureModels.Count > 1 && Model.DefaultPictureZoomEnabled)
     {

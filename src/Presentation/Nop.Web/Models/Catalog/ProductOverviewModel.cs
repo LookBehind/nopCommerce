@@ -36,6 +36,9 @@ namespace Nop.Web.Models.Catalog
         //price
         public ProductReviewOverviewModel ReviewOverviewModel { get; set; }
 
+        public string Ribbon { get; set; }
+        public bool RibbonEnable { get; set; }
+        
 		#region Nested Classes
 
         public partial record ProductPriceModel : BaseNopModel

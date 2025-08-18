@@ -116,6 +116,9 @@ namespace Nop.Web.Models.Catalog
         public bool InStock { get; set; }
 
         public bool AllowAddingOnlyExistingAttributeCombinations { get; set; }
+        
+        public bool RibbonEnable { get; set; }
+        public string Ribbon { get; set; }
 
         #region Nested Classes
 
