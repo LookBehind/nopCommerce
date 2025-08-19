@@ -386,7 +386,8 @@ namespace Nop.Services.Messages
                     "%ProductReview.Title%",
                     "%ProductReview.IsApproved%",
                     "%ProductReview.ReviewText%",
-                    "%ProductReview.ReplyText%"
+                    "%ProductReview.ReplyText%",
+                    "%ProductReview.Rating%"
                 });
 
                 //attribute combination tokens
@@ -1276,6 +1277,7 @@ namespace Nop.Services.Messages
             tokens.Add(new Token("ProductReview.IsApproved", productReview.IsApproved));
             tokens.Add(new Token("ProductReview.ReviewText", productReview.ReviewText));
             tokens.Add(new Token("ProductReview.ReplyText", productReview.ReplyText));
+            tokens.Add(new Token("ProductReview.Rating", productReview.Rating));
 
             //event notification
             await _eventPublisher.EntityTokensAddedAsync(productReview, tokens);
