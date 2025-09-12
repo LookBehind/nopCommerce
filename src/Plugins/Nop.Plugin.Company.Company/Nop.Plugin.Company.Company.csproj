@@ -1,0 +1,46 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <!--Project was exported from assembly: C:\Workspace\MySnacks\Idram\Nop.Plugin.Payments.Idram.dll-->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Platform>AnyCPU</Platform>
+    <ProjectGuid>{1CCF5C06-72E9-4226-93A7-C2CC6A64C8B3}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <Version>1.0.0.0</Version>
+    <OutputPath>..\..\Presentation\Nop.Web\Plugins\Company.Company</OutputPath>
+    <OutDir>$(OutputPath)</OutDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Presentation\Nop.Web.Framework\Nop.Web.Framework.csproj" />
+    <ProjectReference Include="..\..\Presentation\Nop.Web\Nop.Web.csproj" />
+    <ClearPluginAssemblies Include="$(MSBuildProjectDirectory)\..\..\Build\ClearPluginAssemblies.proj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="bin\" />
+    <Folder Include="obj\" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="plugin.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="logo.jpg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Views\*.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Views\_ViewStart.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Areas\Admin\Views\Company\**\*.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Areas\Admin\Views\_ViewImports.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <!-- This target execute after "Build" target -->
+  <Target Name="NopTarget" AfterTargets="Build">
+    <!-- Delete unnecessary libraries from plugins path -->
+    <MSBuild Projects="@(ClearPluginAssemblies)" Properties="PluginPath=$(MSBuildProjectDirectory)\$(OutDir)" Targets="NopClear" />
+  </Target>
+</Project>

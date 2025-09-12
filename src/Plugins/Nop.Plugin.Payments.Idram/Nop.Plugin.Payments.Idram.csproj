@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <!--Project was exported from assembly: C:\Workspace\MySnacks\Idram\Nop.Plugin.Payments.Idram.dll-->
   <PropertyGroup>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <Platform>AnyCPU</Platform>
     <ProjectGuid>{1CCF5C06-72E9-4226-93A7-C2CC6A64C8B3}</ProjectGuid>
     <OutputType>Library</OutputType>

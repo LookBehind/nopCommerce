@@ -40,6 +40,8 @@ WORKDIR /src/Plugins/Nop.Plugin.Notifications.Manager
 RUN dotnet build Nop.Plugin.Notifications.Manager.csproj -c Release
 WORKDIR /src/Plugins/Nop.Plugin.Payments.Idram
 RUN dotnet build Nop.Plugin.Payments.Idram.csproj -c Release
+WORKDIR /src/Plugins/Nop.Plugin.Company.Company
+RUN dotnet build Nop.Plugin.Company.Company.csproj -c Release
 
 # publish project
 WORKDIR /src/Presentation/Nop.Web

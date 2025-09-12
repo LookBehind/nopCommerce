@@ -1,0 +1,11 @@
+﻿{
+  "Group": "Company",
+  "FriendlyName": "Company",
+  "SystemName": "Company.Company",
+  "Version": "1.0",
+  "SupportedVersions": [ "4.50" ],
+  "Author": "Custom",
+  "DisplayOrder": 1,
+  "FileName": "Nop.Plugin.Company.Company.dll",
+  "Description": "This plugin allows setting company information"
+}

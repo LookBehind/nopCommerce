@@ -121,8 +121,10 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuth.Service
             if (returnUrl == "/")
                 returnUrl += "customer/info";
             else if (string.IsNullOrEmpty(returnUrl))
-                returnUrl = "/customer/info";            
-            return await AuthenticateNewUserAsync(currentLoggedInUser, parameters, returnUrl);
+                returnUrl = "/customer/info";
+            
+            //Save a new record
+            return await AuthenticateNewUserAsync(null, parameters, returnUrl);
         }
 
         #endregion

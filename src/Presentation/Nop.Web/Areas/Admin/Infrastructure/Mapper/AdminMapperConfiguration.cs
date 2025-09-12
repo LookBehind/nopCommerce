@@ -64,8 +64,7 @@ using Nop.Web.Areas.Admin.Models.Templates;
 using Nop.Web.Areas.Admin.Models.Topics;
 using Nop.Web.Areas.Admin.Models.Vendors;
 using Nop.Web.Framework.Models;
-using Nop.Core.Domain.Companies;
-using Nop.Web.Areas.Admin.Models.Companies;
+
 
 namespace Nop.Web.Areas.Admin.Infrastructure.Mapper
 {
@@ -627,20 +626,7 @@ namespace Nop.Web.Areas.Admin.Infrastructure.Mapper
             CreateMap<ProductTemplate, ProductTemplateModel>();
             CreateMap<ProductTemplateModel, ProductTemplate>();
 
-            CreateMap<Company, CompanyModel>();
-            CreateMap<CompanyModel, Company>();
 
-            CreateMap<CompanyCustomer, CompanyCustomerModel>()
-                .ForMember(model => model.CustomerFullName, options => options.Ignore());
-            CreateMap<CompanyCustomerModel, CompanyCustomer>()
-                .ForMember(entity => entity.CompanyId, options => options.Ignore())
-                .ForMember(entity => entity.CustomerId, options => options.Ignore());
-
-            CreateMap<CompanyVendor, CompanyVendorModel>()
-                .ForMember(model => model.VendorName, options => options.Ignore());
-            CreateMap<CompanyVendorModel, CompanyVendor>()
-                .ForMember(entity => entity.CompanyId, options => options.Ignore())
-                .ForMember(entity => entity.VendorId, options => options.Ignore());
 
             CreateMap<RelatedProduct, RelatedProductModel>()
                .ForMember(model => model.Product2Name, options => options.Ignore());

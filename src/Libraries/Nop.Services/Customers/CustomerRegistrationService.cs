@@ -171,8 +171,10 @@ namespace Nop.Services.Customers
                 return CustomerLoginResults.WrongPassword;
             }
 
-            var selectedProvider = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.SelectedMultiFactorAuthenticationProviderAttribute);
-            var methodIsActive = await _multiFactorAuthenticationPluginManager.IsPluginActiveAsync(selectedProvider, customer, (await _storeContext.GetCurrentStoreAsync()).Id);
+            var selectedProvider = await _genericAttributeService.GetAttributeAsync<string>(
+                customer, NopCustomerDefaults.SelectedMultiFactorAuthenticationProviderAttribute);
+            var methodIsActive = await _multiFactorAuthenticationPluginManager.IsPluginActiveAsync(
+                selectedProvider, customer, (await _storeContext.GetCurrentStoreAsync()).Id);
             if (methodIsActive)
                 return CustomerLoginResults.MultiFactorAuthenticationRequired;
             if (!string.IsNullOrEmpty(selectedProvider))

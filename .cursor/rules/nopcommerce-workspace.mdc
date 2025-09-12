@@ -1,0 +1,100 @@
+---
+alwaysApply: true
+---
+
+# nopCommerce Workspace Guidelines
+
+This workspace contains a modified version of the open-source **nopCommerce** e-commerce platform. nopCommerce is a .NET-based e-commerce solution built on ASP.NET Core.
+
+## Project Structure
+
+### Core Architecture
+- **Main Solution**: [src/NopCommerce.sln](mdc:src/NopCommerce.sln)
+- **Core Libraries**: Located in [src/Libraries/](mdc:src/Libraries/)
+  - [Nop.Core](mdc:src/Libraries/Nop.Core/) - Core domain entities and infrastructure
+  - [Nop.Data](mdc:src/Libraries/Nop.Data/) - Data access layer and entity configurations  
+  - [Nop.Services](mdc:src/Libraries/Nop.Services/) - Business logic and services
+- **Presentation Layer**: [src/Presentation/](mdc:src/Presentation/)
+  - [Nop.Web](mdc:src/Presentation/Nop.Web/) - Main web application
+  - [Nop.Web.Framework](mdc:src/Presentation/Nop.Web.Framework/) - Web framework components
+
+### Plugin System
+**IMPORTANT**: All plugins are located in [src/Plugins/](mdc:src/Plugins/) folder.
+
+## Development Guidelines
+
+### 1. Code Style Preservation
+- **ALWAYS preserve existing coding style** - do not refactor unless explicitly requested
+- Follow the established patterns found in existing code
+- Use `#region` and `#endregion` to organize code sections (Fields, Ctor, Methods, Properties)
+- Maintain XML documentation comments for public methods
+- Use dependency injection patterns consistently
+
+### 2. Plugin Development
+When creating new plugins, **examine existing plugins** in [src/Plugins/](mdc:src/Plugins/) to follow established patterns:
+
+#### Plugin Structure Standards:
+- Main plugin class inherits from `BasePlugin` and implements relevant interfaces
+- Required [plugin.json](mdc:src/Plugins/Nop.Plugin.Payments.Manual/plugin.json) file with metadata
+- Standard folder structure:
+  - `Controllers/` - MVC controllers
+  - `Models/` - View models and data models
+  - `Views/` - Razor views (if UI components)
+  - `Infrastructure/` - Dependency injection, routing, etc.
+  - `Services/` - Business logic services
+  - `Components/` - View components
+- [logo.jpg](mdc:src/Plugins/Nop.Plugin.Payments.Manual/logo.jpg) file for plugin icon
+
+#### Plugin Naming Conventions:
+- **Namespace**: `Nop.Plugin.[Category].[PluginName]`
+- **Assembly**: `Nop.Plugin.[Category].[PluginName].dll`
+- **SystemName** in plugin.json: `[Category].[PluginName]`
+
+#### Common Plugin Categories:
+- `Payments.*` - Payment method plugins (e.g., [Nop.Plugin.Payments.Manual](mdc:src/Plugins/Nop.Plugin.Payments.Manual/))
+- `Widgets.*` - Widget plugins (e.g., [Nop.Plugin.Widgets.NivoSlider](mdc:src/Plugins/Nop.Plugin.Widgets.NivoSlider/))
+- `Shipping.*` - Shipping method plugins
+- `Tax.*` - Tax calculation plugins  
+- `ExternalAuth.*` - External authentication plugins
+- `Misc.*` - Miscellaneous functionality plugins
+
+#### Plugin.json Structure:
+Reference existing [plugin.json](mdc:src/Plugins/Nop.Plugin.Widgets.NivoSlider/plugin.json) files for required fields:
+```json
+{
+  "Group": "Category Name",
+  "FriendlyName": "Display Name", 
+  "SystemName": "Category.PluginName",
+  "Version": "1.0",
+  "SupportedVersions": [ "4.40", "4.50" ],
+  "Author": "Author Name",
+  "DisplayOrder": 1,
+  "FileName": "Nop.Plugin.Category.PluginName.dll",
+  "Description": "Plugin description"
+}
+```
+
+### 3. Code Organization Patterns
+Study these reference implementations:
+- **Payment Plugin**: [ManualPaymentProcessor.cs](mdc:src/Plugins/Nop.Plugin.Payments.Manual/ManualPaymentProcessor.cs)
+- **Widget Plugin**: [NivoSliderPlugin.cs](mdc:src/Plugins/Nop.Plugin.Widgets.NivoSlider/NivoSliderPlugin.cs)  
+- **Custom Plugin**: [BuyAmScraperPlugin.cs](mdc:src/Plugins/Nop.Plugin.BuyAmScraper/BuyAmScraperPlugin.cs)
+
+### 4. Architecture Patterns
+- Use async/await for all service operations
+- Implement proper dependency injection in constructors
+- Follow the repository pattern for data access
+- Use localization for user-facing strings
+- Implement proper error handling and validation
+
+### 5. Upgrade Scripts
+Version upgrade scripts are available in [upgradescripts/](mdc:upgradescripts/) for reference on database schema changes.
+
+## Key Principles
+1. **Preserve existing patterns** - Look at similar plugins before implementing new functionality
+2. **Avoid refactoring** - Only make necessary changes to achieve the specific goal
+3. **Follow conventions** - Use established naming, folder structure, and coding patterns
+4. **Maintain compatibility** - Ensure new plugins follow nopCommerce plugin architecture
+
+## Running project
+Use this to run the project: `cd src/Presentation/Nop.Web && dotnet run`. The dotnet application will listen on all interfaces, 4000 port, with http.

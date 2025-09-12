@@ -45,6 +45,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nop.Plugin.Notifications.Ma
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nop.Plugin.Payments.Idram", "Plugins\Nop.Plugin.Payments.Idram\Nop.Plugin.Payments.Idram.csproj", "{1CCF5C06-72E9-4226-93A7-C2CC6A64C8B3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nop.Plugin.Company.Company", "Plugins\Nop.Plugin.Company.Company\Nop.Plugin.Company.Company.csproj", "{1CCF5C06-72E9-4226-93A7-C2CC6A64C8B3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

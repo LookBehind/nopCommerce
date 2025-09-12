@@ -24,7 +24,7 @@ namespace Nop.Web.Controllers.Api.Customer
 {
     [Produces("application/json")]
     [Route("api/customer")]
-    [AuthorizeAttribute]
+    [Authorize]
     public class CustomerApiController : BaseApiController
     {
         #region Fields
@@ -110,12 +110,21 @@ namespace Nop.Web.Controllers.Api.Customer
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
             if (customer == null)
-                return Ok(new { success = false, message = await _localizationService.GetResourceAsync("Customer.Not.Found") });
+            {
+                return Ok(new
+                {
+                    success = false, message = await _localizationService.GetResourceAsync("Customer.Not.Found")
+                });
+            }
 
-            var shippingAddress = customer.ShippingAddressId.HasValue ? await _addressService.GetAddressByIdAsync(customer.ShippingAddressId.Value) : null;
+            var shippingAddress = customer.ShippingAddressId.HasValue ? 
+                await _addressService.GetAddressByIdAsync(customer.ShippingAddressId.Value) 
+                : null;
 
-            var firstName = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.FirstNameAttribute);
-            var lastName = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.LastNameAttribute);
+            var firstName = await _genericAttributeService.GetAttributeAsync<string>(
+                customer, NopCustomerDefaults.FirstNameAttribute);
+            var lastName = await _genericAttributeService.GetAttributeAsync<string>(
+                customer, NopCustomerDefaults.LastNameAttribute);
 
             return Ok(new
             {
@@ -157,6 +166,7 @@ namespace Nop.Web.Controllers.Api.Customer
         public async Task<IActionResult> GetCompanyDetails()
         {
             var companyDetails = new CompanyDetailsModel();
+            var addresses = new List<Address>();
             var currentCustomer = await _workContext.GetCurrentCustomerAsync();
             var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
             if (company != null)
@@ -167,7 +177,6 @@ namespace Nop.Web.Controllers.Api.Customer
                 if (companyCustomers.Any())
                 {
                     var customerId = companyCustomers.FirstOrDefault().CustomerId;
-                    var addresses = new List<Address>();
                     foreach (var address in await _customerService.GetAddressesByCustomerIdAsync(customerId))
                     {
                         if (!addresses.Where(x => x.Id == address.Id).Any())
@@ -175,9 +184,17 @@ namespace Nop.Web.Controllers.Api.Customer
                     }
                     companyDetails.Adresses = addresses;
                 }
-                return Ok(new { success = true, companyDetails });
+                return Ok(new
+                {
+                    success = true, 
+                    companyDetails
+                });
             }
-            return Ok(new { success = false, message = await _localizationService.GetResourceAsync("Company.NotFound") });
+            return Ok(new
+            {
+                success = false, 
+                message = await _localizationService.GetResourceAsync("Company.NotFound")
+            });
         }
 
         [HttpGet("update-customer-pushtoken/{pushToken}")]
@@ -187,13 +204,25 @@ namespace Nop.Web.Controllers.Api.Customer
             {
                 var customer = await _workContext.GetCurrentCustomerAsync();
                 if (customer == null)
-                    return Ok(new { success = false, message = await _localizationService.GetResourceAsync("Customer.Not.Found") });
+                    return Ok(new
+                    {
+                        success = false, 
+                        message = await _localizationService.GetResourceAsync("Customer.Not.Found")
+                    });
 
                 customer.PushToken = pushToken;
                 await _customerService.UpdateCustomerAsync(customer);
-                return Ok(new { success = true, message = await _localizationService.GetResourceAsync("Account.Customer.PushTokenUpdated") });
+                return Ok(new
+                {
+                    success = true, 
+                    message = await _localizationService.GetResourceAsync("Account.Customer.PushTokenUpdated")
+                });
             }
-            return Ok(new { success = false, message = await _localizationService.GetResourceAsync("Account.Customer.PushTokenNotFound") });
+            return Ok(new
+            {
+                success = false, 
+                message = await _localizationService.GetResourceAsync("Account.Customer.PushTokenNotFound")
+            });
         }
 
         #endregion
