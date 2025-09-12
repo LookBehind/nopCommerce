@@ -995,11 +995,7 @@ namespace Nop.Web.Controllers
                         await _customerService.UpdateCustomerAsync(customer);
                     }
 
-                    //custom working to map the customer to the company which have the matching domain
-                    var email = customer.Email.Split("@");
-                    var companies = await _companyService.GetAllCompaniesAsync(email: email[1]);
-                    if (companies.Any())
-                        await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = companies.FirstOrDefault().Id, CustomerId = customer.Id });
+
                     
                     //notifications
                     if (_customerSettings.NotifyNewCustomerRegistration)

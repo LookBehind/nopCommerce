@@ -337,36 +337,6 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuthentication.Controllers
                 Claims = authenticateResult.Principal.Claims.Select(claim => new ExternalAuthenticationClaim(claim.Type, claim.Value)).ToList()
             };
             var result = await _externalAuthenticationService.AuthenticateAsync(authenticationParameters, returnUrl);
-            if (!string.IsNullOrEmpty(email))
-            {
-                //get current logged-in user
-                var currentLoggedInUser = await _customerService.IsRegisteredAsync(await _workContext.GetCurrentCustomerAsync()) ? await _workContext.GetCurrentCustomerAsync() : null;
-                if (currentLoggedInUser != null)
-                {
-                    await _logger.InsertLogAsync(Nop.Core.Domain.Logging.LogLevel.Debug, 
-                        "User Found", customer: currentLoggedInUser);
-                    if (company != null)
-                    {
-                        //whether product Company with such parameters already exists
-                        var checkCustomerCompanyMappingExist = await _companyService.GetCompanyCustomersByCustomerIdAsync(currentLoggedInUser.Id);
-                        if (!checkCustomerCompanyMappingExist.Any())
-                        {
-                            await _logger.InsertLogAsync(Nop.Core.Domain.Logging.LogLevel.Debug, "Company Matched");
-                            await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = company.Id, CustomerId = currentLoggedInUser.Id });
-                            
-                            var companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(company.Id);
-                            if (companyCustomers.Any())
-                            {
-                                var addresses = await _customerService.GetAddressesByCustomerIdAsync(companyCustomers.First().CustomerId);
-                                foreach (var address in addresses)
-                                {
-                                    await _customerService.InsertCustomerAddressAsync(currentLoggedInUser, address);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             //authenticate Nop user
             return result;
         }

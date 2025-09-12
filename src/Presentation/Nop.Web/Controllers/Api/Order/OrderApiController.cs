@@ -500,6 +500,7 @@ namespace Nop.Web.Controllers.Api.Order
             var scheduleAllowed = await IsScheduleDateAllowed(store.Id, customer, scheduleDate);
             if (!scheduleAllowed)
             {
+                await _logger.ErrorAsync($"Order schedule was not allowed: {scheduleDate}", customer: customer);
                 return Ok(new
                 {
                     success = false,

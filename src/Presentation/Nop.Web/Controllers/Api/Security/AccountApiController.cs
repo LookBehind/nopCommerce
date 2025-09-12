@@ -1,31 +1,25 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using Nop.Core;
-using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Companies;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Media;
 using Nop.Services.Authentication;
+using Nop.Services.Authentication.External;
 using Nop.Services.Common;
 using Nop.Services.Companies;
 using Nop.Services.Customers;
-using Nop.Services.Directory;
 using Nop.Services.Localization;
 using Nop.Services.Logging;
 using Nop.Services.Media;
-using Nop.Services.Messages;
 using Nop.Services.Orders;
-using Nop.Services.Security;
 
 namespace Nop.Web.Controllers.Api.Security
 {
@@ -51,6 +45,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly ICompanyService _companyService;
         private readonly ILogger _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IExternalAuthenticationService _externalAuthenticationService;
 
         #endregion
 
@@ -71,7 +66,8 @@ namespace Nop.Web.Controllers.Api.Security
             IPictureService pictureService,
             ICompanyService companyService,
             ILogger logger,
-            IHttpContextAccessor httpContextAccessor)
+            IHttpContextAccessor httpContextAccessor,
+            IExternalAuthenticationService externalAuthenticationService)
         {
             _storeContext = storeContext;
             _customerRegistrationService = customerRegistrationService;
@@ -89,6 +85,7 @@ namespace Nop.Web.Controllers.Api.Security
             _companyService = companyService;
             _logger = logger;
             _httpContextAccessor = httpContextAccessor;
+            _externalAuthenticationService = externalAuthenticationService;
         }
 
         #endregion
@@ -134,14 +131,14 @@ namespace Nop.Web.Controllers.Api.Security
 
             var loginResult = await _customerRegistrationService.ValidateCustomerAsync(model.Email, model.Password);
 
-            //checking if customer comes from goolge
+            //checking if customer comes from google
             if (!string.IsNullOrWhiteSpace(model.GoogleToken))
             {
                 //get json from the token url
                 var json = new WebClient().DownloadString("https://oauth2.googleapis.com/tokeninfo?id_token=" + model.GoogleToken);
                 if (!string.IsNullOrWhiteSpace(json))
                 {
-                    GoogleTokenClass deserializedGoogleToken = new GoogleTokenClass();
+                    var deserializedGoogleToken = new GoogleTokenClass();
                     try
                     {
                         //deserialized json into Google Token class
@@ -152,78 +149,62 @@ namespace Nop.Web.Controllers.Api.Security
                         return Ok(new
                         {
                             success = false,
-                            message = _localizationService.GetResourceAsync("Google.Token.IsNotValid")
+                            message = await _localizationService.GetResourceAsync("Google.Token.IsNotValid")
                         });
                     }
-                    //get customer
-                    var customer = await _customerService.GetCustomerByEmailAsync(deserializedGoogleToken.email);
-                    if (customer != null)
+                    // Use external authentication service for user provisioning
+                    var authParameters = new ExternalAuthenticationParameters
                     {
-                        loginResult = CustomerLoginResults.Successful;
-                        model.Email = deserializedGoogleToken.email;
+                        ProviderSystemName = "ExternalAuth", // Using Google provider system name
+                        Email = deserializedGoogleToken.email,
+                        ExternalIdentifier = deserializedGoogleToken.sub,
+                        ExternalDisplayIdentifier = deserializedGoogleToken.name,
+                        AccessToken = model.GoogleToken,
+                        IsApproved = false // Not approved by default, decided by Company plugin
+                    };
 
-                        if (!customer.Active)
-                            loginResult = CustomerLoginResults.NotActive;
-                    }
-                    else
+                    // Add custom claims for additional user info
+                    authParameters.Claims.Add(new ExternalAuthenticationClaim("given_name", deserializedGoogleToken.given_name));
+                    authParameters.Claims.Add(new ExternalAuthenticationClaim("family_name", deserializedGoogleToken.family_name));
+                    authParameters.Claims.Add(new ExternalAuthenticationClaim("picture", deserializedGoogleToken.picture));
+
+                    try
                     {
-                        bool isApproved = false;
-
-                        //Save a new record
-                        await _workContext.SetCurrentCustomerAsync(await _customerService.InsertGuestCustomerAsync());
-
-                        var newCustomer = await _workContext.GetCurrentCustomerAsync();
-
-                        //checking if the email matches to any company email
-                        var companies = await _companyService.GetAllCompaniesAsync(email: deserializedGoogleToken.email.Split('@')[1]);
-                        if (companies.Any())
+                        // Authenticate using external service (handles user creation/association)
+                        var authResult = await _externalAuthenticationService.AuthenticateAsync(authParameters);
+                        
+                        // External auth service returns IActionResult for web redirects, 
+                        // but we need to extract the user and continue with API response
+                        var customer = await _customerService.GetCustomerByEmailAsync(deserializedGoogleToken.email);
+                        if (customer != null)
                         {
-                            var companyId = companies.FirstOrDefault().Id;
-                            isApproved = true;
-                            await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = companyId, CustomerId = newCustomer.Id });
-
-                            //adding 
-                            var addressId = 0;
-                            var existingCompanyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(companyId, showHidden: true);
-                            if (existingCompanyCustomers.Any())
-                            {
-                                var addresses = await _customerService.GetAddressesByCustomerIdAsync(existingCompanyCustomers.FirstOrDefault().CustomerId);
-                                foreach (var address in addresses)
-                                {
-                                    await _customerService.InsertCustomerAddressAsync(newCustomer, address);
-                                    addressId = address.Id;
-                                }
-
-                            }
-                            if (addressId > 0)
-                            {
-                                newCustomer.ShippingAddressId = addressId;
-                                newCustomer.BillingAddressId = addressId;
-                                await _customerService.UpdateCustomerAsync(newCustomer);
-                            }
-                        }
-
-                        //registering new customer 
-                        var registrationRequest = new CustomerRegistrationRequest(newCustomer,
-                       deserializedGoogleToken.email, deserializedGoogleToken.email,
-                       CommonHelper.GenerateRandomDigitCode(12),
-                       _customerSettings.DefaultPasswordFormat,
-                       (await _storeContext.GetCurrentStoreAsync()).Id,
-                       isApproved);
-                        var registrationResult = await _customerRegistrationService.RegisterCustomerAsync(registrationRequest);
-                        if (registrationResult.Success)
-                        {
-                            if (_customerSettings.FirstNameEnabled)
-                                await _genericAttributeService.SaveAttributeAsync(newCustomer, NopCustomerDefaults.FirstNameAttribute, deserializedGoogleToken.given_name);
-                            if (_customerSettings.LastNameEnabled)
-                                await _genericAttributeService.SaveAttributeAsync(newCustomer, NopCustomerDefaults.LastNameAttribute, deserializedGoogleToken.family_name);
-                            loginResult = isApproved ? CustomerLoginResults.Successful : CustomerLoginResults.NotActive;
+                            loginResult = CustomerLoginResults.Successful;
                             model.Email = deserializedGoogleToken.email;
+
+                            if (!customer.Active)
+                                loginResult = CustomerLoginResults.NotActive;
                         }
+                        else
+                        {
+                            return Ok(new
+                            {
+                                success = false,
+                                message = await _localizationService.GetResourceAsync("Account.Login.WrongCredentials.CustomerNotExist")
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.ErrorAsync("Google authentication failed", ex);
+                        return Ok(new
+                        {
+                            success = false,
+                            message = await _localizationService.GetResourceAsync("Account.Login.WrongCredentials")
+                        });
                     }
                 }
-
             }
+
             switch (loginResult)
             {
                 case CustomerLoginResults.Successful:
