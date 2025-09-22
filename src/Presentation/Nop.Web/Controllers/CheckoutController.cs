@@ -1465,14 +1465,33 @@ namespace Nop.Web.Controllers
             {
                 //validation
 
-                var deliveryTime = DateTime.Parse(form["deliver_time"]);
-                if (!(await _orderProcessingService.GetAvailableDeliverTimesAsync()).Contains(deliveryTime))
+                // Get delivery time from session (set by global header picker)
+                DateTime? deliveryTime = null;
+                if (HttpContext.Session.TryGetValue("SelectedDeliveryTime", out var sessionBytes))
                 {
-                    throw new Exception("Invalid delivery time");
+                    var ticks = BitConverter.ToInt64(sessionBytes, 0);
+                    deliveryTime = new DateTime(ticks);
+                }
+                // Try cookie as fallback
+                else if (HttpContext.Request.Cookies.TryGetValue("SelectedDeliveryTime", out var cookieValue) &&
+                         DateTime.TryParse(cookieValue, out var cookieDateTime))
+                {
+                    deliveryTime = cookieDateTime;
+                }
+
+                if (!deliveryTime.HasValue)
+                {
+                    throw new Exception("Please select a delivery time from the header before proceeding with checkout.");
+                }
+
+                // Validate the delivery time is still available
+                if (!(await _orderProcessingService.GetAvailableDeliverTimesAsync()).Contains(deliveryTime.Value))
+                {
+                    throw new Exception("The selected delivery time is no longer available. Please select a new delivery time.");
                 }
 
                 await _genericAttributeService.SaveAttributeAsync(await _workContext.GetCurrentCustomerAsync(),
-                    OrderProcessingService.DeliveryTimeAttributeName, deliveryTime, (await _storeContext.GetCurrentStoreAsync()).Id);
+                    OrderProcessingService.DeliveryTimeAttributeName, deliveryTime.Value, (await _storeContext.GetCurrentStoreAsync()).Id);
                 if (_orderSettings.CheckoutDisabled)
                     throw new Exception(await _localizationService.GetResourceAsync("Checkout.Disabled"));
 

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Platform>AnyCPU</Platform>
-    <ProjectGuid>{1CCF5C06-72E9-4226-93A7-C2CC6A64C8B3}</ProjectGuid>
+    <ProjectGuid>{CD87DF94-37B8-4F7B-8897-783DF922873E}</ProjectGuid>
     <OutputType>Library</OutputType>
     <Version>1.0.0.0</Version>
     <OutputPath>..\..\Presentation\Nop.Web\Plugins\Company.Company</OutputPath>
@@ -19,24 +19,93 @@
     <Folder Include="obj\" />
   </ItemGroup>
   <ItemGroup>
-    <None Update="plugin.json">
+    <None Remove="plugin.json" />
+    <None Remove="logo.jpg" />
+    <None Remove="Views\_CreateOrUpdate.Addresses.cshtml" />
+    <None Remove="Views\_CreateOrUpdate.cshtml" />
+    <None Remove="Views\_CreateOrUpdate.Customers.cshtml" />
+    <None Remove="Views\_CreateOrUpdate.Info.cshtml" />
+    <None Remove="Views\_CreateOrUpdate.Vendors.cshtml" />
+    <None Remove="Views\_CreateOrUpdateAddress.cshtml" />
+    <None Remove="Views\_ViewImports.cshtml" />
+    <None Remove="Views\_ViewStart.cshtml" />
+    <None Remove="Views\AddressCreate.cshtml" />
+    <None Remove="Views\AddressEdit.cshtml" />
+    <None Remove="Views\Create.cshtml" />
+    <None Remove="Views\CustomerAddPopup.cshtml" />
+    <None Remove="Views\Edit.cshtml" />
+    <None Remove="Views\List.cshtml" />
+    <None Remove="Views\VendorAddPopup.cshtml" />
+    <None Remove="Views\Shared\Components\GlobalDeliveryDatePicker\Default.cshtml" />
+    <None Remove="Areas\Admin\Views\Company\**\*.cshtml" />
+    <None Remove="Areas\Admin\Views\_ViewImports.cshtml" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Content Include="plugin.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="logo.jpg">
+    </Content>
+    <Content Include="logo.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="Views\*.cshtml">
+    </Content>
+    <Content Include="Views\_CreateOrUpdate.Addresses.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="Views\_ViewStart.cshtml">
+    </Content>
+    <Content Include="Views\_CreateOrUpdate.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="Areas\Admin\Views\Company\**\*.cshtml">
+    </Content>
+    <Content Include="Views\_CreateOrUpdate.Customers.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="Areas\Admin\Views\_ViewImports.cshtml">
+    </Content>
+    <Content Include="Views\_CreateOrUpdate.Info.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    </Content>
+    <Content Include="Views\_CreateOrUpdate.Vendors.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\_CreateOrUpdateAddress.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\_ViewImports.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\_ViewStart.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\AddressCreate.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\AddressEdit.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\Create.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\CustomerAddPopup.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\Edit.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\List.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\VendorAddPopup.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\Shared\Components\GlobalDeliveryDatePicker\Default.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Views\Shared\Components\GlobalDeliveryTimeValidation\Default.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Areas/Admin views will use wildcard since they are in a separate area -->
+    <Content Include="Areas\Admin\Views\Company\**\*.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Areas\Admin\Views\_ViewImports.cshtml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <!-- This target execute after "Build" target -->
   <Target Name="NopTarget" AfterTargets="Build">

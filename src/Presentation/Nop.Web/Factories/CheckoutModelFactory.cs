@@ -353,7 +353,7 @@ namespace Nop.Web.Factories
                 prePopulateWithCustomerFields: prePopulateNewAddressWithCustomerFields,
                 customer: await _workContext.GetCurrentCustomerAsync(),
                 overrideAttributesXml: overrideAttributesXml);
-            model.AvailableDeliverTimes = await _orderProcessingService.GetAvailableDeliverTimesAsync();
+            // AvailableDeliverTimes removed - delivery time selection moved to global header picker
 
             return model;
         }

@@ -1,0 +1,290 @@
+@{
+    // Global delivery time validation script to be included on all pages
+    // This script periodically checks delivery time validity and shows prompts when needed
+}
+
+<script asp-location="Footer">
+$(document).ready(function() {
+    
+    // Global delivery time validation manager
+    var DeliveryTimeValidator = {
+        
+        // Configuration
+        config: {
+            checkInterval: 30000, // Check every 30 seconds
+            maxRetries: 3,
+            retryDelay: 5000,
+            apiEndpoint: '@Url.Action("GetDeliveryTime", "DeliveryTime", new { area = "" })',
+            excludePaths: ['/admin/', '/login', '/register', '/logout']
+        },
+        
+        // State tracking
+        state: {
+            lastCheckTime: 0,
+            checkCount: 0,
+            retryCount: 0,
+            isChecking: false,
+            hasValidSelection: false,
+            intervalId: null
+        },
+        
+        // Initialize the validator
+        init: function() {
+            if (this.shouldSkipValidation()) {
+                return;
+            }
+            
+            // Start periodic validation
+            this.startPeriodicValidation();
+            
+            // Check immediately
+            setTimeout(() => this.performValidationCheck(), 1000);
+            
+            // Listen for page visibility changes
+            if (typeof document.visibilityState !== 'undefined') {
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) {
+                        // Page became visible, check validation
+                        setTimeout(() => this.performValidationCheck(), 500);
+                    }
+                });
+            }
+            
+            // Listen for storage changes (in case selection is updated in another tab)
+            if (typeof Storage !== 'undefined') {
+                window.addEventListener('storage', (e) => {
+                    if (e.key === 'SelectedDeliveryTime') {
+                        setTimeout(() => this.performValidationCheck(), 500);
+                    }
+                });
+            }
+        },
+        
+        // Check if validation should be skipped for current page
+        shouldSkipValidation: function() {
+            var currentPath = window.location.pathname.toLowerCase();
+            
+            return this.config.excludePaths.some(path => 
+                currentPath.includes(path)
+            );
+        },
+        
+        // Start periodic validation checks
+        startPeriodicValidation: function() {
+            if (this.state.intervalId) {
+                clearInterval(this.state.intervalId);
+            }
+            
+            this.state.intervalId = setInterval(() => {
+                this.performValidationCheck();
+            }, this.config.checkInterval);
+        },
+        
+        // Perform validation check
+        performValidationCheck: function() {
+            if (this.state.isChecking) {
+                return; // Already checking
+            }
+            
+            this.state.isChecking = true;
+            this.state.lastCheckTime = Date.now();
+            this.state.checkCount++;
+            
+            // Make AJAX request to check delivery time
+            $.ajax({
+                url: this.config.apiEndpoint,
+                type: 'GET',
+                timeout: 10000,
+                dataType: 'json'
+            })
+            .done((response) => {
+                this.handleValidationResponse(response);
+            })
+            .fail((xhr, status, error) => {
+                this.handleValidationError(xhr, status, error);
+            })
+            .always(() => {
+                this.state.isChecking = false;
+                this.state.retryCount = 0; // Reset retry count on completion
+            });
+        },
+        
+        // Handle successful validation response
+        handleValidationResponse: function(response) {
+            if (!response.success) {
+                this.state.hasValidSelection = false;
+                this.showPrompt('error', 'Unable to verify delivery time selection. Please select a delivery time.');
+                return;
+            }
+            
+            var hasSelection = response.hasSelection && response.deliveryTime;
+            this.state.hasValidSelection = hasSelection;
+            
+            if (!hasSelection) {
+                this.showPrompt('warning', 'Please select your delivery time to continue.');
+            } else {
+                this.hidePrompts();
+            }
+        },
+        
+        // Handle validation error
+        handleValidationError: function(xhr, status, error) {
+            console.log('Delivery time validation error:', status, error);
+            
+            if (this.state.retryCount < this.config.maxRetries) {
+                this.state.retryCount++;
+                setTimeout(() => {
+                    this.performValidationCheck();
+                }, this.config.retryDelay);
+            } else {
+                // Max retries reached, assume no valid selection
+                this.state.hasValidSelection = false;
+                this.showPrompt('warning', 'Please select your delivery time.');
+            }
+        },
+        
+        // Show validation prompt
+        showPrompt: function(type, message) {
+            // Remove existing prompts first
+            this.hidePrompts();
+            
+            var alertClass = type === 'error' ? 'urgent' : 'info';
+            var iconEmoji = type === 'error' ? '❌' : '⏰';
+            
+            var promptHtml = `
+                <div class="delivery-time-global-alert ${alertClass}" id="delivery-time-global-alert" 
+                     style="position: fixed; top: 20px; right: 20px; z-index: 100001; max-width: 350px; animation: slideInRight 0.3s ease-out;">
+                    <div style="display: flex; align-items: center; padding: 12px 16px; border-radius: 8px; 
+                                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); color: white;
+                                background: ${type === 'error' ? 'linear-gradient(135deg, #dc3545, #c82333)' : 'linear-gradient(135deg, #ffc107, #e0a800)'};">
+                        <span style="margin-right: 12px; font-size: 18px;">${iconEmoji}</span>
+                        <span style="flex: 1; font-weight: 500; margin-right: 12px; color: ${type === 'error' ? 'white' : '#212529'};">${message}</span>
+                        <button type="button" onclick="DeliveryTimeValidator.openDeliveryPicker();" 
+                                style="background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); 
+                                       color: ${type === 'error' ? 'white' : '#212529'}; padding: 6px 12px; border-radius: 4px; cursor: pointer; 
+                                       font-size: 12px; font-weight: 600; margin-right: 8px; transition: all 0.2s ease;">
+                            Select Time
+                        </button>
+                        <button type="button" onclick="DeliveryTimeValidator.hidePrompts();" 
+                                style="background: none; border: none; color: rgba(255, 255, 255, 0.8); cursor: pointer; 
+                                       font-size: 16px; padding: 4px; line-height: 1;">
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            $('body').append(promptHtml);
+            
+            // Auto-hide after 15 seconds if not urgent
+            if (type !== 'error') {
+                setTimeout(() => {
+                    this.hidePrompts();
+                }, 15000);
+            }
+        },
+        
+        // Hide validation prompts
+        hidePrompts: function() {
+            $('#delivery-time-global-alert').fadeOut(300, function() {
+                $(this).remove();
+            });
+        },
+        
+        // Open delivery picker
+        openDeliveryPicker: function() {
+            this.hidePrompts();
+            
+            // Try to trigger the existing delivery picker
+            var deliveryDisplay = $('#delivery-display');
+            if (deliveryDisplay.length > 0) {
+                deliveryDisplay.click();
+            } else {
+                // If no delivery picker found, show a message
+                this.showPrompt('info', 'Delivery picker not found. Please refresh the page.');
+            }
+        },
+        
+        // Check if user is actively using the page
+        isUserActive: function() {
+            // Simple check - consider extending with more sophisticated detection
+            return !document.hidden && this.state.lastCheckTime > (Date.now() - 60000);
+        },
+        
+        // Cleanup function
+        destroy: function() {
+            if (this.state.intervalId) {
+                clearInterval(this.state.intervalId);
+                this.state.intervalId = null;
+            }
+            this.hidePrompts();
+        }
+    };
+    
+    // Initialize the validator
+    DeliveryTimeValidator.init();
+    
+    // Make it globally accessible for manual triggering
+    window.DeliveryTimeValidator = DeliveryTimeValidator;
+    
+    // Cleanup on page unload
+    $(window).on('unload', function() {
+        DeliveryTimeValidator.destroy();
+    });
+    
+    // Enhanced validation for checkout/order processes
+    $(document).on('click', 'button[type="submit"], input[type="submit"], .btn-primary, .checkout-btn', function(e) {
+        var $this = $(this);
+        
+        // Check if this is a checkout-related action
+        var isCheckoutAction = (
+            $this.closest('.checkout').length > 0 ||
+            $this.closest('form[action*="checkout"]').length > 0 ||
+            window.location.pathname.toLowerCase().includes('checkout') ||
+            $this.text().toLowerCase().includes('order') ||
+            $this.text().toLowerCase().includes('checkout') ||
+            $this.attr('onclick') && $this.attr('onclick').includes('checkout')
+        );
+        
+        if (isCheckoutAction && !DeliveryTimeValidator.state.hasValidSelection) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            DeliveryTimeValidator.showPrompt('error', 'You must select a delivery time before completing your order.');
+            DeliveryTimeValidator.openDeliveryPicker();
+            
+            return false;
+        }
+    });
+    
+    // CSS for animations if not already defined
+    if (!document.getElementById('delivery-time-validation-styles')) {
+        var styles = `
+            <style id="delivery-time-validation-styles">
+                @@keyframes slideInRight {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                .delivery-time-global-alert.urgent {
+                    animation: slideInRight 0.3s ease-out, pulse 2s infinite !important;
+                }
+                @@keyframes pulse {
+                    0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
+                    50% { box-shadow: 0 4px 20px rgba(220, 53, 69, 0.5); }
+                }
+                @@media (max-width: 480px) {
+                    .delivery-time-global-alert {
+                        position: fixed !important;
+                        top: 10px !important;
+                        left: 10px !important;
+                        right: 10px !important;
+                        max-width: none !important;
+                    }
+                }
+            </style>
+        `;
+        $('head').append(styles);
+    }
+});
+</script>
+

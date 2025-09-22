@@ -3333,9 +3333,12 @@ namespace Nop.Services.Orders
                 TimeZoneInfo.Utc, 
                 timezoneInfo);
 
+            // Get the number of days ahead based on company settings
+            var daysAhead = company?.OrderAheadDays ?? 14;
+
             // Parse all schedule dates from settings
             var scheduleDateValues = _orderSettings.ScheduleDate.Split(',');
-            var deliverySlots = new List<(DateTime lastOrderTime, DateTime deliveryTime)>();
+            var timeSlots = new List<(TimeSpan lastOrderTime, TimeSpan deliveryTime)>();
 
             // Process each schedule date entry
             foreach (var scheduleDate in scheduleDateValues)
@@ -3351,51 +3354,55 @@ namespace Nop.Services.Orders
                 var lastOrderHourParts = parts[1].Split(':');
                 var deliveryHourParts = parts[2].Split(':');
 
-                // Create DateTime objects for last order time and delivery time
-                var lastOrderTime = new DateTime(
-                    now.Year, now.Month, now.Day,
-                    Convert.ToInt32(lastOrderHourParts[0]),
-                    Convert.ToInt32(lastOrderHourParts[1]),
-                    Convert.ToInt32(lastOrderHourParts[2]),
-                    DateTimeKind.Utc);
-
-                var deliveryTime = new DateTime(
-                    now.Year, now.Month, now.Day,
-                    Convert.ToInt32(deliveryHourParts[0]),
-                    Convert.ToInt32(deliveryHourParts[1]),
-                    Convert.ToInt32(deliveryHourParts[2]),
-                    DateTimeKind.Utc);
-
-                deliverySlots.Add((lastOrderTime, deliveryTime));
-            }
-
-            // If current time is past all delivery times of today, add all slots for tomorrow
-            if (now > deliverySlots.Max(slot => slot.lastOrderTime))
-            {
-                foreach (var slot in deliverySlots)
+                try
                 {
-                    list.Add(slot.deliveryTime.AddDays(1));
+                    // Create TimeSpan objects for last order time and delivery time
+                    var lastOrderTime = new TimeSpan(
+                        Convert.ToInt32(lastOrderHourParts[0]),
+                        Convert.ToInt32(lastOrderHourParts[1]),
+                        Convert.ToInt32(lastOrderHourParts[2]));
+
+                    var deliveryTime = new TimeSpan(
+                        Convert.ToInt32(deliveryHourParts[0]),
+                        Convert.ToInt32(deliveryHourParts[1]),
+                        Convert.ToInt32(deliveryHourParts[2]));
+
+                    timeSlots.Add((lastOrderTime, deliveryTime));
+                }
+                catch (Exception ex)
+                {
+                    await _logger.ErrorAsync($"Error parsing delivery schedule: {scheduleDate}", ex);
                 }
             }
-            else
-            {
-                // Add all applicable delivery times based on current time
-                for (var i = 0; i < deliverySlots.Count; i++)
-                {
-                    if (now <= deliverySlots[i].lastOrderTime)
-                    {
-                        // If we're before this slot's cutoff time, add all remaining delivery slots
-                        for (var j = i; j < deliverySlots.Count; j++)
-                        {
-                            list.Add(deliverySlots[j].deliveryTime);
-                        }
 
-                        break;
+            // Generate delivery times for each day up to daysAhead
+            for (var day = 0; day <= daysAhead; day++)
+            {
+                var targetDate = now.Date.AddDays(day);
+                var isToday = day == 0;
+
+                foreach (var slot in timeSlots)
+                {
+                    var deliveryTime = targetDate.Add(slot.deliveryTime);
+                    
+                    if (isToday)
+                    {
+                        // For today, check if we're still before the cutoff time
+                        var lastOrderTime = targetDate.Add(slot.lastOrderTime);
+                        if (now <= lastOrderTime)
+                        {
+                            list.Add(deliveryTime);
+                        }
+                    }
+                    else
+                    {
+                        // For future dates, all slots are available
+                        list.Add(deliveryTime);
                     }
                 }
             }
 
-            return list;
+            return list.OrderBy(dt => dt).ToList();
         }
         #endregion
     }

@@ -1,0 +1,835 @@
+@model DeliveryDatePickerModel
+@using Nop.Plugin.Company.Company.Models
+@using Nop.Plugin.Company.Company.Services
+
+@if (Model.AvailableDeliveryTimes.Any())
+{
+    <!-- Prompt Alert (shown when needed) -->
+    @if (Model.ShouldShowPrompt)
+    {
+        <div class="delivery-time-alert @(Model.IsUrgent ? "urgent" : "info")" id="delivery-time-alert">
+            <div class="alert-content">
+                <span class="alert-icon">
+                    @switch (Model.PromptType)
+                    {
+                        case DeliveryTimePromptType.NoSelection:
+                            <span>⏰</span>
+                            break;
+                        case DeliveryTimePromptType.SelectionExpired:
+                            <span>⚠️</span>
+                            break;
+                        case DeliveryTimePromptType.SelectionInvalid:
+                            <span>❌</span>
+                            break;
+                        default:
+                            <span>📅</span>
+                            break;
+                    }
+                </span>
+                <span class="alert-message">@Model.PromptMessage</span>
+                <button type="button" class="alert-select-btn" onclick="document.getElementById('delivery-display').click();">
+                    Select Time
+                </button>
+                <button type="button" class="alert-close" onclick="this.parentElement.parentElement.style.display='none';">
+                    ✕
+                </button>
+            </div>
+        </div>
+    }
+
+    <div class="global-delivery-picker @Model.StateClass">
+        <div class="delivery-display @(Model.ShouldShowPrompt ? "needs-attention" : "")" id="delivery-display">
+            @if (Model.HasSelectedTime && Model.IsSelectionValid)
+            {
+                <span class="delivery-icon">🕐</span>
+                <span class="delivery-text">@Model.SelectedDeliveryTimeText</span>
+            }
+            else if (Model.ShouldShowPrompt)
+            {
+                @switch (Model.PromptType)
+                {
+                    case DeliveryTimePromptType.NoSelection:
+                        <span class="delivery-icon animated-pulse">📅</span>
+                        <span class="delivery-text">⚠️ Select delivery time</span>
+                        break;
+                    case DeliveryTimePromptType.SelectionExpired:
+                        <span class="delivery-icon animated-pulse">⏰</span>
+                        <span class="delivery-text">⚠️ Time expired - Select new time</span>
+                        break;
+                    case DeliveryTimePromptType.SelectionInvalid:
+                        <span class="delivery-icon animated-pulse">❌</span>
+                        <span class="delivery-text">⚠️ Time unavailable - Select new time</span>
+                        break;
+                    default:
+                        <span class="delivery-icon">📅</span>
+                        <span class="delivery-text">Select delivery time</span>
+                        break;
+                }
+            }
+            else
+            {
+                <span class="delivery-icon">📅</span>
+                <span class="delivery-text">Select delivery time</span>
+            }
+            <span class="delivery-arrow">▼</span>
+        </div>
+    </div>
+
+    <!-- Popup Modal -->
+    <div id="delivery-modal" class="delivery-modal" style="display: none;">
+        <div class="delivery-modal-content">
+            <div class="delivery-modal-header">
+                <h3>Select Delivery Time</h3>
+                <span class="delivery-modal-close" id="delivery-modal-close">&times;</span>
+            </div>
+            <div class="delivery-modal-body">
+                <!-- Calendar Navigation -->
+                <div class="calendar-header">
+                    <button type="button" class="calendar-nav-btn" id="prev-month">&lt;</button>
+                    <h4 class="calendar-title" id="calendar-title">September 2025</h4>
+                    <button type="button" class="calendar-nav-btn" id="next-month">&gt;</button>
+                </div>
+                
+                <!-- Calendar Grid -->
+                <div class="calendar-container">
+                    <div class="calendar-weekdays">
+                        <div class="weekday">Mon</div>
+                        <div class="weekday">Tue</div>
+                        <div class="weekday">Wed</div>
+                        <div class="weekday">Thu</div>
+                        <div class="weekday">Fri</div>
+                        <div class="weekday">Sat</div>
+                        <div class="weekday">Sun</div>
+                    </div>
+                    <div class="calendar-days" id="calendar-days">
+                        <!-- Calendar days will be generated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- Selected Day Time Slots -->
+                <div class="selected-day-section" id="selected-day-section" style="display: none;">
+                    <div class="selected-day-header" id="selected-day-header">
+                        Mon, Sep 15
+                    </div>
+                    <div class="time-slots-container" id="time-slots-container">
+                        <!-- Time slots will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- Hidden data for JavaScript -->
+                <script type="application/json" id="available-times-data">
+                    @Html.Raw(Json.Serialize(Model.AvailableDeliveryTimes.Select(t => new { 
+                        date = t.DateTime.ToString("yyyy-MM-dd"), 
+                        time = t.TimeDisplayText,
+                        datetime = t.DateTime.ToString("O"),
+                        display = t.DisplayText,
+                        fullDate = t.DateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                    })))
+                </script>
+            </div>
+            <div class="delivery-modal-footer" style="display: none;">
+                <button type="button" id="delivery-confirm" class="btn btn-primary" disabled>
+                    Confirm Selection
+                </button>
+                <button type="button" id="delivery-cancel" class="btn btn-secondary">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .global-delivery-picker {
+            position: relative;
+            display: inline-block;
+        }
+
+        .delivery-display {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            font-size: 14px;
+        }
+
+        .delivery-display:hover {
+            background: #e9ecef;
+        }
+
+        .delivery-icon {
+            margin-right: 8px;
+            font-size: 16px;
+        }
+
+        .delivery-text {
+            flex: 1;
+            white-space: nowrap;
+        }
+
+        .delivery-arrow {
+            margin-left: 8px;
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .delivery-modal {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background-color: rgba(0, 0, 0, 0.5) !important;
+            z-index: 99999 !important;
+            display: none !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+
+        .delivery-modal.show {
+            display: flex !important;
+        }
+
+        .delivery-modal-content {
+            position: relative !important;
+            background: white !important;
+            border-radius: 8px !important;
+            width: 90% !important;
+            max-width: 500px !important;
+            max-height: 80vh !important;
+            overflow-y: auto !important;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+            margin: 20px !important;
+        }
+
+        .delivery-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .delivery-modal-header h3 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .delivery-modal-close {
+            font-size: 24px;
+            cursor: pointer;
+            color: #6c757d;
+        }
+
+        .delivery-modal-close:hover {
+            color: #000;
+        }
+
+        .delivery-modal-body {
+            padding: 20px;
+        }
+
+        /* Calendar Styles */
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 0 10px;
+        }
+
+        .calendar-nav-btn {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 8px 12px;
+            color: #6c757d;
+            border-radius: 4px;
+        }
+
+        .calendar-nav-btn:hover {
+            background: #f8f9fa;
+            color: #007bff;
+        }
+
+        .calendar-title {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .calendar-container {
+            margin-bottom: 20px;
+        }
+
+        .calendar-weekdays {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+            margin-bottom: 8px;
+        }
+
+        .weekday {
+            padding: 8px 4px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6c757d;
+            text-transform: uppercase;
+        }
+
+        .calendar-days {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+        }
+
+        .calendar-day {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .calendar-day:hover {
+            background: #e9ecef;
+        }
+
+        .calendar-day.available {
+            background: #007bff;
+            color: white;
+            font-weight: 600;
+        }
+
+        .calendar-day.available:hover {
+            background: #0056b3;
+        }
+
+        .calendar-day.selected {
+            background: #28a745 !important;
+            color: white;
+        }
+
+        .calendar-day.other-month {
+            color: #dee2e6;
+            cursor: not-allowed;
+        }
+
+        .calendar-day.today {
+            border: 2px solid #007bff;
+        }
+
+        /* Selected Day Section */
+        .selected-day-section {
+            border-top: 1px solid #dee2e6;
+            padding-top: 20px;
+        }
+
+        .selected-day-header {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #495057;
+            text-align: center;
+        }
+
+        .time-slots-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .time-slot-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: white;
+        }
+
+        .time-slot-item:hover {
+            border-color: #007bff;
+            background: #f8f9fa;
+        }
+
+        .time-slot-item.selected {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+
+        .time-slot-time {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .time-slot-orders {
+            font-size: 14px;
+            color: #6c757d;
+        }
+
+        .time-slot-item.selected .time-slot-orders {
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .delivery-modal-footer {
+            padding: 20px;
+            border-top: 1px solid #dee2e6;
+            text-align: right;
+        }
+
+        .delivery-modal-footer .btn {
+            margin-left: 10px;
+            padding: 8px 16px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-primary:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn:hover:not(:disabled) {
+            opacity: 0.9;
+        }
+
+        /* Responsive design */
+        @@media (max-width: 768px) {
+            .delivery-modal-content {
+                width: 95%;
+                margin: 10px;
+                max-height: 90vh;
+            }
+            
+            .calendar-header {
+                padding: 0 5px;
+            }
+            
+            .calendar-title {
+                font-size: 16px;
+            }
+            
+            .calendar-nav-btn {
+                padding: 6px 10px;
+                font-size: 16px;
+            }
+            
+            .calendar-day {
+                font-size: 12px;
+            }
+            
+            .weekday {
+                font-size: 11px;
+                padding: 6px 2px;
+            }
+            
+            .time-slot-item {
+                padding: 10px 12px;
+            }
+            
+            .time-slot-time {
+                font-size: 14px;
+            }
+            
+            .selected-day-header {
+                font-size: 14px;
+            }
+        }
+        
+        /* Alert Styles */
+        .delivery-time-alert {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 100000;
+            max-width: 400px;
+            margin-bottom: 15px;
+            animation: slideInRight 0.3s ease-out;
+        }
+        
+        .delivery-time-alert.info {
+            background: linear-gradient(135deg, #17a2b8, #138496);
+            color: white;
+        }
+        
+        .delivery-time-alert.urgent {
+            background: linear-gradient(135deg, #dc3545, #c82333);
+            color: white;
+            animation: slideInRight 0.3s ease-out, pulse 2s infinite;
+        }
+        
+        .alert-content {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        
+        .alert-icon {
+            margin-right: 12px;
+            font-size: 18px;
+        }
+        
+        .alert-message {
+            flex: 1;
+            font-weight: 500;
+            margin-right: 12px;
+        }
+        
+        .alert-select-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 8px;
+            transition: all 0.2s ease;
+        }
+        
+        .alert-select-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .alert-close {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+            line-height: 1;
+        }
+        
+        .alert-close:hover {
+            color: white;
+        }
+        
+        /* State-specific styles */
+        .global-delivery-picker.no-selection .delivery-display {
+            border-color: #ffc107;
+            background: #fff8e1;
+        }
+        
+        .global-delivery-picker.selection-expired .delivery-display,
+        .global-delivery-picker.selection-invalid .delivery-display {
+            border-color: #dc3545;
+            background: #f8d7da;
+        }
+        
+        .delivery-display.needs-attention {
+            border-width: 2px;
+            animation: borderPulse 2s infinite;
+        }
+        
+        .animated-pulse {
+            animation: iconPulse 1.5s infinite;
+        }
+        
+        /* Animations */
+        @@keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        @@keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            }
+            50% {
+                box-shadow: 0 4px 20px rgba(220, 53, 69, 0.5);
+            }
+        }
+        
+        @@keyframes borderPulse {
+            0%, 100% {
+                border-color: #ffc107;
+            }
+            50% {
+                border-color: #dc3545;
+            }
+        }
+        
+        @@keyframes iconPulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.7;
+                transform: scale(1.1);
+            }
+        }
+        
+        /* Mobile adjustments for alerts */
+        @@media (max-width: 480px) {
+            .delivery-time-alert {
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                max-width: none;
+            }
+            
+            .alert-message {
+                font-size: 14px;
+            }
+            
+            .alert-select-btn {
+                font-size: 11px;
+                padding: 4px 8px;
+            }
+        }
+    </style>
+
+    <script asp-location="Footer">
+        $(document).ready(function() {
+            var modal = $('#delivery-modal');
+            var display = $('#delivery-display');
+            var confirmBtn = $('#delivery-confirm');
+            var selectedSlot = null;
+            var currentMonth = new Date().getMonth();
+            var currentYear = new Date().getFullYear();
+            var selectedDate = null;
+            var availableTimesData = JSON.parse($('#available-times-data').text() || '[]');
+
+            // Group available times by date
+            var availableTimesByDate = {};
+            availableTimesData.forEach(function(item) {
+                if (!availableTimesByDate[item.date]) {
+                    availableTimesByDate[item.date] = [];
+                }
+                availableTimesByDate[item.date].push(item);
+            });
+
+            // Month names
+            var monthNames = [
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            ];
+
+            // Initialize calendar
+            function initCalendar() {
+                updateCalendarTitle();
+                generateCalendarDays();
+            }
+
+            // Update calendar title
+            function updateCalendarTitle() {
+                $('#calendar-title').text(monthNames[currentMonth] + ' ' + currentYear);
+            }
+
+            // Generate calendar days
+            function generateCalendarDays() {
+                var firstDay = new Date(currentYear, currentMonth, 1);
+                var lastDay = new Date(currentYear, currentMonth + 1, 0);
+                var startDate = new Date(firstDay);
+                startDate.setDate(startDate.getDate() - (firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1));
+                
+                var calendarHtml = '';
+                var date = new Date(startDate);
+                
+                for (var i = 0; i < 42; i++) {
+                    var dayClass = 'calendar-day';
+                    // Fix: Use local date formatting to avoid timezone conversion issues
+                    var dateStr = date.getFullYear() + '-' + 
+                                  String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+                                  String(date.getDate()).padStart(2, '0');
+                    var isCurrentMonth = date.getMonth() === currentMonth;
+                    var isToday = date.toDateString() === new Date().toDateString();
+                    var hasAvailableTimes = availableTimesByDate[dateStr] && availableTimesByDate[dateStr].length > 0;
+                    
+                    if (!isCurrentMonth) {
+                        dayClass += ' other-month';
+                    }
+                    if (isToday) {
+                        dayClass += ' today';
+                    }
+                    if (hasAvailableTimes && isCurrentMonth) {
+                        dayClass += ' available';
+                    }
+                    
+                    calendarHtml += '<div class="' + dayClass + '" data-date="' + dateStr + '">' + date.getDate() + '</div>';
+                    date.setDate(date.getDate() + 1);
+                }
+                
+                $('#calendar-days').html(calendarHtml);
+            }
+
+            // Show modal when display is clicked
+            display.click(function() {
+                modal.addClass('show');
+                initCalendar();
+            });
+
+            // Close modal
+            $('#delivery-modal-close, #delivery-cancel').click(function() {
+                modal.removeClass('show');
+                $('#selected-day-section').hide();
+                selectedDate = null;
+                selectedSlot = null;
+                confirmBtn.prop('disabled', true);
+            });
+
+            // Close modal when clicking outside
+            modal.click(function(e) {
+                if (e.target === this) {
+                    modal.removeClass('show');
+                    $('#selected-day-section').hide();
+                    selectedDate = null;
+                    selectedSlot = null;
+                    confirmBtn.prop('disabled', true);
+                }
+            });
+
+            // Calendar navigation
+            $('#prev-month').click(function() {
+                if (currentMonth === 0) {
+                    currentMonth = 11;
+                    currentYear--;
+                } else {
+                    currentMonth--;
+                }
+                updateCalendarTitle();
+                generateCalendarDays();
+                $('#selected-day-section').hide();
+                selectedDate = null;
+            });
+
+            $('#next-month').click(function() {
+                if (currentMonth === 11) {
+                    currentMonth = 0;
+                    currentYear++;
+                } else {
+                    currentMonth++;
+                }
+                updateCalendarTitle();
+                generateCalendarDays();
+                $('#selected-day-section').hide();
+                selectedDate = null;
+            });
+
+            // Handle calendar day selection
+            $(document).on('click', '.calendar-day.available', function() {
+                var clickedDate = $(this).data('date');
+                selectedDate = clickedDate;
+                
+                // Update visual selection
+                $('.calendar-day').removeClass('selected');
+                $(this).addClass('selected');
+                
+                // Show time slots for selected date
+                showTimeSlots(clickedDate);
+            });
+
+            // Show time slots for selected date
+            function showTimeSlots(dateStr) {
+                var times = availableTimesByDate[dateStr] || [];
+                if (times.length === 0) return;
+                
+                // Format date header - Parse date parts manually to avoid timezone issues
+                var dateParts = dateStr.split('-');
+                var year = parseInt(dateParts[0]);
+                var month = parseInt(dateParts[1]) - 1; // Month is 0-based in JavaScript
+                var day = parseInt(dateParts[2]);
+                var date = new Date(year, month, day);
+                
+                var dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                var dayName = dayNames[date.getDay()];
+                var monthName = monthNames[date.getMonth()];
+                var dayOfMonth = date.getDate();
+                
+                $('#selected-day-header').text(dayName + ', ' + monthName + ' ' + dayOfMonth);
+                
+                // Generate time slots HTML
+                var timeSlotsHtml = '';
+                times.forEach(function(timeSlot) {
+                    timeSlotsHtml += '<div class="time-slot-item" data-datetime="' + timeSlot.datetime + '" data-display="' + timeSlot.display + '">' +
+                        '<div class="time-slot-time">' + timeSlot.time + '</div>' +
+                        '<div class="time-slot-orders">0 orders</div>' +
+                        '</div>';
+                });
+                
+                $('#time-slots-container').html(timeSlotsHtml);
+                $('#selected-day-section').show();
+            }
+
+            // Handle time slot selection
+            $(document).on('click', '.time-slot-item', function() {
+                var datetime = $(this).data('datetime');
+                var displayText = $(this).data('display');
+                
+                // Update display immediately and close modal
+                $('#delivery-display .delivery-text').text(displayText);
+                $('#delivery-display .delivery-icon').text('🕐');
+                
+                // Close modal
+                modal.removeClass('show');
+                $('#selected-day-section').hide();
+                
+                // Save to session/cookie
+                $.post('@Url.Action("SetDeliveryTime", "DeliveryTime", new { area = "" })', {
+                    deliveryTime: datetime
+                }).fail(function() {
+                    alert('Failed to save delivery time. Please try again.');
+                });
+            });
+
+            // Hide Done button since we're handling immediate selection
+            $('#delivery-confirm, #delivery-cancel').parent().hide();
+
+            // Check if user needs to select delivery time on page load
+            @if (!Model.HasSelectedTime)
+            {
+                <text>
+                // Show modal automatically if no time is selected
+                // You can customize this behavior
+                setTimeout(function() {
+                    // Uncomment the line below to show popup automatically
+                    // modal.addClass('show');
+                    // initCalendar();
+                }, 1000);
+                </text>
+            }
+        });
+    </script>
+}

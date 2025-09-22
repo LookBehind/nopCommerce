@@ -22,6 +22,8 @@ namespace Nop.Plugin.Company.Company.Infrastructure
         {
             services.AddScoped<ICompanyModelFactory, CompanyModelFactory>();
             services.AddScoped<ICompanyAddressService, CompanyAddressService>();
+            services.AddScoped<IDeliveryTimeService, DeliveryTimeService>();
+            services.AddScoped<IGlobalDeliveryTimeValidationService, GlobalDeliveryTimeValidationService>();
         }
 
         /// <summary>

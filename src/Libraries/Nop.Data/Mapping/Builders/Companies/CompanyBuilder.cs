@@ -14,7 +14,8 @@ namespace Nop.Data.Mapping.Builders.Companies
         public override void MapEntity(CreateTableExpressionBuilder table)
         {
             table
-                .WithColumn(nameof(Company.Name)).AsString(400).NotNullable();
+                .WithColumn(nameof(Company.Name)).AsString(400).NotNullable()
+                .WithColumn(nameof(Company.OrderAheadDays)).AsInt32().NotNullable().WithDefaultValue(14);
         }
 
         #endregion

@@ -1,11 +1,11 @@
 ﻿{
   "Group": "Company",
-  "FriendlyName": "Company",
+  "FriendlyName": "Company & Delivery Management",
   "SystemName": "Company.Company",
-  "Version": "1.0",
+  "Version": "2.1",
   "SupportedVersions": [ "4.50" ],
   "Author": "Custom",
   "DisplayOrder": 1,
   "FileName": "Nop.Plugin.Company.Company.dll",
-  "Description": "This plugin allows setting company information"
+  "Description": "This plugin provides company information management and global delivery date picker functionality for lunch delivery services. Features include: company management, global header delivery time selection, time-based ordering restrictions, and checkout validation."
 }
