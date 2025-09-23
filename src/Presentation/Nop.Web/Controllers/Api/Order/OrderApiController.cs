@@ -69,6 +69,7 @@ namespace Nop.Web.Controllers.Api.Order
         private readonly IGenericAttributeService _genericAttributeService;
         private readonly ICheckoutAttributeParser _checkoutAttributeParser;
         
+        private readonly OrderSettings _orderSettings;
 
         #endregion
 
@@ -98,7 +99,7 @@ namespace Nop.Web.Controllers.Api.Order
             ILogger logger, 
             ICheckoutAttributeService checkoutAttributeService, 
             IGenericAttributeService genericAttributeService, 
-            ICheckoutAttributeParser checkoutAttributeParser)
+            ICheckoutAttributeParser checkoutAttributeParser, OrderSettings orderSettings)
         {
             _orderService = orderService;
             _customerService = customerService;
@@ -125,6 +126,7 @@ namespace Nop.Web.Controllers.Api.Order
             _checkoutAttributeService = checkoutAttributeService;
             _genericAttributeService = genericAttributeService;
             _checkoutAttributeParser = checkoutAttributeParser;
+            _orderSettings = orderSettings;
         }
 
         #endregion
@@ -451,34 +453,75 @@ namespace Nop.Web.Controllers.Api.Order
         
         private async Task<DateTime> ConvertCustomerLocalTimeToUTCAsync(
             Core.Domain.Customers.Customer customer,
-            string date)
+            string deliveryDateString)
         {
+            var date = Convert.ToDateTime(deliveryDateString);
+            
             var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-            var timezoneInfo = TZConvert.GetTimeZoneInfo(company.TimeZone);
-            var dateTimeObject = _dateTimeHelper.ConvertToUtcTime(
-                Convert.ToDateTime(date),
-                timezoneInfo);
-            return dateTimeObject;
-        }
+            var companyTimezone = TZConvert.GetTimeZoneInfo(company.TimeZone);
+            
+            // try to fix up timezone issues
+            var deliveryTripletString = _orderSettings.ScheduleDate.Split(',');
+            var validDeliveryTimes = deliveryTripletString
+                .Select(x => x.Trim().Split('-'))
+                .Where(x => x.Length == 3)
+                .Select(x =>
+                {
+                    var timeString = x[2].Trim().Split(':');
+                    var hour = int.Parse(timeString[0]);
+                    var minute = int.Parse(timeString[1]);
+                    var second = int.Parse(timeString[2]);
+                    return new TimeSpan(hour, minute, second);
+                })
+                .ToArray();
 
-        // This is temporary until PlaceOrderAsync is fixed to accept datetime
-        private async Task<DateTime> ConvertCustomerLocalTimeToUTCStringAsync(
-            Core.Domain.Customers.Customer customer,
-            string date)
-        {
-            return await ConvertCustomerLocalTimeToUTCAsync(customer, date);
+            if (!validDeliveryTimes.Contains(date.TimeOfDay))
+            {
+                // got an issue here, probably mobile is sending local time converted to UTC
+                var possibleDeliveryDate = DateTime.SpecifyKind(_dateTimeHelper.ConvertToUtcTime(
+                    date,
+                    companyTimezone), DateTimeKind.Unspecified);
+
+                if (validDeliveryTimes.Contains(possibleDeliveryDate.TimeOfDay))
+                {
+                    await _logger.InformationAsync($"Fixed mobile timezone issue. " +
+                                                   $"Received {deliveryDateString}, but was meant to be {possibleDeliveryDate}", 
+                        customer: customer);
+                    
+                    date = possibleDeliveryDate;
+                }
+                else
+                {
+                    await _logger.WarningAsync(
+                        $"Received gibberish datetime, will be fixed in upcoming release (will not stop order from processing). {deliveryDateString}", 
+                        customer: customer);
+                }
+            }
+            
+            return _dateTimeHelper.ConvertToUtcTime(
+                date,
+                companyTimezone);
         }
 
         private async Task<bool> IsScheduleDateAllowed(int storeId, Core.Domain.Customers.Customer customer, 
-            string customerPreferredScheduleDateString)
+            DateTime customerPreferredScheduleDate)
         {
             var firstAvailableDeliveryTimes = await _orderProcessingService.GetAvailableDeliverTimesAsync();
 
-            var customerPreferredScheduleDate = Convert.ToDateTime(customerPreferredScheduleDateString);
-            if (customerPreferredScheduleDate < firstAvailableDeliveryTimes.First())
+            var firstAvailableDeliveryTime = firstAvailableDeliveryTimes.First();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            var companyTimezone = TZConvert.GetTimeZoneInfo(company.TimeZone);
+            firstAvailableDeliveryTime = _dateTimeHelper.ConvertToUtcTime(firstAvailableDeliveryTime, companyTimezone);
+            
+            if (customerPreferredScheduleDate < firstAvailableDeliveryTime)
             {
-                await _logger.WarningAsync($"Schedule date already passed. customerPreferredScheduleDate = {customerPreferredScheduleDate}, " +
-                                           $"firstAvailableDeliveryTimes = {string.Join(';', firstAvailableDeliveryTimes)}");
+                await _logger.WarningAsync(
+                    $"""
+                    Schedule date already passed. customerPreferredScheduleDate = {customerPreferredScheduleDate}
+                    firstAvailableDeliveryTimes = {string.Join(';', firstAvailableDeliveryTimes)}
+                    firstAvailableDeliveryTime = {firstAvailableDeliveryTime}
+                    """,
+                    customer: customer);
                 return false;
             }
 
@@ -493,11 +536,11 @@ namespace Nop.Web.Controllers.Api.Order
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
 
-            var scheduleDateUtc = await ConvertCustomerLocalTimeToUTCStringAsync(customer, scheduleDate);
+            var scheduleDateUtc = await ConvertCustomerLocalTimeToUTCAsync(customer, scheduleDate);
             
-            await _logger.InformationAsync($"Ordering at {scheduleDate}", customer: customer);
+            await _logger.InformationAsync($"Ordering at {scheduleDateUtc} (raw: {scheduleDate})", customer: customer);
 
-            var scheduleAllowed = await IsScheduleDateAllowed(store.Id, customer, scheduleDate);
+            var scheduleAllowed = await IsScheduleDateAllowed(store.Id, customer, scheduleDateUtc);
             if (!scheduleAllowed)
             {
                 await _logger.ErrorAsync($"Order schedule was not allowed: {scheduleDate}", customer: customer);
