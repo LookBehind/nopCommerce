@@ -3357,14 +3357,14 @@ namespace Nop.Services.Orders
                     Convert.ToInt32(lastOrderHourParts[0]),
                     Convert.ToInt32(lastOrderHourParts[1]),
                     Convert.ToInt32(lastOrderHourParts[2]),
-                    DateTimeKind.Utc);
+                    DateTimeKind.Unspecified);
 
                 var deliveryTime = new DateTime(
                     now.Year, now.Month, now.Day,
                     Convert.ToInt32(deliveryHourParts[0]),
                     Convert.ToInt32(deliveryHourParts[1]),
                     Convert.ToInt32(deliveryHourParts[2]),
-                    DateTimeKind.Utc);
+                    DateTimeKind.Unspecified);
 
                 deliverySlots.Add((lastOrderTime, deliveryTime));
             }
