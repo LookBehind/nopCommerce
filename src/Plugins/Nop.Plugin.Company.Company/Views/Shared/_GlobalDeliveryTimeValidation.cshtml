@@ -139,69 +139,19 @@ $(document).ready(function() {
             } else {
                 // Max retries reached, assume no valid selection
                 this.state.hasValidSelection = false;
-                this.showPrompt('warning', 'Please select your delivery time.');
+                this.openDeliveryPicker('Delivery time validation retries exhausted. Please refresh the page.');
             }
-        },
-        
-        // Show validation prompt
-        showPrompt: function(type, message) {
-            // Remove existing prompts first
-            this.hidePrompts();
-            
-            var alertClass = type === 'error' ? 'urgent' : 'info';
-            var iconEmoji = type === 'error' ? '❌' : '⏰';
-            
-            var promptHtml = `
-                <div class="delivery-time-global-alert ${alertClass}" id="delivery-time-global-alert" 
-                     style="position: fixed; top: 20px; right: 20px; z-index: 100001; max-width: 350px; animation: slideInRight 0.3s ease-out;">
-                    <div style="display: flex; align-items: center; padding: 12px 16px; border-radius: 8px; 
-                                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); color: white;
-                                background: ${type === 'error' ? 'linear-gradient(135deg, #dc3545, #c82333)' : 'linear-gradient(135deg, #ffc107, #e0a800)'};">
-                        <span style="margin-right: 12px; font-size: 18px;">${iconEmoji}</span>
-                        <span style="flex: 1; font-weight: 500; margin-right: 12px; color: ${type === 'error' ? 'white' : '#212529'};">${message}</span>
-                        <button type="button" onclick="DeliveryTimeValidator.openDeliveryPicker();" 
-                                style="background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); 
-                                       color: ${type === 'error' ? 'white' : '#212529'}; padding: 6px 12px; border-radius: 4px; cursor: pointer; 
-                                       font-size: 12px; font-weight: 600; margin-right: 8px; transition: all 0.2s ease;">
-                            Select Time
-                        </button>
-                        <button type="button" onclick="DeliveryTimeValidator.hidePrompts();" 
-                                style="background: none; border: none; color: rgba(255, 255, 255, 0.8); cursor: pointer; 
-                                       font-size: 16px; padding: 4px; line-height: 1;">
-                            ✕
-                        </button>
-                    </div>
-                </div>
-            `;
-            
-            $('body').append(promptHtml);
-            
-            // Auto-hide after 15 seconds if not urgent
-            if (type !== 'error') {
-                setTimeout(() => {
-                    this.hidePrompts();
-                }, 15000);
-            }
-        },
-        
-        // Hide validation prompts
-        hidePrompts: function() {
-            $('#delivery-time-global-alert').fadeOut(300, function() {
-                $(this).remove();
-            });
         },
         
         // Open delivery picker
-        openDeliveryPicker: function() {
-            this.hidePrompts();
-            
+        openDeliveryPicker: function(errorMessage) {
             // Try to trigger the existing delivery picker
             var deliveryDisplay = $('#delivery-display');
             if (deliveryDisplay.length > 0) {
                 deliveryDisplay.click();
             } else {
                 // If no delivery picker found, show a message
-                this.showPrompt('info', 'Delivery picker not found. Please refresh the page.');
+                console.error('Delivery picker not found. Please refresh the page.');
             }
         },
         
@@ -217,7 +167,6 @@ $(document).ready(function() {
                 clearInterval(this.state.intervalId);
                 this.state.intervalId = null;
             }
-            this.hidePrompts();
         }
     };
     
