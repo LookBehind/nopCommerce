@@ -30,7 +30,9 @@ using System.Data;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using Nop.Services.Common;
 using Nop.Services.Companies;
+using Nop.Services.Security;
 
 namespace Nop.Web.Controllers.Api.Security
 {
@@ -66,6 +68,9 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly IProductAttributeService _productAttributeService;
         private readonly ICompanyService _companyService;
         private readonly IDiscountService _discountService;
+        private readonly IPermissionService _permissionService;
+        private readonly IGenericAttributeService _genericAttributeService;
+        private const string LastUnpublishedProductIdsKey = "LastUnpublishedProductIds"; 
 
         private static readonly AttributeControlType[] _allowedAttributeControlTypes = new[] {
             AttributeControlType.DropdownList,
@@ -103,7 +108,9 @@ namespace Nop.Web.Controllers.Api.Security
             IProductAttributeService productAttributeService,
             IProductAvailabilityService productAvailabilityService,
             ICompanyService companyService,
-            IDiscountService discountService)
+            IDiscountService discountService, 
+            IPermissionService permissionService, 
+            IGenericAttributeService genericAttributeService)
         {
             _localizationSettings = localizationSettings;
             _workflowMessageService = workflowMessageService;
@@ -130,7 +137,8 @@ namespace Nop.Web.Controllers.Api.Security
             _productAttributeService = productAttributeService;
             _companyService = companyService;
             _discountService = discountService;
-
+            _permissionService = permissionService;
+            _genericAttributeService = genericAttributeService;
         }
 
         #endregion
@@ -479,6 +487,110 @@ namespace Nop.Web.Controllers.Api.Security
             return Ok(model);
         }
 
+        public class ProductPublishUnpublishModel
+        {
+            public string[] VendorsWhitelist { get; set; }
+            public int CompanyId { get; set; }
+            public bool DoNotUseLastUnpublishedProductList { get; set; }
+        }
+        
+        [HttpPost("product-publish-whitelist")]
+        public async Task<IActionResult> ProductPublishWhitelist([FromBody] ProductPublishUnpublishModel model)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts) ||
+                (await _workContext.GetCurrentVendorAsync()) != null)
+                return Unauthorized(new {success = false, message = "Not enough permissions"});
+
+            var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
+            var company = await _companyService.GetCompanyByIdAsync(model.CompanyId);
+            if (company == null)
+                return BadRequest(new {success = false, message = "Company not found"});
+            
+            var companyAllowedVendorIds =
+                (await _companyService.GetCompanyVendorsByCompanyAsync(model.CompanyId))
+                .Select(x => x.VendorId)
+                .ToHashSet();
+            
+            var companyAllVendors =
+                (await _vendorService.GetAllVendorsAsync(showHidden: true))
+                .Where(x => companyAllowedVendorIds.Contains(x.Id))
+                .ToArray();
+            
+            var vendorsToUnpublish = companyAllVendors
+                .Where(x => !model.VendorsWhitelist.Contains(x.Name, StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+            var vendorsToPublish = companyAllVendors.Except(vendorsToUnpublish);
+            var vendorsNotFound = model.VendorsWhitelist
+                .Where(x => !companyAllVendors.Any(y => string.Equals(y.Name, x, StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+
+            if (model.DoNotUseLastUnpublishedProductList)
+                return BadRequest(new { success = false, message = "Not implemented" });
+
+            var lastUnpublishedProductIds =
+                (await _genericAttributeService.GetAttributeAsync(company, LastUnpublishedProductIdsKey, storeId,
+                    ""))
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(int.Parse)
+                .ToHashSet();
+            
+            // Unpublish products and save their IDs for future publishing back
+            var unpublishedProductIdsByVendor = new Dictionary<int, List<int>>();
+            foreach (var vendor in vendorsToUnpublish)
+            {
+                var unpublishedProductIds = new List<int>();
+                
+                var publishedProducts = 
+                    await _productService.SearchProductsAsync(storeId: storeId, vendorId: vendor.Id, showHidden: false);
+                foreach (var product in publishedProducts)
+                {
+                    product.Published = false;
+                    await _productService.UpdateProductAsync(product);
+                    unpublishedProductIds.Add(product.Id);
+                }
+                unpublishedProductIdsByVendor[vendor.Id] = unpublishedProductIds;
+            }
+            // Save unpublished product IDs
+            await _genericAttributeService.SaveAttributeAsync(company, LastUnpublishedProductIdsKey, 
+                string.Join(",", lastUnpublishedProductIds.Union(unpublishedProductIdsByVendor.Values.SelectMany(x => x))), 
+                storeId);
+            
+            // Publish products
+            var publishedProductIdsByVendor = new Dictionary<int, List<int>>();
+            foreach (var vendor in vendorsToPublish)
+            {
+                var publishedProductIds = new List<int>();
+                
+                var unpublishedProducts = 
+                    await _productService.SearchProductsAsync(storeId: storeId, 
+                        vendorId: vendor.Id, 
+                        showHidden: true, 
+                        overridePublished: false);
+                
+                foreach (var product in unpublishedProducts)
+                {
+                    // Publish only if we ever unpublished those products by ourselves
+                    if(lastUnpublishedProductIds.Contains(product.Id))
+                    {
+                        product.Published = true;
+                        await _productService.UpdateProductAsync(product);
+                        publishedProductIds.Add(product.Id);
+                    }
+                }
+                publishedProductIdsByVendor[vendor.Id] = publishedProductIds;
+            }
+            
+            return Ok(new
+            {
+                success = true,
+                notFoundVendors = vendorsNotFound,
+                publishedProductCountByVendor = publishedProductIdsByVendor
+                    .ToDictionary(x => companyAllVendors.First(v => v.Id == x.Key).Name, x => x.Value.Count),
+                unpublishedProductCountByVendor = unpublishedProductIdsByVendor
+                    .ToDictionary(x => companyAllVendors.First(v => v.Id == x.Key).Name, x => x.Value.Count),
+            });
+        }
+        
         [HttpGet("product-search")]
         public async Task<IActionResult> SearchProducts(SearchProductByFilters searchModel)
         {
