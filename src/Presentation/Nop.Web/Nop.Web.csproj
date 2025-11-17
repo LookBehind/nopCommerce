@@ -15,7 +15,7 @@
     <AspNetCoreHostingModel>InProcess</AspNetCoreHostingModel>
     <!--When true, compiles and emits the Razor assembly as part of publishing the project-->
     <RazorCompileOnPublish>false</RazorCompileOnPublish>
-    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+    <EnableDefaultContentItems>true</EnableDefaultContentItems>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Libraries\Nop.Core\Nop.Core.csproj" />
@@ -52,6 +52,7 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Plugins\" />
+    <Folder Include="Plugins\Company.Company\Views\Shared\Components\GlobalDeliveryDatePicker\" />
   </ItemGroup>
   <ItemGroup>
     <None Include="wwwroot\lib\timeRangePicker\timeRangePicker.js" />

@@ -586,27 +586,11 @@ namespace Nop.Web.Factories
             if (order == null)
                 throw new ArgumentNullException(nameof(order));
 
-            string message;
-            var customer = await _workContext.GetCurrentCustomerAsync();
-            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
-            var timeZoneInfo = TZConvert.GetTimeZoneInfo(company.TimeZone);
-            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timeZoneInfo);
-            var schedulDate = _dateTimeHelper.ConvertToUserTime(order.ScheduleDate, TimeZoneInfo.Utc, timeZoneInfo);
-            if (schedulDate.Day == now.Day)
-            {
-                message = $"Your lunch will be delivered at {schedulDate.Hour % 12} PM.";
-            }
-            else
-            {
-                message = $"Your lunch will be delivered TOMORROW at {schedulDate.Hour % 12} PM.";
-            }
-
             var model = new CheckoutCompletedModel
             {
                 OrderId = order.Id,
                 OnePageCheckoutEnabled = _orderSettings.OnePageCheckoutEnabled,
                 CustomOrderNumber = order.CustomOrderNumber,
-                DeliveryTimeWindowMessage = message,
                 DeliverySlot = (int)order.DeliverySlot
             };
 

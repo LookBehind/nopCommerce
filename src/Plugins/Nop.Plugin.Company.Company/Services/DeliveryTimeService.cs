@@ -20,6 +20,8 @@ namespace Nop.Plugin.Company.Company.Services
     {
         #region Fields
 
+        private const int ORDER_AHEAD_DAYS_DEFAULT = 14;
+        
         private readonly ISettingService _settingService;
         private readonly IWorkContext _workContext;
         private readonly IDateTimeHelper _dateTimeHelper;
@@ -61,7 +63,7 @@ namespace Nop.Plugin.Company.Company.Services
             var deliveryTimes = new List<DateTime>();
             var slots = await GetDeliverySlotsAsync();
             
-            if (!slots.Any())
+            if (slots.Count == 0)
                 return deliveryTimes;
 
             // Use company's OrderAheadDays if not specified
@@ -73,7 +75,9 @@ namespace Nop.Plugin.Company.Company.Services
                 ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
                 : TZConvert.GetTimeZoneInfo(company.TimeZone);
 
-            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
+            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, 
+                TimeZoneInfo.Utc, 
+                timezoneInfo);
 
             // Generate delivery times for each day up to actualDaysAhead
             for (var day = 0; day <= actualDaysAhead; day++)
@@ -99,7 +103,7 @@ namespace Nop.Plugin.Company.Company.Services
             var deliveryTimes = new List<DateTime>();
             var slots = await GetDeliverySlotsAsync();
 
-            if (!slots.Any())
+            if (slots.Count == 0)
                 return deliveryTimes;
 
             var currentCustomer = await _workContext.GetCurrentCustomerAsync();
@@ -151,7 +155,9 @@ namespace Nop.Plugin.Company.Company.Services
                 ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
                 : TZConvert.GetTimeZoneInfo(company.TimeZone);
 
-            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
+            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, 
+                TimeZoneInfo.Utc, 
+                timezoneInfo);
 
             // Check if delivery time is within allowed future range
             if (deliveryTime.Date > now.Date.AddDays(maxDaysAhead))
@@ -178,8 +184,8 @@ namespace Nop.Plugin.Company.Company.Services
             var currentCustomer = await _workContext.GetCurrentCustomerAsync();
             var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
             
-            // Use company's OrderAheadDays if available, otherwise default to 14
-            return company?.OrderAheadDays ?? 14;
+            // Use company's OrderAheadDays if available, otherwise use default
+            return company?.OrderAheadDays ?? ORDER_AHEAD_DAYS_DEFAULT;
         }
 
         /// <summary>

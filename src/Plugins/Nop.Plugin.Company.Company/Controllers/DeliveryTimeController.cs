@@ -3,86 +3,76 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
+using Nop.Core.Domain.Customers;
 using Nop.Plugin.Company.Company.Services;
+using Nop.Services.Common;
 using Nop.Services.Customers;
 using Nop.Services.Localization;
+using Nop.Services.Logging;
 using Nop.Web.Controllers;
 
 namespace Nop.Plugin.Company.Company.Controllers
 {
+    public class SetDeliveryTimeRequest
+    {
+        public DateTime DeliveryTime { get; set; }
+    }
+    
     /// <summary>
     /// Delivery time controller
     /// </summary>
-    public class DeliveryTimeController : BasePublicController
+    public class DeliveryTimeController(
+        IDeliveryTimeService deliveryTimeService,
+        IWorkContext workContext,
+        ILocalizationService localizationService,
+        ICustomerService customerService,
+        IGenericAttributeService genericAttributeService,
+        IStoreContext storeContext,
+        ILogger logger)
+        : BasePublicController
     {
-        #region Fields
-
-        private readonly IDeliveryTimeService _deliveryTimeService;
-        private readonly IWorkContext _workContext;
-        private readonly ILocalizationService _localizationService;
-        private readonly ICustomerService _customerService;
-
-        #endregion
-
-        #region Ctor
-
-        public DeliveryTimeController(
-            IDeliveryTimeService deliveryTimeService,
-            IWorkContext workContext,
-            ILocalizationService localizationService,
-            ICustomerService customerService)
-        {
-            _deliveryTimeService = deliveryTimeService;
-            _workContext = workContext;
-            _localizationService = localizationService;
-            _customerService = customerService;
-        }
-
-        #endregion
-
-        #region Methods
-
+        private const string SELECTED_DELIVERY_TIME_KEY = nameof(SELECTED_DELIVERY_TIME_KEY);
+        
         /// <summary>
         /// Set delivery time via AJAX
         /// </summary>
-        /// <param name="deliveryTime">Selected delivery time</param>
+        /// <param name="setDeliveryTimeRequest">Selected delivery time</param>
         /// <returns>JSON result</returns>
         [HttpPost]
-        public async Task<IActionResult> SetDeliveryTime(DateTime deliveryTime)
+        public async Task<IActionResult> SetDeliveryTime([FromBody]SetDeliveryTimeRequest setDeliveryTimeRequest)
         {
             try
             {
+                var currentCustomer = await workContext.GetCurrentCustomerAsync();
+                var currentStore = await storeContext.GetCurrentStoreAsync();
+                
                 // Validate the delivery time
-                if (!await _deliveryTimeService.IsDeliveryTimeAvailableAsync(deliveryTime))
+                if (!await deliveryTimeService.IsDeliveryTimeAvailableAsync(setDeliveryTimeRequest.DeliveryTime))
                 {
+                    await logger.WarningAsync($"Delivery time '{setDeliveryTimeRequest.DeliveryTime}' is not available", 
+                        customer: currentCustomer);
                     return Json(new { 
                         success = false, 
-                        message = await _localizationService.GetResourceAsync("DeliveryTime.InvalidTime") 
+                        message = await localizationService.GetResourceAsync("DeliveryTime.InvalidTime") 
                     });
                 }
 
-                // Save to session
-                HttpContext.Session.Set("SelectedDeliveryTime", BitConverter.GetBytes(deliveryTime.Ticks));
+                await genericAttributeService.SaveAttributeAsync(currentCustomer,
+                    SELECTED_DELIVERY_TIME_KEY, setDeliveryTimeRequest.DeliveryTime, currentStore.Id);
 
-                // Also save to cookie as backup (expires in 1 day)
-                var cookieOptions = new CookieOptions
-                {
-                    Expires = DateTimeOffset.UtcNow.AddDays(1),
-                    HttpOnly = false,
-                    SameSite = SameSiteMode.Lax
-                };
-                Response.Cookies.Append("SelectedDeliveryTime", deliveryTime.ToString("O"), cookieOptions);
-
+                await logger.InformationAsync($"Updated delivery time of customer '{currentCustomer.Email}' to '{setDeliveryTimeRequest}'", 
+                    customer: currentCustomer);
+                
                 return Json(new { 
                     success = true, 
-                    message = await _localizationService.GetResourceAsync("DeliveryTime.SelectionSaved") 
+                    message = await localizationService.GetResourceAsync("DeliveryTime.SelectionSaved") 
                 });
             }
             catch (Exception ex)
             {
                 return Json(new { 
                     success = false, 
-                    message = await _localizationService.GetResourceAsync("DeliveryTime.ErrorSaving") 
+                    message = await localizationService.GetResourceAsync("DeliveryTime.ErrorSaving") 
                 });
             }
         }
@@ -96,41 +86,36 @@ namespace Nop.Plugin.Company.Company.Controllers
         {
             try
             {
-                DateTime? selectedTime = null;
-
-                // Try session first
-                if (HttpContext.Session.TryGetValue("SelectedDeliveryTime", out var sessionBytes))
-                {
-                    var ticks = BitConverter.ToInt64(sessionBytes, 0);
-                    selectedTime = new DateTime(ticks);
-                }
-                // Try cookie as fallback
-                else if (HttpContext.Request.Cookies.TryGetValue("SelectedDeliveryTime", out var cookieValue) &&
-                         DateTime.TryParse(cookieValue, out var cookieDateTime))
-                {
-                    selectedTime = cookieDateTime;
-                }
+                var currentCustomer = await workContext.GetCurrentCustomerAsync();
+                var currentStore = await storeContext.GetCurrentStoreAsync();
+                
+                var selectedTime = await genericAttributeService.GetAttributeAsync<DateTime?>(
+                    currentCustomer, SELECTED_DELIVERY_TIME_KEY, currentStore.Id);
 
                 // Validate that the time is still available
-                if (selectedTime.HasValue && !await _deliveryTimeService.IsDeliveryTimeAvailableAsync(selectedTime.Value))
+                if (selectedTime.HasValue && 
+                    !await deliveryTimeService.IsDeliveryTimeAvailableAsync(selectedTime.Value))
                 {
-                    // Clear invalid selection
-                    HttpContext.Session.Remove("SelectedDeliveryTime");
-                    Response.Cookies.Delete("SelectedDeliveryTime");
+                    await genericAttributeService.SaveAttributeAsync<DateTime?>(currentCustomer,
+                        SELECTED_DELIVERY_TIME_KEY, null, currentStore.Id);
                     selectedTime = null;
                 }
 
                 return Json(new { 
-                    success = true, 
-                    deliveryTime = selectedTime?.ToString("O"),
-                    hasSelection = selectedTime.HasValue
+                    success = true,
+                    selectedDeliveryTime = selectedTime,
+                    possibleDeliveryTimes = await deliveryTimeService.GetAvailableDeliveryTimesAsync(),
+                    message = selectedTime == null ? await localizationService.GetResourceAsync("DeliveryTime.Retrieved") 
+                        : string.Empty
                 });
             }
             catch (Exception ex)
             {
                 return Json(new { 
                     success = false, 
-                    message = await _localizationService.GetResourceAsync("DeliveryTime.ErrorRetrieving") 
+                    selectedDeliveryTime = (string)null,
+                    possibleDeliveryTimes = await deliveryTimeService.GetAvailableDeliveryTimesAsync(),
+                    message = await localizationService.GetResourceAsync("DeliveryTime.ErrorRetrieving") 
                 });
             }
         }
@@ -144,23 +129,23 @@ namespace Nop.Plugin.Company.Company.Controllers
         {
             try
             {
-                HttpContext.Session.Remove("SelectedDeliveryTime");
-                Response.Cookies.Delete("SelectedDeliveryTime");
+                var currentCustomer = await workContext.GetCurrentCustomerAsync();
+                var currentStore = await storeContext.GetCurrentStoreAsync();
+                await genericAttributeService.SaveAttributeAsync<DateTime?>(currentCustomer,
+                    SELECTED_DELIVERY_TIME_KEY, null, currentStore.Id);
 
                 return Json(new { 
                     success = true, 
-                    message = await _localizationService.GetResourceAsync("DeliveryTime.SelectionCleared") 
+                    message = await localizationService.GetResourceAsync("DeliveryTime.SelectionCleared") 
                 });
             }
             catch (Exception ex)
             {
                 return Json(new { 
                     success = false, 
-                    message = await _localizationService.GetResourceAsync("DeliveryTime.ErrorClearing") 
+                    message = await localizationService.GetResourceAsync("DeliveryTime.ErrorClearing") 
                 });
             }
         }
-
-        #endregion
     }
 }

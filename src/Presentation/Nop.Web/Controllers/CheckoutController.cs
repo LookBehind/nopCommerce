@@ -1225,7 +1225,7 @@ namespace Nop.Web.Controllers
                     if (!_paymentPluginManager.IsPluginActive(paymentMethodInst))
                         throw new Exception("Selected payment method can't be parsed");
 
-                    return await OpcLoadStepAfterPaymentMethod(paymentMethodInst, cart, deliveryTime);
+                    return await OpcLoadStepAfterPaymentMethod(paymentMethodInst, cart);
                 }
 
                 //customer have to choose a payment method
@@ -1257,17 +1257,13 @@ namespace Nop.Web.Controllers
         }
 
         /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task<JsonResult> OpcLoadStepAfterPaymentMethod(IPaymentMethod paymentMethod, IList<ShoppingCartItem> cart, DateTime? deliveryTime = null)
+        protected virtual async Task<JsonResult> OpcLoadStepAfterPaymentMethod(IPaymentMethod paymentMethod, IList<ShoppingCartItem> cart)
         {
             if (paymentMethod.SkipPaymentInfo ||
                 (paymentMethod.PaymentMethodType == PaymentMethodType.Redirection && _paymentSettings.SkipPaymentInfoStepForRedirectionPaymentMethods))
             {
                 //skip payment info page
                 var paymentInfo = new ProcessPaymentRequest();
-                var currentCustomer = await _workContext.GetCurrentCustomerAsync();
-                var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
-                var timezoneInfo = TZConvert.GetTimeZoneInfo(company.TimeZone);
-                paymentInfo.ScheduleDate = _dateTimeHelper.ConvertToUtcTime(deliveryTime!.Value, timezoneInfo);
                 //session save
                 HttpContext.Session.Set("OrderPaymentInfo", paymentInfo);
 
@@ -1743,10 +1739,7 @@ namespace Nop.Web.Controllers
                 await _genericAttributeService.SaveAttributeAsync(await _workContext.GetCurrentCustomerAsync(),
                     NopCustomerDefaults.SelectedPaymentMethodAttribute, paymentmethod, (await _storeContext.GetCurrentStoreAsync()).Id);
 
-                var deliveryTime = await _genericAttributeService.GetAttributeAsync<DateTime>(
-                    await _workContext.GetCurrentCustomerAsync(), "deliveryTime",
-                    (await _storeContext.GetCurrentStoreAsync()).Id);
-                return await OpcLoadStepAfterPaymentMethod(paymentMethodInst, cart, deliveryTime);
+                return await OpcLoadStepAfterPaymentMethod(paymentMethodInst, cart);
             }
             catch (Exception exc)
             {

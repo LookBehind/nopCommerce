@@ -4,39 +4,6 @@
 
 @if (Model.AvailableDeliveryTimes.Any())
 {
-    <!-- Prompt Alert (shown when needed) -->
-    @if (Model.ShouldShowPrompt)
-    {
-        <div class="delivery-time-alert @(Model.IsUrgent ? "urgent" : "info")" id="delivery-time-alert">
-            <div class="alert-content">
-                <span class="alert-icon">
-                    @switch (Model.PromptType)
-                    {
-                        case DeliveryTimePromptType.NoSelection:
-                            <span>⏰</span>
-                            break;
-                        case DeliveryTimePromptType.SelectionExpired:
-                            <span>⚠️</span>
-                            break;
-                        case DeliveryTimePromptType.SelectionInvalid:
-                            <span>❌</span>
-                            break;
-                        default:
-                            <span>📅</span>
-                            break;
-                    }
-                </span>
-                <span class="alert-message">@Model.PromptMessage</span>
-                <button type="button" class="alert-select-btn" onclick="document.getElementById('delivery-display').click();">
-                    Select Time
-                </button>
-                <button type="button" class="alert-close" onclick="this.parentElement.parentElement.style.display='none';">
-                    ✕
-                </button>
-            </div>
-        </div>
-    }
-
     <div class="global-delivery-picker @Model.StateClass">
         <div class="delivery-display @(Model.ShouldShowPrompt ? "needs-attention" : "")" id="delivery-display">
             @if (Model.HasSelectedTime && Model.IsSelectionValid)
@@ -79,8 +46,7 @@
     <div id="delivery-modal" class="delivery-modal" style="display: none;">
         <div class="delivery-modal-content">
             <div class="delivery-modal-header">
-                <h3>Select Delivery Time</h3>
-                <span class="delivery-modal-close" id="delivery-modal-close">&times;</span>
+                <h3>Select Delivery Time (Required)</h3>
             </div>
             <div class="delivery-modal-body">
                 <!-- Calendar Navigation -->
@@ -464,78 +430,6 @@
             }
         }
         
-        /* Alert Styles */
-        .delivery-time-alert {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 100000;
-            max-width: 400px;
-            margin-bottom: 15px;
-            animation: slideInRight 0.3s ease-out;
-        }
-        
-        .delivery-time-alert.info {
-            background: linear-gradient(135deg, #17a2b8, #138496);
-            color: white;
-        }
-        
-        .delivery-time-alert.urgent {
-            background: linear-gradient(135deg, #dc3545, #c82333);
-            color: white;
-            animation: slideInRight 0.3s ease-out, pulse 2s infinite;
-        }
-        
-        .alert-content {
-            display: flex;
-            align-items: center;
-            padding: 12px 16px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-        
-        .alert-icon {
-            margin-right: 12px;
-            font-size: 18px;
-        }
-        
-        .alert-message {
-            flex: 1;
-            font-weight: 500;
-            margin-right: 12px;
-        }
-        
-        .alert-select-btn {
-            background: rgba(255, 255, 255, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            color: white;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 600;
-            margin-right: 8px;
-            transition: all 0.2s ease;
-        }
-        
-        .alert-select-btn:hover {
-            background: rgba(255, 255, 255, 0.3);
-            border-color: rgba(255, 255, 255, 0.5);
-        }
-        
-        .alert-close {
-            background: none;
-            border: none;
-            color: rgba(255, 255, 255, 0.8);
-            cursor: pointer;
-            font-size: 16px;
-            padding: 4px;
-            line-height: 1;
-        }
-        
-        .alert-close:hover {
-            color: white;
-        }
         
         /* State-specific styles */
         .global-delivery-picker.no-selection .delivery-display {
@@ -598,34 +492,12 @@
                 transform: scale(1.1);
             }
         }
-        
-        /* Mobile adjustments for alerts */
-        @@media (max-width: 480px) {
-            .delivery-time-alert {
-                position: fixed;
-                top: 10px;
-                left: 10px;
-                right: 10px;
-                max-width: none;
-            }
-            
-            .alert-message {
-                font-size: 14px;
-            }
-            
-            .alert-select-btn {
-                font-size: 11px;
-                padding: 4px 8px;
-            }
-        }
     </style>
 
     <script asp-location="Footer">
         $(document).ready(function() {
             var modal = $('#delivery-modal');
             var display = $('#delivery-display');
-            var confirmBtn = $('#delivery-confirm');
-            var selectedSlot = null;
             var currentMonth = new Date().getMonth();
             var currentYear = new Date().getFullYear();
             var selectedDate = null;
@@ -698,27 +570,14 @@
             display.click(function() {
                 modal.addClass('show');
                 initCalendar();
-            });
 
-            // Close modal
-            $('#delivery-modal-close, #delivery-cancel').click(function() {
-                modal.removeClass('show');
-                $('#selected-day-section').hide();
-                selectedDate = null;
-                selectedSlot = null;
-                confirmBtn.prop('disabled', true);
-            });
-
-            // Close modal when clicking outside
-            modal.click(function(e) {
-                if (e.target === this) {
-                    modal.removeClass('show');
-                    $('#selected-day-section').hide();
-                    selectedDate = null;
-                    selectedSlot = null;
-                    confirmBtn.prop('disabled', true);
+                // Pause validation checks while modal is open
+                if (window.DeliveryTimeValidator) {
+                    window.DeliveryTimeValidator.pauseValidation();
                 }
             });
+
+            // Modal cannot be closed without selecting a time - delivery time is required
 
             // Calendar navigation
             $('#prev-month').click(function() {
@@ -797,20 +656,34 @@
             $(document).on('click', '.time-slot-item', function() {
                 var datetime = $(this).data('datetime');
                 var displayText = $(this).data('display');
-                
+
                 // Update display immediately and close modal
                 $('#delivery-display .delivery-text').text(displayText);
                 $('#delivery-display .delivery-icon').text('🕐');
-                
+
                 // Close modal
                 modal.removeClass('show');
                 $('#selected-day-section').hide();
-                
-                // Save to session/cookie
-                $.post('@Url.Action("SetDeliveryTime", "DeliveryTime", new { area = "" })', {
-                    deliveryTime: datetime
-                }).fail(function() {
+
+                // Save to session
+                $.ajax({
+                    url: '@Url.Action("SetDeliveryTime", "DeliveryTime", new { area = "" })',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        deliveryTime: datetime
+                    })
+                })
+                .done(function() {
+                    // Resume validation checks only after save succeeds
+                    if (window.DeliveryTimeValidator) {
+                        window.DeliveryTimeValidator.resumeValidation();
+                    }
+                })
+                .fail(function() {
                     alert('Failed to save delivery time. Please try again.');
+                    // Reopen modal on failure
+                    modal.addClass('show');
                 });
             });
 

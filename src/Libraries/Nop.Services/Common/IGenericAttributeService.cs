@@ -16,7 +16,7 @@ namespace Nop.Services.Common
         /// <param name="attribute">Attribute</param>
         /// <returns>A task that represents the asynchronous operation</returns>
         Task DeleteAttributeAsync(GenericAttribute attribute);
-
+        
         /// <summary>
         /// Deletes an attributes
         /// </summary>

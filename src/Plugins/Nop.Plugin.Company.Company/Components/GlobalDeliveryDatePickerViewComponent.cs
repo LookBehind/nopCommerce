@@ -19,41 +19,15 @@ namespace Nop.Plugin.Company.Company.Components
     /// Global delivery date picker view component
     /// </summary>
     [ViewComponent(Name = "GlobalDeliveryDatePicker")]
-    public class GlobalDeliveryDatePickerViewComponent : NopViewComponent
+    public class GlobalDeliveryDatePickerViewComponent(
+        IDeliveryTimeService deliveryTimeService,
+        IGlobalDeliveryTimeValidationService globalValidationService,
+        IDateTimeHelper dateTimeHelper,
+        IWorkContext workContext,
+        IHttpContextAccessor httpContextAccessor,
+        ICompanyService companyService)
+        : NopViewComponent
     {
-        #region Fields
-
-        private readonly IDeliveryTimeService _deliveryTimeService;
-        private readonly IGlobalDeliveryTimeValidationService _globalValidationService;
-        private readonly IDateTimeHelper _dateTimeHelper;
-        private readonly IWorkContext _workContext;
-        private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly ICompanyService _companyService;
-
-        #endregion
-
-        #region Ctor
-
-        public GlobalDeliveryDatePickerViewComponent(
-            IDeliveryTimeService deliveryTimeService,
-            IGlobalDeliveryTimeValidationService globalValidationService,
-            IDateTimeHelper dateTimeHelper,
-            IWorkContext workContext,
-            IHttpContextAccessor httpContextAccessor,
-            ICompanyService companyService)
-        {
-            _deliveryTimeService = deliveryTimeService;
-            _globalValidationService = globalValidationService;
-            _dateTimeHelper = dateTimeHelper;
-            _workContext = workContext;
-            _httpContextAccessor = httpContextAccessor;
-            _companyService = companyService;
-        }
-
-        #endregion
-
-        #region Methods
-
         /// <summary>
         /// Invoke view component
         /// </summary>
@@ -68,7 +42,7 @@ namespace Nop.Plugin.Company.Company.Components
             try
             {
                 // Get validation result first
-                var validationResult = await _globalValidationService.ValidateCurrentSelectionAsync();
+                var validationResult = await globalValidationService.ValidateCurrentSelectionAsync();
                 
                 // Populate validation info in model
                 model.IsSelectionValid = validationResult.IsValid;
@@ -78,8 +52,8 @@ namespace Nop.Plugin.Company.Company.Components
                 model.InvalidReason = validationResult.InvalidReason ?? string.Empty;
 
                 // Get available delivery times
-                var availableTimes = await _deliveryTimeService.GetAvailableDeliveryTimesAsync();
-                model.MaxDaysAhead = await _deliveryTimeService.GetMaxDaysAheadAsync();
+                var availableTimes = await deliveryTimeService.GetAvailableDeliveryTimesAsync();
+                model.MaxDaysAhead = await deliveryTimeService.GetMaxDaysAheadAsync();
 
                 // Set selected delivery time from validation result
                 if (validationResult.IsValid && validationResult.SelectedDeliveryTime.HasValue)
@@ -89,13 +63,13 @@ namespace Nop.Plugin.Company.Company.Components
                 }
 
                 // Convert times to display models using proper timezone conversion
-                var currentCustomer = await _workContext.GetCurrentCustomerAsync();
-                var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
+                var currentCustomer = await workContext.GetCurrentCustomerAsync();
+                var company = await companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
                 var timezoneInfo = company == null
-                    ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
+                    ? await dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
                     : TZConvert.GetTimeZoneInfo(company.TimeZone);
 
-                var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
+                var now = dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
                 var today = now.Date;
                 var tomorrow = today.AddDays(1);
 
@@ -132,17 +106,13 @@ namespace Nop.Plugin.Company.Company.Components
             return View("~/Plugins/Company.Company/Views/Shared/Components/GlobalDeliveryDatePicker/Default.cshtml", model);
         }
 
-        #endregion
-
-        #region Utilities
-
         /// <summary>
         /// Gets the selected delivery time from session/cookie
         /// </summary>
         /// <returns>Selected delivery time or null</returns>
         private DateTime? GetSelectedDeliveryTime()
         {
-            var httpContext = _httpContextAccessor.HttpContext;
+            var httpContext = httpContextAccessor.HttpContext;
             if (httpContext == null)
                 return null;
 
@@ -171,13 +141,13 @@ namespace Nop.Plugin.Company.Company.Components
         private async Task<string> FormatDeliveryTimeDisplayAsync(DateTime deliveryTime)
         {
             // Get proper timezone conversion
-            var currentCustomer = await _workContext.GetCurrentCustomerAsync();
-            var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
+            var currentCustomer = await workContext.GetCurrentCustomerAsync();
+            var company = await companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
             var timezoneInfo = company == null
-                ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
+                ? await dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
                 : TZConvert.GetTimeZoneInfo(company.TimeZone);
 
-            var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
+            var now = dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
             return FormatDeliveryTimeDisplay(deliveryTime, now);
         }
 
@@ -203,7 +173,5 @@ namespace Nop.Plugin.Company.Company.Components
             var timeText = deliveryTime.ToString("h:mm tt", CultureInfo.InvariantCulture);
             return $"{dateText} at {timeText}";
         }
-
-        #endregion
     }
 }

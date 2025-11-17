@@ -3,7 +3,6 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Platform>AnyCPU</Platform>
-    <ProjectGuid>{CD87DF94-37B8-4F7B-8897-783DF922873E}</ProjectGuid>
     <OutputType>Library</OutputType>
     <Version>1.0.0.0</Version>
     <OutputPath>..\..\Presentation\Nop.Web\Plugins\Company.Company</OutputPath>
