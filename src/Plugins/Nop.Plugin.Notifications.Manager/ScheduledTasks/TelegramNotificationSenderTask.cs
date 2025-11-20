@@ -54,7 +54,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
     private const string VENDOR_TELEGRAM_CHANNEL_KEY = nameof(VENDOR_TELEGRAM_CHANNEL_KEY);
     private const string STORE_TELEGRAM_CHANNEL_KEY = nameof(STORE_TELEGRAM_CHANNEL_KEY);
     private const string LAST_UPDATE_ID_SEEN_KEY = nameof(LAST_UPDATE_ID_SEEN_KEY);
-    private const string DELIVERED_SHORT_ADDRESS_MAP_KEY = nameof(DELIVERED_SHORT_ADDRESS_MAP_KEY);
+    private const string DELIVERED_SHORT_ADDRESS_MAP_KEY = "delivered_short_address_map_key";
     private static readonly string[] _trustedUsernames = { "lkbhnd", "hasmik_bars" };
     private static readonly TimeSpan _deleteEmailsOlderThan = TimeSpan.FromDays(30);
 
@@ -157,7 +157,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                 return;
 
             var mappingString = await _setting.GetSettingAsync(DELIVERED_SHORT_ADDRESS_MAP_KEY, loadSharedValueIfNotFound: true);
-            if (mappingString == null)
+            if (mappingString == null || string.IsNullOrWhiteSpace(mappingString.Value))
             {
                 await _logger.ErrorAsync("No mapping found for short addresses, skipping");
                 return;
