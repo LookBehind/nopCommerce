@@ -478,7 +478,7 @@ namespace Nop.Services.Orders
                 billingAddress = await _addressService.GetAddressByIdAsync(details.Customer.BillingAddressId.Value);
 
             if (!CommonHelper.IsValidEmail(billingAddress?.Email))
-                throw new NopException("Email is not valid");
+                throw new NopException($"Email is not valid, Id={billingAddress?.Id}, Email={billingAddress?.Email}, BillingAddressId={details.Customer.BillingAddressId}");
 
             details.BillingAddress = _addressService.CloneAddress(billingAddress);
 
@@ -579,7 +579,7 @@ namespace Nop.Services.Orders
                     var shippingAddress = await _customerService.GetCustomerShippingAddressAsync(details.Customer);
 
                     if (!CommonHelper.IsValidEmail(shippingAddress?.Email))
-                        throw new NopException("Email is not valid");
+                        throw new NopException($"Email is not valid. ShippingAddressId={details.Customer.ShippingAddressId}, Id={shippingAddress?.Id}, Email={shippingAddress?.Email}");
 
                     //clone shipping address
                     details.ShippingAddress = _addressService.CloneAddress(shippingAddress);

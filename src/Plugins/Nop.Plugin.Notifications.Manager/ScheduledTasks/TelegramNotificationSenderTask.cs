@@ -150,29 +150,19 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
             {
                 var shippingAddress = await _addressService.GetAddressByIdAsync(order.ShippingAddressId);
 
-                var botCommandParts = botCommandDeliveredEvent.Command.Split('_');
+                var botCommand = botCommandDeliveredEvent.Command;
+                var botCommandParts = botCommand.Split('_');
                 var scheduleHour = botCommandParts[1];
-                var addressShortCode = botCommandParts[2];
 
                 if (int.Parse(scheduleHour) == order.ScheduleDate.Hour + 4)
                 {
-                    if (string.Equals(addressShortCode, "melik3", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (string.Equals(shippingAddress.Address1, "Melik Adamyan 2/2", StringComparison.OrdinalIgnoreCase) &&
-                            string.Equals(shippingAddress.Address2, "3rd floor", StringComparison.OrdinalIgnoreCase))
-                            qualifyingOrders.Add(order);
-                    }
-                    else if (string.Equals(addressShortCode, "melik5", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (string.Equals(shippingAddress.Address1, "Melik Adamyan 2/2", StringComparison.OrdinalIgnoreCase) && 
-                            string.Equals(shippingAddress.Address2, "5th floor", StringComparison.OrdinalIgnoreCase))
-                            qualifyingOrders.Add(order);
-                    }
-                    else if (string.Equals(addressShortCode, "cascade", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (string.Equals(shippingAddress.Address1, "Cascade Antarayin 11/1", StringComparison.OrdinalIgnoreCase))
-                            qualifyingOrders.Add(order);
-                    }
+                    var shippingAddressSanitized = 
+                        $"{shippingAddress.Address1}{shippingAddress.Address2}"
+                        .Replace(' ', '_')
+                        .Replace('/', '_');
+
+                    if (botCommand.EndsWith(shippingAddressSanitized, StringComparison.OrdinalIgnoreCase))
+                        qualifyingOrders.Add(order);
                 }
             }
 
