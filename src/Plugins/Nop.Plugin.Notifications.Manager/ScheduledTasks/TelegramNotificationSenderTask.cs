@@ -37,6 +37,16 @@ public record BotAddedToGroupEvent(string FromUsername, Chat Chat, Vendor Vendor
 public record BotCommandDeliveredEvent(string FromUsername, Chat Chat, Vendor Vendor, string Command)
     : BotEvent(FromUsername, Chat, Vendor);
 
+public class ShortAddressMapping
+{
+    public class SimpleAddressDescription
+    {
+        public string Address1 { get; set; }
+        public string Address2 { get; set; }
+    }
+    public Dictionary<string, SimpleAddressDescription> ShortAddressToDescMap { get; set; }
+}
+
 public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
 {
     public const string TELEGRAM_NOTIFICATION_SENDER_TASK_NAME = "Nop.Plugin.Notifications.Manager.ScheduledTasks.TelegramNotificationSenderTask";
@@ -44,6 +54,7 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
     private const string VENDOR_TELEGRAM_CHANNEL_KEY = nameof(VENDOR_TELEGRAM_CHANNEL_KEY);
     private const string STORE_TELEGRAM_CHANNEL_KEY = nameof(STORE_TELEGRAM_CHANNEL_KEY);
     private const string LAST_UPDATE_ID_SEEN_KEY = nameof(LAST_UPDATE_ID_SEEN_KEY);
+    private const string DELIVERED_SHORT_ADDRESS_MAP_KEY = nameof(DELIVERED_SHORT_ADDRESS_MAP_KEY);
     private static readonly string[] _trustedUsernames = { "lkbhnd", "hasmik_bars" };
     private static readonly TimeSpan _deleteEmailsOlderThan = TimeSpan.FromDays(30);
 
@@ -145,6 +156,20 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
             if (!orders.Any())
                 return;
 
+            var mappingString = await _setting.GetSettingAsync(DELIVERED_SHORT_ADDRESS_MAP_KEY, loadSharedValueIfNotFound: true);
+            if (mappingString == null)
+            {
+                await _logger.ErrorAsync("No mapping found for short addresses, skipping");
+                return;
+            }
+            
+            var shortAddressCodeMapping = JsonSerializer.Deserialize<ShortAddressMapping>(mappingString.Value);
+            if (shortAddressCodeMapping == null)
+            {
+                await _logger.ErrorAsync("Invalid mapping for short addresses, skipping");
+                return;
+            }
+            
             var qualifyingOrders = new List<Order>();
             foreach(var order in orders)
             {
@@ -153,16 +178,24 @@ public class TelegramNotificationSenderTask : Services.Tasks.IScheduleTask
                 var botCommand = botCommandDeliveredEvent.Command;
                 var botCommandParts = botCommand.Split('_');
                 var scheduleHour = botCommandParts[1];
+                var addressShortCode = botCommandParts[2];
 
                 if (int.Parse(scheduleHour) == order.ScheduleDate.Hour + 4)
                 {
-                    var shippingAddressSanitized = 
-                        $"{shippingAddress.Address1}{shippingAddress.Address2}"
-                        .Replace(' ', '_')
-                        .Replace('/', '_');
+                    if (!shortAddressCodeMapping.ShortAddressToDescMap.TryGetValue(addressShortCode,
+                            out var simpleAddressDescription))
+                    {
+                        await _logger.ErrorAsync($"Couldn't find mapping for short code {addressShortCode}, map is '{mappingString.Value}', skipping");
+                        continue;
+                    }
 
-                    if (botCommand.EndsWith(shippingAddressSanitized, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(simpleAddressDescription.Address1, shippingAddress.Address1,
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(simpleAddressDescription.Address2, shippingAddress.Address2,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
                         qualifyingOrders.Add(order);
+                    }
                 }
             }
 

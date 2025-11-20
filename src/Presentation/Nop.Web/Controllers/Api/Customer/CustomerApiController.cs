@@ -149,6 +149,8 @@ namespace Nop.Web.Controllers.Api.Customer
             customer.BillingAddressId = addressId;
             customer.ShippingAddressId = addressId;
             await _customerService.UpdateCustomerAsync(customer);
+            
+            
 
             return Ok(new { success = true, message = await _localizationService.GetResourceAsync("DeliveryAddressSet.Successfully") });
         }
