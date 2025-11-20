@@ -92,10 +92,10 @@
     <Content Include="Views\VendorAddPopup.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Views\Shared\Components\GlobalDeliveryDatePicker\Default.cshtml">
+    <Content Include="Views/Shared/Components/GlobalDeliveryDatePicker/Default.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Views\Shared\Components\GlobalDeliveryTimeValidation\Default.cshtml">
+    <Content Include="Views/Shared/Components/GlobalDeliveryTimeValidation/Default.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <!-- Areas/Admin views will use wildcard since they are in a separate area -->
