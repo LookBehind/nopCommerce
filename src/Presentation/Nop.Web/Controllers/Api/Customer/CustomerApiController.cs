@@ -28,21 +28,11 @@ namespace Nop.Web.Controllers.Api.Customer
     public class CustomerApiController : BaseApiController
     {
         #region Fields
-        private readonly IStoreContext _storeContext;
-        private readonly ICustomerRegistrationService _customerRegistrationService;
         private readonly ICustomerService _customerService;
-        private readonly CustomerSettings _customerSettings;
         private readonly IGenericAttributeService _genericAttributeService;
         private readonly ILocalizationService _localizationService;
-        private readonly IWorkflowMessageService _workflowMessageService;
         private readonly IWorkContext _workContext;
-        private readonly ICountryService _countryService;
-        private readonly IStateProvinceService _stateProvinceService;
-        private readonly IAuthenticationService _authenticationService;
-        private readonly IShoppingCartService _shoppingCartService;
-        private readonly IConfiguration _config;
         private readonly IAddressService _addressService;
-        private readonly IEncryptionService _encryptionService;
         private readonly MediaSettings _mediaSettings;
         private readonly IPictureService _pictureService;
         private readonly ICompanyService _companyService;
@@ -51,40 +41,21 @@ namespace Nop.Web.Controllers.Api.Customer
 
         #region Ctor
 
-        public CustomerApiController(ICustomerRegistrationService customerRegistrationService,
+        public CustomerApiController(
             ICustomerService customerService,
-            CustomerSettings customerSettings,
             IGenericAttributeService genericAttributeService,
             ILocalizationService localizationService,
-            IWorkflowMessageService workflowMessageService,
-             ICountryService countryService,
-            IStateProvinceService stateProvinceService,
-            IStoreContext storeContext,
             IWorkContext workContext,
-            IAuthenticationService authenticationService,
-            IShoppingCartService shoppingCartService,
-            IConfiguration config,
             IAddressService addressService,
-            IEncryptionService encryptionService,
             MediaSettings mediaSettings,
             IPictureService pictureService,
             ICompanyService companyService)
         {
-            _storeContext = storeContext;
-            _customerRegistrationService = customerRegistrationService;
             _customerService = customerService;
-            _customerSettings = customerSettings;
             _genericAttributeService = genericAttributeService;
             _localizationService = localizationService;
-            _workflowMessageService = workflowMessageService;
             _workContext = workContext;
-            _countryService = countryService;
-            _stateProvinceService = stateProvinceService;
-            _authenticationService = authenticationService;
-            _shoppingCartService = shoppingCartService;
-            _config = config;
             _addressService = addressService;
-            _encryptionService = encryptionService;
             _mediaSettings = mediaSettings;
             _pictureService = pictureService;
             _companyService = companyService;
@@ -100,7 +71,7 @@ namespace Nop.Web.Controllers.Api.Customer
             {
                 Adresses = new List<Address>();
             }
-            public List<Address> Adresses { get; set; }
+            public IList<Address> Adresses { get; set; }
             public decimal AmoutLimit { get; set; }
             public string CompanyName { get; set; }
         }
@@ -150,8 +121,6 @@ namespace Nop.Web.Controllers.Api.Customer
             customer.ShippingAddressId = addressId;
             await _customerService.UpdateCustomerAsync(customer);
             
-            
-
             return Ok(new { success = true, message = await _localizationService.GetResourceAsync("DeliveryAddressSet.Successfully") });
         }
 
@@ -161,25 +130,20 @@ namespace Nop.Web.Controllers.Api.Customer
             var companyDetails = new CompanyDetailsModel();
             var currentCustomer = await _workContext.GetCurrentCustomerAsync();
             var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
-            if (company != null)
+
+            if (company == null)
             {
-                companyDetails.CompanyName = company.Name;
-                companyDetails.AmoutLimit = company.AmountLimit;
-                var companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(company.Id);
-                if (companyCustomers.Any())
+                return Ok(new
                 {
-                    var customerId = companyCustomers.FirstOrDefault().CustomerId;
-                    var addresses = new List<Address>();
-                    foreach (var address in await _customerService.GetAddressesByCustomerIdAsync(customerId))
-                    {
-                        if (!addresses.Where(x => x.Id == address.Id).Any())
-                            addresses.Add(address);
-                    }
-                    companyDetails.Adresses = addresses;
-                }
-                return Ok(new { success = true, companyDetails });
+                    success = false, message = await _localizationService.GetResourceAsync("Company.NotFound")
+                });
             }
-            return Ok(new { success = false, message = await _localizationService.GetResourceAsync("Company.NotFound") });
+            
+            companyDetails.CompanyName = company.Name;
+            companyDetails.AmoutLimit = company.AmountLimit;
+            companyDetails.Adresses = await _customerService.GetAddressesByCustomerIdAsync(currentCustomer.Id);
+            
+            return Ok(new { success = true, companyDetails });
         }
 
         [HttpGet("update-customer-pushtoken/{pushToken}")]
