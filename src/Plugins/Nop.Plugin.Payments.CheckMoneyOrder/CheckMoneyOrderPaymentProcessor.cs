@@ -12,6 +12,8 @@ using Nop.Services.Payments;
 using Nop.Services.Plugins;
 using System.Linq;
 using System.Text.Json;
+using LinqToDB;
+using Nop.Core.Domain.Companies;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Payments;
 using Nop.Data;
@@ -406,21 +408,42 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         #endregion
 
         // keep in sync with IdramMerchantPaymentProcessor.GetOrderDayTotal
-        private async Task<decimal> GetOrderDayTotal(DateTime scheduleDateUtc, Customer customer = null)
+        private async Task<decimal> GetUsedAllowanceForPeriod(
+            AmountLimitType limitType,
+            DateTime scheduleDateUtc, 
+            Customer customer = null)
         {
             var store = await _storeContext.GetCurrentStoreAsync();
             customer ??= await _workContext.GetCurrentCustomerAsync();
 
-            var thatDayOrders = await _orderRepository.Table
-                .Where(o => o.StoreId == store.Id && 
-                            o.CustomerId == customer.Id && 
-                            o.ScheduleDate.Date == scheduleDateUtc.Date &&
+            var periodOrdersQuery = _orderRepository.Table
+                .Where(o => o.StoreId == store.Id &&
+                            o.CustomerId == customer.Id &&
                             (OrderStatus)o.OrderStatusId != OrderStatus.Cancelled &&
                             (PaymentStatus)o.PaymentStatusId == PaymentStatus.Paid &&
-                            !o.Deleted)
-                .SumAsync(x => x.OrderTotal);
+                            !o.Deleted);
 
-            return thatDayOrders;
+            switch (limitType)
+            {
+                case AmountLimitType.Daily:
+                    periodOrdersQuery = periodOrdersQuery
+                        .Where(o => o.ScheduleDate.Date == scheduleDateUtc.Date);
+                    break;
+                case AmountLimitType.Weekly:
+                    var startOfWeek = scheduleDateUtc.Date.AddDays(-(int)scheduleDateUtc.DayOfWeek);
+                    var endOfWeek = startOfWeek.AddDays(6);
+                    periodOrdersQuery = periodOrdersQuery
+                        .Where(o => o.ScheduleDate.Date.Between(startOfWeek, endOfWeek));
+                    break;
+                case AmountLimitType.Monthly:
+                    var startOfMonth = new DateTime(scheduleDateUtc.Year, scheduleDateUtc.Month, 1);
+                    var endOfMonth = startOfMonth.AddMonths(1).AddDays(-1);
+                    periodOrdersQuery = periodOrdersQuery
+                        .Where(o => o.ScheduleDate.Date.Between(startOfMonth, endOfMonth));
+                    break;
+            }
+            
+            return await periodOrdersQuery.SumAsync(x => x.OrderTotal);;
         }
 
         private async Task<bool> IsUnlimitedAccount(Customer customer)
@@ -433,24 +456,26 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         }
 
         // Keep in sync with IdramMerchantPaymentProcessor.GetCustomerCompanyLimit
-        private async Task<decimal> GetCustomerCompanyLimit(Customer customer = null)
+        private async Task<(AmountLimitType limitType, decimal limitAmount)> GetCustomerCompanyLimit(Customer customer = null)
         {
             customer ??= await _workContext.GetCurrentCustomerAsync();
             var customerRoles = await _customerService.GetCustomerRolesAsync(customer);
 
             if (customerRoles.Any(role =>
                     string.Equals(role.Name, CompanyBenefitExemptionRole, StringComparison.OrdinalIgnoreCase)))
-                return 0M;
+                return (AmountLimitType.Daily, 0M);
             
             var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
 
-            return company?.AmountLimit ?? 0M;
+            return company != null ? 
+                (company.AmountLimitType, company.AmountLimit) : 
+                (AmountLimitType.Daily, 0M);
         }
 
         public async Task<decimal> GetCustomerRemainingAllowance(DateTime date, Customer customer = null)
         {
             var customerCompanyLimit = await GetCustomerCompanyLimit(customer);
-            if (customerCompanyLimit == 0)
+            if (customerCompanyLimit.limitAmount == 0)
                 return 0;
 
             var existingDates = await LoadAttribute(customer);
@@ -458,10 +483,12 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             if (existingDates.UtcDates.Any(d => d.Date == date.Date))
                 return 0;
 
-            var orderDayTotal = await GetOrderDayTotal(date, customer);
-            return orderDayTotal > customerCompanyLimit ? 
+            var usedAllowanceForPeriod = await GetUsedAllowanceForPeriod(customerCompanyLimit.limitType, 
+                date, 
+                customer);
+            return usedAllowanceForPeriod > customerCompanyLimit.limitAmount ? 
                 0 : 
-                customerCompanyLimit - orderDayTotal;
+                customerCompanyLimit.limitAmount - usedAllowanceForPeriod;
         }
 
         public async Task<bool> VoidAllowance(DateTime date, Customer customer = null)
