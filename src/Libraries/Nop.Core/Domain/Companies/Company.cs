@@ -14,7 +14,13 @@ namespace Nop.Core.Domain.Companies
         public string Email { get; set; }
         public string Name { get; set; }
         public decimal AmountLimit { get; set; }
-        public AmountLimitType AmountLimitType { get; set; }
+        public int AmountLimitTypeId { get; set; }
+
+        public AmountLimitType AmountLimitType
+        {
+            get => (AmountLimitType)AmountLimitTypeId; 
+            set => AmountLimitTypeId = (int)value;
+        }
         public string TimeZone { get; set; }
     }
 }

@@ -35,12 +35,13 @@ namespace Nop.Data.Migrations.UpgradeTo440
         {
             var companyTable = Schema.Table(NameCompatibilityManager.GetTableName(typeof(Company)));
             if (companyTable.Exists() &&
-                !companyTable.Column(nameof(Company.AmountLimitType)).Exists())
+                !companyTable.Column(nameof(Company.AmountLimitTypeId)).Exists())
             {
                 Alter
                     .Table(NameCompatibilityManager.GetTableName(typeof(Company)))
-                    .AddColumn(nameof(Company.AmountLimitType)).AsInt32()
-                    .WithDefaultValue(AmountLimitType.Daily);
+                    .AddColumn(nameof(Company.AmountLimitTypeId))
+                    .AsInt32()
+                    .WithDefaultValue((int)AmountLimitType.Daily);
             }
         }
 
@@ -48,10 +49,10 @@ namespace Nop.Data.Migrations.UpgradeTo440
         {
             var companyTable = Schema.Table(NameCompatibilityManager.GetTableName(typeof(Company)));
             if (companyTable.Exists() &&
-                companyTable.Column(nameof(Company.AmountLimitType)).Exists())
+                companyTable.Column(nameof(Company.AmountLimitTypeId)).Exists())
             {
                 Delete
-                    .Column(nameof(Company.AmountLimitType))
+                    .Column(nameof(Company.AmountLimitTypeId))
                     .FromTable(NameCompatibilityManager.GetTableName(typeof(Company)));
             }
         }
