@@ -39,8 +39,9 @@ namespace Nop.Data.Migrations.UpgradeTo440
             {
                 Alter
                     .Table(NameCompatibilityManager.GetTableName(typeof(Company)))
-                    .AddColumn(nameof(Company.AmountLimitType)).AsInt32()
-                    .WithDefaultValue(AmountLimitType.Daily);
+                    .AddColumn(nameof(Company.AmountLimitType))
+                    .AsInt32()
+                    .WithDefaultValue((int)AmountLimitType.Daily);
             }
         }
 
