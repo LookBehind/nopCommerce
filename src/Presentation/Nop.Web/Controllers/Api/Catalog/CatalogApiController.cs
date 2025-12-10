@@ -70,6 +70,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly IDiscountService _discountService;
         private readonly IPermissionService _permissionService;
         private readonly IGenericAttributeService _genericAttributeService;
+        private readonly ILogger _logger;
         private const string LastUnpublishedProductIdsKey = "LastUnpublishedProductIds"; 
 
         private static readonly AttributeControlType[] _allowedAttributeControlTypes = new[] {
@@ -110,7 +111,8 @@ namespace Nop.Web.Controllers.Api.Security
             ICompanyService companyService,
             IDiscountService discountService, 
             IPermissionService permissionService, 
-            IGenericAttributeService genericAttributeService)
+            IGenericAttributeService genericAttributeService, 
+            ILogger logger)
         {
             _localizationSettings = localizationSettings;
             _workflowMessageService = workflowMessageService;
@@ -139,6 +141,7 @@ namespace Nop.Web.Controllers.Api.Security
             _discountService = discountService;
             _permissionService = permissionService;
             _genericAttributeService = genericAttributeService;
+            _logger = logger;
         }
 
         #endregion
@@ -519,6 +522,7 @@ namespace Nop.Web.Controllers.Api.Security
             var vendorsToUnpublish = companyAllVendors
                 .Where(x => !model.VendorsWhitelist.Contains(x.Name, StringComparer.OrdinalIgnoreCase))
                 .ToArray();
+
             var vendorsToPublish = companyAllVendors.Except(vendorsToUnpublish);
             var vendorsNotFound = model.VendorsWhitelist
                 .Where(x => !companyAllVendors.Any(y => string.Equals(y.Name, x, StringComparison.OrdinalIgnoreCase)))
@@ -534,6 +538,8 @@ namespace Nop.Web.Controllers.Api.Security
                 .Select(int.Parse)
                 .ToHashSet();
             
+            await _logger.InformationAsync($"Unpublishing vendors: {string.Join(',', vendorsToUnpublish.Select(x => x.Name))}");
+            
             // Unpublish products and save their IDs for future publishing back
             var unpublishedProductIdsByVendor = new Dictionary<int, List<int>>();
             foreach (var vendor in vendorsToUnpublish)
@@ -542,6 +548,7 @@ namespace Nop.Web.Controllers.Api.Security
                 
                 var publishedProducts = 
                     await _productService.SearchProductsAsync(storeId: storeId, vendorId: vendor.Id, showHidden: false);
+                await _logger.InformationAsync($"Unpublishing products from vendor {vendor.Name}: {string.Join(',', publishedProducts.Select(x => x.Id))}");
                 foreach (var product in publishedProducts)
                 {
                     product.Published = false;
