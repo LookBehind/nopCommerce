@@ -672,7 +672,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                         await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = model.CompanyId, CustomerId = customer.Id });
                         companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(model.CompanyId);
                     }
-                    //todo clearify
+                    //TODO: Change this when Company plugin is introduced, get addresses from company - not any user!
                     if (companyCustomers.Any() && !companyCustomers.Where(x => x.CustomerId == customer.Id).Any())
                     {
                         var addressId = 0;

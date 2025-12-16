@@ -13,6 +13,7 @@ using Nop.Services.Plugins;
 using System.Linq;
 using System.Text.Json;
 using LinqToDB;
+using Nop.Core.Domain.Cms;
 using Nop.Core.Domain.Companies;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Payments;
@@ -20,13 +21,19 @@ using Nop.Data;
 using Nop.Services.Common;
 using Nop.Services.Companies;
 using Nop.Services.Customers;
+using Nop.Services.Cms;
+using Nop.Web.Framework.Infrastructure;
 
 namespace Nop.Plugin.Payments.CheckMoneyOrder
 {
     /// <summary>
     /// CheckMoneyOrder payment processor
     /// </summary>
-    public class CheckMoneyOrderPaymentProcessor : BasePlugin, IPaymentMethod, ICompanyAllowancePaymentMethod
+    public class CheckMoneyOrderPaymentProcessor : 
+        BasePlugin, 
+        IPaymentMethod, 
+        ICompanyAllowancePaymentMethod,
+        IWidgetPlugin
     {
         // keep in sync with IdramMerchantPaymentProcessor.CompanyBenefitExemptionRole
         private const string CompanyBenefitExemptionRole = "Allowance Excempt";
@@ -48,6 +55,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         private readonly IOrderTotalCalculationService _orderTotalCalculationService;
         private readonly IGenericAttributeService _genericAttribute;
         private readonly ICustomerService _customerService;
+        private readonly WidgetSettings _widgetSettings;
 
         #endregion
 
@@ -109,7 +117,8 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             ICompanyService companyService, 
             IOrderTotalCalculationService orderTotalCalculationService, 
             IGenericAttributeService genericAttribute, 
-            ICustomerService customerService)
+            ICustomerService customerService,
+            WidgetSettings widgetSettings)
         {
             _checkMoneyOrderPaymentSettings = checkMoneyOrderPaymentSettings;
             _localizationService = localizationService;
@@ -124,6 +133,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             _orderTotalCalculationService = orderTotalCalculationService;
             _genericAttribute = genericAttribute;
             _customerService = customerService;
+            _widgetSettings = widgetSettings;
         }
 
         #endregion
@@ -142,7 +152,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         {
             var customer = await _customerService.GetCustomerByIdAsync(processPaymentRequest.CustomerId);
 
-            var remainingAllowance = 
+            var (remainingAllowance, _) = 
                 await GetCustomerRemainingAllowance(processPaymentRequest.ScheduleDate, customer);
             
             var result = new ProcessPaymentResult();
@@ -202,7 +212,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 store.Id,
                 DateTime.UtcNow.Date);
             
-            var remainingAllowance = 
+            var (remainingAllowance, _) = 
                 await GetCustomerRemainingAllowance(orderDayDate, customer);
 
             return shoppingCartTotal.shoppingCartTotal > remainingAllowance;
@@ -374,6 +384,13 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 ["Plugins.Payment.CheckMoneyOrder.ShippableProductRequired.Hint"] = "An option indicating whether shippable products are required in order to display this payment method during checkout."
             });
 
+            //activate widget
+            if (!_widgetSettings.ActiveWidgetSystemNames.Contains("Payments.CheckMoneyOrder"))
+            {
+                _widgetSettings.ActiveWidgetSystemNames.Add("Payments.CheckMoneyOrder");
+                await _settingService.SaveSettingAsync(_widgetSettings);
+            }
+
             await base.InstallAsync();
         }
 
@@ -388,6 +405,10 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
 
             //locales
             await _localizationService.DeleteLocaleResourcesAsync("Plugins.Payment.CheckMoneyOrder");
+
+            //deactivate widget
+            _widgetSettings.ActiveWidgetSystemNames.Remove("Payments.CheckMoneyOrder");
+            await _settingService.SaveSettingAsync(_widgetSettings);
 
             await base.UninstallAsync();
         }
@@ -404,6 +425,33 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         {
             return await _localizationService.GetResourceAsync("Plugins.Payment.CheckMoneyOrder.PaymentMethodDescription");
         }
+
+        /// <summary>
+        /// Gets widget zones where this widget should be rendered
+        /// </summary>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the widget zones
+        /// </returns>
+        public Task<IList<string>> GetWidgetZonesAsync()
+        {
+            return Task.FromResult<IList<string>>(new List<string> { PublicWidgetZones.HeaderLinksBefore });
+        }
+
+        /// <summary>
+        /// Gets a name of a view component for displaying widget
+        /// </summary>
+        /// <param name="widgetZone">Name of the widget zone</param>
+        /// <returns>View component name</returns>
+        public string GetWidgetViewComponentName(string widgetZone)
+        {
+            return "Balance";
+        }
+
+        /// <summary>
+        /// Gets a value indicating whether to hide this plugin on the widget list page in the admin area
+        /// </summary>
+        public bool HideInWidgetList => true;
 
         #endregion
 
@@ -443,7 +491,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                     break;
             }
             
-            return await periodOrdersQuery.SumAsync(x => x.OrderTotal);;
+            return await periodOrdersQuery.SumAsync(x => x.OrderTotal);
         }
 
         private async Task<bool> IsUnlimitedAccount(Customer customer)
@@ -472,23 +520,28 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 (AmountLimitType.Daily, 0M);
         }
 
-        public async Task<decimal> GetCustomerRemainingAllowance(DateTime date, Customer customer = null)
+        public async Task<(decimal remainingAllowance, AmountLimitType refreshCadence)> 
+            GetCustomerRemainingAllowance(
+            DateTime date, 
+            Customer customer = null)
         {
             var customerCompanyLimit = await GetCustomerCompanyLimit(customer);
             if (customerCompanyLimit.limitAmount == 0)
-                return 0;
+                return (0, customerCompanyLimit.limitType);
 
             var existingDates = await LoadAttribute(customer);
 
             if (existingDates.UtcDates.Any(d => d.Date == date.Date))
-                return 0;
+                return (0, customerCompanyLimit.limitType);
 
             var usedAllowanceForPeriod = await GetUsedAllowanceForPeriod(customerCompanyLimit.limitType, 
                 date, 
                 customer);
-            return usedAllowanceForPeriod > customerCompanyLimit.limitAmount ? 
-                0 : 
-                customerCompanyLimit.limitAmount - usedAllowanceForPeriod;
+
+            var remainingAllowance = usedAllowanceForPeriod > customerCompanyLimit.limitAmount
+                ? 0
+                : customerCompanyLimit.limitAmount - usedAllowanceForPeriod;
+            return (remainingAllowance, customerCompanyLimit.limitType);
         }
 
         public async Task<bool> VoidAllowance(DateTime date, Customer customer = null)
@@ -507,6 +560,8 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             return true;
         }
 
+        
+        
         private async Task<VoidedAllowanceSettings> LoadAttribute(Customer customer)
         {
             var store = await _storeContext.GetCurrentStoreAsync();
