@@ -1916,7 +1916,7 @@ namespace Nop.Web.Areas.Admin.Factories
             //not paid
             var orderStatuses = Enum.GetValues(typeof(OrderStatus)).Cast<int>().Where(os => os != (int)OrderStatus.Cancelled).ToList();
             var paymentStatuses = new List<int> { (int)PaymentStatus.Pending };
-            var psPending = await _orderReportService.GetOrderAverageReportLineAsync(psIds: paymentStatuses, osIds: orderStatuses);
+            var psPending = await _orderReportService.GetOrderAverageReportLineAsync(osIds: orderStatuses, psIds: paymentStatuses);
             orderIncompleteReportModels.Add(new OrderIncompleteReportModel
             {
                 Item = await _localizationService.GetResourceAsync("Admin.SalesReport.Incomplete.TotalUnpaidOrders"),

@@ -249,16 +249,29 @@ namespace Nop.Services.Orders
         /// <param name="billingEmail">Billing email. Leave empty to load all records.</param>
         /// <param name="billingLastName">Billing last name. Leave empty to load all records.</param>
         /// <param name="orderNotes">Search in order notes. Leave empty to load all records.</param>
+        /// <param name="customerId"></param>
         /// <returns>
         /// A task that represents the asynchronous operation
         /// The task result contains the result
         /// </returns>
-        public virtual async Task<OrderAverageReportLine> GetOrderAverageReportLineAsync(int storeId = 0,
-            int vendorId = 0, int productId = 0, int warehouseId = 0, int billingCountryId = 0,
-            int orderId = 0, string paymentMethodSystemName = null,
-            List<int> osIds = null, List<int> psIds = null, List<int> ssIds = null,
-            DateTime? startTimeUtc = null, DateTime? endTimeUtc = null,
-            string billingPhone = null, string billingEmail = null, string billingLastName = "", string orderNotes = null)
+        public virtual async Task<OrderAverageReportLine> GetOrderAverageReportLineAsync(
+            int storeId = 0,
+            int vendorId = 0, 
+            int productId = 0, 
+            int warehouseId = 0, 
+            int billingCountryId = 0,
+            int orderId = 0, 
+            string paymentMethodSystemName = null,
+            List<int> osIds = null, 
+            List<int> psIds = null, 
+            List<int> ssIds = null,
+            DateTime? startTimeUtc = null, 
+            DateTime? endTimeUtc = null,
+            string billingPhone = null, 
+            string billingEmail = null, 
+            string billingLastName = "",
+            string orderNotes = null, 
+            int customerId = 0)
         {
             var query = _orderRepository.Table;
 
@@ -332,6 +345,9 @@ namespace Nop.Services.Orders
                     where n.Note.Contains(orderNotes)
                     select o;
 
+            if (customerId != 0)
+                query = query.Where(o => o.CustomerId == customerId);
+            
             var item = await (from oq in query
                 group oq by 1
                 into result

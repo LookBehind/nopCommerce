@@ -7,8 +7,7 @@ namespace Nop.Services.Payments
 {
     public interface ICompanyAllowancePaymentMethod
     {
-        public Task<(decimal remainingAllowance, AmountLimitType refreshCadence)> 
-            GetCustomerRemainingAllowance(DateTime date, Customer customer = null);
+        public Task<CustomerBalanceResult> GetCustomerRemainingAllowance(CustomerBalanceRequest customerBalanceRequest);
         public Task<bool> VoidAllowance(DateTime date, Customer customer = null);
     }
 }

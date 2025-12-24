@@ -274,7 +274,11 @@ namespace Nop.Web.Controllers.Integration
                 .Single(p => p is ICompanyAllowancePaymentMethod);
 
             var remainingAllowance = 
-                await allowancePaymentMethod.GetCustomerRemainingAllowance(DateTime.UtcNow, customer);
+                await allowancePaymentMethod.GetCustomerRemainingAllowance(new CustomerBalanceRequest()
+                {
+                    Customer = customer,
+                    OrderDateUtc = DateTime.UtcNow
+                });
 
             return Ok(new { Allowance = remainingAllowance });
         }

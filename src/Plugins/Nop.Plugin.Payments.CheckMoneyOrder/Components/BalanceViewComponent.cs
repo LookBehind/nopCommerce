@@ -2,9 +2,9 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
+using Nop.Core.Domain.Companies;
 using Nop.Plugin.Payments.CheckMoneyOrder.Models;
 using Nop.Services.Catalog;
-using Nop.Services.Directory;
 using Nop.Services.Payments;
 using Nop.Web.Framework.Components;
 
@@ -16,36 +16,70 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder.Components
         private readonly ICompanyAllowancePaymentMethod _companyAllowancePaymentMethod;
         private readonly IWorkContext _workContext;
         private readonly IPriceFormatter _priceFormatter;
-        private readonly ICurrencyService _currencyService;
+        private readonly IStoreContext _storeContext;
         
         public BalanceViewComponent(
             ICompanyAllowancePaymentMethod companyAllowancePaymentMethod, 
             IWorkContext workContext, 
             IPriceFormatter priceFormatter, 
-            ICurrencyService currencyService)
+            IStoreContext storeContext)
         {
             _companyAllowancePaymentMethod = companyAllowancePaymentMethod;
             _workContext = workContext;
             _priceFormatter = priceFormatter;
-            _currencyService = currencyService;
+            _storeContext = storeContext;
         }
         
         /// <returns>A task that represents the asynchronous operation</returns>
         public async Task<IViewComponentResult> InvokeAsync(string widgetZone)
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
+            var store = await _storeContext.GetCurrentStoreAsync();
             
             // TODO: fix when schedule date is set through a separate controller (date popup)
-            var (remainingAllowance, refreshCadence) = 
-                await _companyAllowancePaymentMethod.GetCustomerRemainingAllowance(DateTime.UtcNow, customer);
+            var customerBalanceResult = 
+                await _companyAllowancePaymentMethod.GetCustomerRemainingAllowance(new CustomerBalanceRequest()
+                {
+                    Customer = customer,
+                    OrderDateUtc = DateTime.UtcNow
+                });
 
-            var formattedPrice = await _priceFormatter.FormatPriceAsync(remainingAllowance);
+            BalanceModel model;
             
-            var model = new BalanceModel
+            if (customerBalanceResult == null)
             {
-                Balance = formattedPrice,
-                RefreshCadence = refreshCadence.ToString().ToLower()
-            };
+                model = new BalanceModel
+                {
+                    HasBalance = false
+                };
+            }
+            else
+            {
+                var usedBalance = customerBalanceResult.TotalAllowance - customerBalanceResult.RemainingAllowance;
+                var daysInPeriod = customerBalanceResult.RefreshCadence switch
+                {
+                    AmountLimitType.Daily => 1,
+                    AmountLimitType.Weekly => 7,
+                    AmountLimitType.Monthly => 30,
+                    _ => throw new ArgumentOutOfRangeException(nameof(customerBalanceResult.RefreshCadence))
+                };
+                var recommendedAverageSpending = customerBalanceResult.TotalAllowance / daysInPeriod;
+                var daysRemaining = customerBalanceResult.RefreshedAfter.Days;
+                var daysPassed = daysInPeriod - daysRemaining;
+                var recommendedSpendingUntilNow = daysPassed * recommendedAverageSpending;
+                
+                model = new BalanceModel
+                {
+                    HasBalance = true,
+                    TotalBalance = customerBalanceResult.TotalAllowance,
+                    RemainingBalance = customerBalanceResult.RemainingAllowance,
+                    RemainingBalanceFormatted = await _priceFormatter.FormatPriceAsync(customerBalanceResult.RemainingAllowance),
+                    UsedBalance = usedBalance,
+                    UsedBalanceFormatted = await _priceFormatter.FormatPriceAsync(usedBalance),
+                    RecommendedSpending = recommendedSpendingUntilNow,
+                    RecommendedSpendingFormatted = await _priceFormatter.FormatPriceAsync(recommendedSpendingUntilNow)
+                };
+            }
 
             return View("~/Plugins/Payments.CheckMoneyOrder/Views/Balance.cshtml", model);
         }

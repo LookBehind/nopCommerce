@@ -23,6 +23,9 @@ namespace Nop.Web.Areas.Admin.Models.Companies
         [NopResourceDisplayName("Admin.Companies.Company.Fields.AmountLimit")]
         public decimal AmountLimit { get; set; }
 
+        [NopResourceDisplayName("Admin.Companies.Company.Fields.AmountLimitType")]
+        public int AmountLimitTypeId { get; set; }
+
         public CompanyCustomerSearchModel CompanyCustomerSearchModel { get; set; }
 
         public IList<CompanyLocalizedModel> Locales { get; set; }

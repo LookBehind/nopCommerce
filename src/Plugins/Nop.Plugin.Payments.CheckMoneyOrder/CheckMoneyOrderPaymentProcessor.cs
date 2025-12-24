@@ -18,6 +18,7 @@ using Nop.Core.Domain.Companies;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Payments;
 using Nop.Data;
+using Nop.Services.Catalog;
 using Nop.Services.Common;
 using Nop.Services.Companies;
 using Nop.Services.Customers;
@@ -56,6 +57,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         private readonly IGenericAttributeService _genericAttribute;
         private readonly ICustomerService _customerService;
         private readonly WidgetSettings _widgetSettings;
+        private readonly IPriceFormatter _priceFormatter;
 
         #endregion
 
@@ -118,7 +120,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             IOrderTotalCalculationService orderTotalCalculationService, 
             IGenericAttributeService genericAttribute, 
             ICustomerService customerService,
-            WidgetSettings widgetSettings)
+            WidgetSettings widgetSettings, IPriceFormatter priceFormatter)
         {
             _checkMoneyOrderPaymentSettings = checkMoneyOrderPaymentSettings;
             _localizationService = localizationService;
@@ -134,6 +136,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             _genericAttribute = genericAttribute;
             _customerService = customerService;
             _widgetSettings = widgetSettings;
+            _priceFormatter = priceFormatter;
         }
 
         #endregion
@@ -152,21 +155,28 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         {
             var customer = await _customerService.GetCustomerByIdAsync(processPaymentRequest.CustomerId);
 
-            var (remainingAllowance, _) = 
-                await GetCustomerRemainingAllowance(processPaymentRequest.ScheduleDate, customer);
+            var customerBalance = 
+                await GetCustomerRemainingAllowance(new CustomerBalanceRequest()
+                {
+                    Customer = customer,
+                    OrderDateUtc = processPaymentRequest.ScheduleDate
+                });
             
             var result = new ProcessPaymentResult();
             
             // Within the company's allowance or account is unlimited
             if (await IsUnlimitedAccount(customer) ||
-                remainingAllowance >= processPaymentRequest.OrderTotal)
+                customerBalance.RemainingAllowance >= processPaymentRequest.OrderTotal)
             {
                 result.NewPaymentStatus = PaymentStatus.Paid;
             }
             else
             {
-                result.AddError($"Your remaining allowance ({(int)remainingAllowance} AMD) is not enough to " +
-                                $"purchase your current order ({(int)processPaymentRequest.OrderTotal} AMD).");
+                var remainingAllowance = 
+                    await _priceFormatter.FormatPriceAsync(customerBalance.RemainingAllowance);
+                var orderTotal = await _priceFormatter.FormatPriceAsync(processPaymentRequest.OrderTotal);
+                result.AddError($"Your remaining allowance ({remainingAllowance}) is not enough to " +
+                                $"purchase your current order ({orderTotal}).");
             }
             
             return result;
@@ -212,10 +222,14 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 store.Id,
                 DateTime.UtcNow.Date);
             
-            var (remainingAllowance, _) = 
-                await GetCustomerRemainingAllowance(orderDayDate, customer);
+            var customerBalance = 
+                await GetCustomerRemainingAllowance(new CustomerBalanceRequest()
+                {
+                    Customer = customer,
+                    OrderDateUtc = orderDayDate
+                });
 
-            return shoppingCartTotal.shoppingCartTotal > remainingAllowance;
+            return shoppingCartTotal.shoppingCartTotal > customerBalance.RemainingAllowance;
         }
 
         /// <summary>
@@ -456,7 +470,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         #endregion
 
         // keep in sync with IdramMerchantPaymentProcessor.GetOrderDayTotal
-        private async Task<decimal> GetUsedAllowanceForPeriod(
+        private async Task<(decimal UsedAllowance, TimeSpan RefreshedAfter)> GetUsedAllowanceForPeriod(
             AmountLimitType limitType,
             DateTime scheduleDateUtc, 
             Customer customer = null)
@@ -471,27 +485,40 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                             (PaymentStatus)o.PaymentStatusId == PaymentStatus.Paid &&
                             !o.Deleted);
 
+            TimeSpan periodEnd;
+            
             switch (limitType)
             {
                 case AmountLimitType.Daily:
                     periodOrdersQuery = periodOrdersQuery
                         .Where(o => o.ScheduleDate.Date == scheduleDateUtc.Date);
+                    
+                    periodEnd = DateTime.UtcNow.AddDays(1).Date - DateTime.UtcNow;
+                    
                     break;
                 case AmountLimitType.Weekly:
                     var startOfWeek = scheduleDateUtc.Date.AddDays(-(int)scheduleDateUtc.DayOfWeek);
                     var endOfWeek = startOfWeek.AddDays(6);
                     periodOrdersQuery = periodOrdersQuery
                         .Where(o => o.ScheduleDate.Date.Between(startOfWeek, endOfWeek));
+                    
+                    periodEnd = endOfWeek - DateTime.UtcNow;
+                    
                     break;
                 case AmountLimitType.Monthly:
                     var startOfMonth = new DateTime(scheduleDateUtc.Year, scheduleDateUtc.Month, 1);
                     var endOfMonth = startOfMonth.AddMonths(1).AddDays(-1);
                     periodOrdersQuery = periodOrdersQuery
                         .Where(o => o.ScheduleDate.Date.Between(startOfMonth, endOfMonth));
+                    
+                    periodEnd = endOfMonth - DateTime.UtcNow;
+                    
                     break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(limitType), limitType, null);
             }
-            
-            return await periodOrdersQuery.SumAsync(x => x.OrderTotal);
+
+            return (await periodOrdersQuery.SumAsync(x => x.OrderTotal), periodEnd);
         }
 
         private async Task<bool> IsUnlimitedAccount(Customer customer)
@@ -520,28 +547,36 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 (AmountLimitType.Daily, 0M);
         }
 
-        public async Task<(decimal remainingAllowance, AmountLimitType refreshCadence)> 
-            GetCustomerRemainingAllowance(
-            DateTime date, 
-            Customer customer = null)
+        public async Task<CustomerBalanceResult> GetCustomerRemainingAllowance(
+            CustomerBalanceRequest customerBalanceRequest)
         {
-            var customerCompanyLimit = await GetCustomerCompanyLimit(customer);
+            var customerCompanyLimit = 
+                await GetCustomerCompanyLimit(customerBalanceRequest.Customer);
             if (customerCompanyLimit.limitAmount == 0)
-                return (0, customerCompanyLimit.limitType);
+                return null;
 
-            var existingDates = await LoadAttribute(customer);
+            var existingDates = 
+                await LoadAttribute(customerBalanceRequest.Customer);
 
-            if (existingDates.UtcDates.Any(d => d.Date == date.Date))
-                return (0, customerCompanyLimit.limitType);
+            if (existingDates.UtcDates.Any(d => d.Date == customerBalanceRequest.OrderDateUtc))
+                return null;
 
-            var usedAllowanceForPeriod = await GetUsedAllowanceForPeriod(customerCompanyLimit.limitType, 
-                date, 
-                customer);
+            var usedAllowanceForPeriod =
+                await GetUsedAllowanceForPeriod(customerCompanyLimit.limitType,
+                    customerBalanceRequest.OrderDateUtc,
+                    customerBalanceRequest.Customer);
 
-            var remainingAllowance = usedAllowanceForPeriod > customerCompanyLimit.limitAmount
+            var remainingAllowance = usedAllowanceForPeriod.UsedAllowance > customerCompanyLimit.limitAmount
                 ? 0
-                : customerCompanyLimit.limitAmount - usedAllowanceForPeriod;
-            return (remainingAllowance, customerCompanyLimit.limitType);
+                : customerCompanyLimit.limitAmount - usedAllowanceForPeriod.UsedAllowance;
+            
+            return new CustomerBalanceResult()
+            {
+                TotalAllowance = customerCompanyLimit.limitAmount,
+                RemainingAllowance = remainingAllowance,
+                RefreshCadence = customerCompanyLimit.limitType,
+                RefreshedAfter = usedAllowanceForPeriod.RefreshedAfter
+            };
         }
 
         public async Task<bool> VoidAllowance(DateTime date, Customer customer = null)
