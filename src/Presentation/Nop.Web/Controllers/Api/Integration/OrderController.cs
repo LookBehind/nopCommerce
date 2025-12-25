@@ -280,7 +280,13 @@ namespace Nop.Web.Controllers.Integration
                     OrderDateUtc = DateTime.UtcNow
                 });
 
-            return Ok(new { Allowance = remainingAllowance });
+            if (remainingAllowance == null)
+            {
+                return StatusCode(StatusCodes.Status402PaymentRequired, 
+                    new ErrorMessage("Customer is not eligible for company allowance."));
+            }
+            
+            return Ok(new { Allowance = remainingAllowance.RemainingAllowance });
         }
         
         [HttpPost("voidallowance")]

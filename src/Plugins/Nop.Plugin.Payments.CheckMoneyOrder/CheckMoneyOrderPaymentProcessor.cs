@@ -163,6 +163,13 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 });
             
             var result = new ProcessPaymentResult();
+
+            if (customerBalance == null)
+            {
+                result.AddError("Your account is not eligible for company allowance. " +
+                                "If you think that's a mistake, please contact us.");
+                return result;
+            }
             
             // Within the company's allowance or account is unlimited
             if (await IsUnlimitedAccount(customer) ||
@@ -229,6 +236,9 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                     OrderDateUtc = orderDayDate
                 });
 
+            if (customerBalance == null)
+                return true;
+            
             return shoppingCartTotal.shoppingCartTotal > customerBalance.RemainingAllowance;
         }
 
