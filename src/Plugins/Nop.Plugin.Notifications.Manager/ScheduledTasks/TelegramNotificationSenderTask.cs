@@ -454,24 +454,39 @@ public class TelegramNotificationSenderTask : IScheduledTask
                 var (isVendorNotification, vendor) = await IsNotificationForVendorAsync(queuedEmail);
                 if (isVendorNotification)
                 {
-                    var vendorGroupId = await _genericAttribute.GetAttributeAsync<long>(vendor,
-                        VENDOR_TELEGRAM_CHANNEL_KEY, defaultValue: 0);
-
-                    if (vendorGroupId != 0)
+                    var vendorChat =
+                        _chatIdToVendor!.FirstOrDefault(kv => kv.Value.StoreId == queuedEmail.StoreId &&
+                                                              kv.Value.Vendor.Id == vendor.Id);
+                    
+                    if (vendorChat.Key != null)
                     {
-                        await _telegramBotClient.SendMessage(vendorGroupId, queuedEmail.Body);
+                        await _telegramBotClient.SendMessage(chatId: vendorChat.Key.ChatId,
+                            messageThreadId: vendorChat.Key.MessageThreadId,
+                            text: queuedEmail.Body);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException(
+                            $"Telegram notification wasn't delivered due to missing vendor chat. queuedEmail.Id={queuedEmail.Id}, vendor.Name={vendor.Name}");
                     }
                 }
                 else
                 {
                     var (isStoreNotification, emailAccount) = await IsNotificationforStoreAsync(queuedEmail);
                     if (isStoreNotification) {
-                        var emailAccountGroupId = await _genericAttribute.GetAttributeAsync<long>(emailAccount,
-                            STORE_TELEGRAM_CHANNEL_KEY, defaultValue: 0);
+                        var emailAccountGroupId = await _genericAttribute.GetAttributeAsync<long>(
+                            emailAccount,
+                            STORE_TELEGRAM_CHANNEL_KEY, 
+                            defaultValue: 0);
 
                         if (emailAccountGroupId != 0)
                         {
                             await _telegramBotClient.SendMessage(emailAccountGroupId, queuedEmail.Body);
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException(
+                                $"Telegram notification wasn't delivered due to missing store channel key. queuedEmail.Id={queuedEmail.Id}, emailAccount.Email={emailAccount.Email}");
                         }
                     }
                 }
@@ -498,7 +513,9 @@ public class TelegramNotificationSenderTask : IScheduledTask
             }
         }
 
-        await _queuedEmail.DeleteAlreadySentOrExpiredEmailsAsync(_deleteEmailsOlderThan);
+        await _queuedEmail.DeleteAlreadySentEmailsAsync(
+            createdFromUtc: null,
+            createdToUtc: DateTime.UtcNow.Subtract(_deleteEmailsOlderThan));
     }
 
     private async Task<(bool, Vendor)> IsNotificationForVendorAsync(QueuedEmail queuedEmail)
@@ -512,9 +529,10 @@ public class TelegramNotificationSenderTask : IScheduledTask
     {
         // TODO: use memory cache (IDistributedMemoryCache, or MemoryCache)
         var storeEmailAccounts = await _emailAccountService.GetAllEmailAccountsAsync();
-        var matchingEmailAccount = storeEmailAccounts.FirstOrDefault(e => string.Equals(e.Email, queuedEmail.To, StringComparison.OrdinalIgnoreCase));
+        var matchingEmailAccount = storeEmailAccounts.FirstOrDefault(e =>
+            string.Equals(e.Email, queuedEmail.To, StringComparison.OrdinalIgnoreCase));
 
-        return matchingEmailAccount == default ? (false, null) : (true, matchingEmailAccount);
+        return matchingEmailAccount == null ? (false, null) : (true, matchingEmailAccount);
     }
     
     public TelegramNotificationSenderTask(

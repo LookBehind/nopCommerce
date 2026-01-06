@@ -110,5 +110,7 @@ namespace Nop.Core.Domain.Messages
             get => (QueuedEmailPriority)PriorityId;
             set => PriorityId = (int)value;
         }
+        
+        public int StoreId { get; set; }
     }
 }

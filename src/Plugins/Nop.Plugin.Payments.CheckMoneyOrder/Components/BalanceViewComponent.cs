@@ -60,7 +60,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder.Components
                 {
                     AmountLimitType.Daily => 1,
                     AmountLimitType.Weekly => 7,
-                    AmountLimitType.Monthly => 30,
+                    AmountLimitType.Monthly => DateTime.DaysInMonth(DateTime.UtcNow.Year, DateTime.UtcNow.Month),
                     _ => throw new ArgumentOutOfRangeException(nameof(customerBalanceResult.RefreshCadence))
                 };
                 var recommendedAverageSpending = customerBalanceResult.TotalAllowance / daysInPeriod;

@@ -1125,7 +1125,8 @@ namespace Nop.Web.Areas.Admin.Controllers
                     Body = model.SendEmail.Body,
                     CreatedOnUtc = DateTime.UtcNow,
                     DontSendBeforeDateUtc = model.SendEmail.SendImmediately || !model.SendEmail.DontSendBeforeDate.HasValue ?
-                        null : (DateTime?)_dateTimeHelper.ConvertToUtcTime(model.SendEmail.DontSendBeforeDate.Value)
+                        null : (DateTime?)_dateTimeHelper.ConvertToUtcTime(model.SendEmail.DontSendBeforeDate.Value),
+                    StoreId = customer.RegisteredInStoreId
                 };
                 await _queuedEmailService.InsertQueuedEmailAsync(email);
 
