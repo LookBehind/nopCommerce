@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Orders;
+using Nop.Plugin.Notifications.Manager.Services;
 using Nop.Services.Catalog;
 using Nop.Services.Companies;
 using Nop.Services.Configuration;
@@ -37,17 +38,13 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
     public class RemindMeNotificationTask : IScheduleTask
     {
         private readonly IDateTimeHelper _dateTimeHelper;
-        private readonly CatalogSettings _catalogSettings;
-        private readonly ISettingService _settingService;
         private readonly ICustomerService _customerService;
         private readonly IOrderService _orderService;
         private readonly IProductService _productService;
-        private readonly ILocalizationService _localizationService;
         private readonly ICompanyService _companyService;
-        private readonly ICustomerActivityService _customerActivityService;
         private readonly IOllamaApiClient _ollamaApiClient;
         private readonly ILogger _logger;
-        private readonly FirebaseApp _firebaseApp;
+        private readonly PushNotificationService _pushNotificationService;
 
         private class CustomerNotificationMetadata
         {
@@ -57,30 +54,22 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         }
         
         public RemindMeNotificationTask(IDateTimeHelper dateTimeHelper,
-            CatalogSettings catalogSettings,
             ICustomerService customerService,
-            ISettingService settingService,
             IOrderService orderService,
-            ILocalizationService localizationService,
             ICompanyService companyService,
-            ICustomerActivityService customerActivityService,
             IOllamaApiClient ollamaApiClient, 
             ILogger logger, 
-            IProductService productService, 
-            FirebaseApp firebaseApp)
+            IProductService productService,
+            PushNotificationService pushNotificationService)
         {
             _dateTimeHelper = dateTimeHelper;
-            _catalogSettings = catalogSettings;
             _customerService = customerService;
-            _settingService = settingService;
             _orderService = orderService;
-            _localizationService = localizationService;
             _companyService = companyService;
-            _customerActivityService = customerActivityService;
             _ollamaApiClient = ollamaApiClient;
             _logger = logger;
             _productService = productService;
-            _firebaseApp = firebaseApp;
+            _pushNotificationService = pushNotificationService;
         }
 
         private async Task<ICollection<CustomerNotificationMetadata>> GetCustomersToNotify(int loadLastOrders = 40)
@@ -122,8 +111,6 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                 // Never ordered on this weekday, probably doesn't need a reminder
                 if (!customerOrdersData.Any(o => lastMonthSameWeekdays.Contains(o.order.ScheduleDate.Date)))
                 {
-                    await _logger.InformationAsync($"Customer {customer.Email} never ordered on this weekday, skipping notification", 
-                        customer: customer);
                     continue;
                 }
                 
@@ -258,8 +245,14 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                 try
                 {
                     var message = await GetNotificationMessageForCustomer(notificationMetadata, productsToRecommend);
-                    var result = await FirebaseMessaging.GetMessaging(_firebaseApp).SendAsync(message);
-                    await _logger.InformationAsync($"Reminder sent to user: {message.Notification.Body}, result: {result}",
+                    
+                    await _pushNotificationService.SendNotificationAsync(notificationMetadata.Customer, 
+                        NotificationType.RemindMe,
+                        message.Notification.Title, 
+                        message.Notification.Body, 
+                        message.Data);
+                    
+                    await _logger.InformationAsync($"Reminder sent to user: {message.Notification.Body}",
                         customer: notificationMetadata.Customer);
                 }
                 catch (Exception e)

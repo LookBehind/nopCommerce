@@ -381,10 +381,14 @@ public class TelegramNotificationSenderTask : IScheduledTask
         try
         {
             var lastSeenUpdateId = await _setting.GetSettingByKeyAsync(LAST_UPDATE_ID_SEEN_KEY, 0);
+            
             var updates = await _telegramBotClient.GetUpdates(
-                lastSeenUpdateId, timeout: 0,
+                lastSeenUpdateId, 
+                timeout: 0,
                 allowedUpdates: new[] { UpdateType.Message });
 
+            
+            
             foreach (var update in updates)
             {
                 try
