@@ -41,11 +41,10 @@ namespace Nop.Plugin.Company.Company.Controllers
         [HttpPost]
         public async Task<IActionResult> SetDeliveryTime([FromBody]SetDeliveryTimeRequest setDeliveryTimeRequest)
         {
+            var currentCustomer = await workContext.GetCurrentCustomerAsync();
+            var currentStore = await storeContext.GetCurrentStoreAsync();
             try
             {
-                var currentCustomer = await workContext.GetCurrentCustomerAsync();
-                var currentStore = await storeContext.GetCurrentStoreAsync();
-                
                 // Validate the delivery time
                 if (!await deliveryTimeService.IsDeliveryTimeAvailableAsync(setDeliveryTimeRequest.DeliveryTime))
                 {
@@ -70,6 +69,10 @@ namespace Nop.Plugin.Company.Company.Controllers
             }
             catch (Exception ex)
             {
+                await logger.ErrorAsync($"Error saving delivery time for customer '{currentCustomer.Email}'", 
+                    ex, 
+                    customer: currentCustomer);
+                
                 return Json(new { 
                     success = false, 
                     message = await localizationService.GetResourceAsync("DeliveryTime.ErrorSaving") 
@@ -84,11 +87,11 @@ namespace Nop.Plugin.Company.Company.Controllers
         [HttpGet]
         public async Task<IActionResult> GetDeliveryTime()
         {
+            var currentCustomer = await workContext.GetCurrentCustomerAsync();
+            var currentStore = await storeContext.GetCurrentStoreAsync();
+            
             try
             {
-                var currentCustomer = await workContext.GetCurrentCustomerAsync();
-                var currentStore = await storeContext.GetCurrentStoreAsync();
-                
                 var selectedTime = await genericAttributeService.GetAttributeAsync<DateTime?>(
                     currentCustomer, SELECTED_DELIVERY_TIME_KEY, currentStore.Id);
 
@@ -111,6 +114,8 @@ namespace Nop.Plugin.Company.Company.Controllers
             }
             catch (Exception ex)
             {
+                await logger.ErrorAsync("Error retrieving delivery time", ex, customer: currentCustomer);
+                
                 return Json(new { 
                     success = false, 
                     selectedDeliveryTime = (string)null,
@@ -127,10 +132,11 @@ namespace Nop.Plugin.Company.Company.Controllers
         [HttpPost]
         public async Task<IActionResult> ClearDeliveryTime()
         {
+            var currentCustomer = await workContext.GetCurrentCustomerAsync();
+            var currentStore = await storeContext.GetCurrentStoreAsync();
+            
             try
             {
-                var currentCustomer = await workContext.GetCurrentCustomerAsync();
-                var currentStore = await storeContext.GetCurrentStoreAsync();
                 await genericAttributeService.SaveAttributeAsync<DateTime?>(currentCustomer,
                     SELECTED_DELIVERY_TIME_KEY, null, currentStore.Id);
 
@@ -141,6 +147,8 @@ namespace Nop.Plugin.Company.Company.Controllers
             }
             catch (Exception ex)
             {
+                await logger.ErrorAsync("Error clearing delivery time", ex, customer: currentCustomer);
+                
                 return Json(new { 
                     success = false, 
                     message = await localizationService.GetResourceAsync("DeliveryTime.ErrorClearing") 

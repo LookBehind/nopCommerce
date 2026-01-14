@@ -2,7 +2,7 @@
   "Group": "Company",
   "FriendlyName": "Company & Delivery Management",
   "SystemName": "Company.Company",
-  "Version": "2.1",
+  "Version": "2.2",
   "SupportedVersions": [ "4.50" ],
   "Author": "Custom",
   "DisplayOrder": 1,

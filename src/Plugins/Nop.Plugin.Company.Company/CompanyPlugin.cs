@@ -60,8 +60,7 @@ namespace Nop.Plugin.Company.Company
         {
             return Task.FromResult<IList<string>>(new List<string>
             {
-                PublicWidgetZones.HeaderSelectors,
-                PublicWidgetZones.Footer
+                PublicWidgetZones.HeaderSelectors
             });
         }
 
@@ -72,12 +71,6 @@ namespace Nop.Plugin.Company.Company
         /// <returns>View component name</returns>
         public string GetWidgetViewComponentName(string widgetZone)
         {
-            if (widgetZone == PublicWidgetZones.HeaderSelectors)
-                return "GlobalDeliveryDatePicker";
-            
-            if (widgetZone == PublicWidgetZones.Footer)
-                return "GlobalDeliveryTimeValidation";
-                
             return "GlobalDeliveryDatePicker";
         }
 

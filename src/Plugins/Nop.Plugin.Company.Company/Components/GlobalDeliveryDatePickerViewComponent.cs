@@ -52,7 +52,6 @@ namespace Nop.Plugin.Company.Company.Components
                 model.InvalidReason = validationResult.InvalidReason ?? string.Empty;
 
                 // Get available delivery times
-                var availableTimes = await deliveryTimeService.GetAvailableDeliveryTimesAsync();
                 model.MaxDaysAhead = await deliveryTimeService.GetMaxDaysAheadAsync();
 
                 // Set selected delivery time from validation result
@@ -60,39 +59,6 @@ namespace Nop.Plugin.Company.Company.Components
                 {
                     model.SelectedDeliveryTime = validationResult.SelectedDeliveryTime;
                     model.SelectedDeliveryTimeText = await FormatDeliveryTimeDisplayAsync(validationResult.SelectedDeliveryTime.Value);
-                }
-
-                // Convert times to display models using proper timezone conversion
-                var currentCustomer = await workContext.GetCurrentCustomerAsync();
-                var company = await companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
-                var timezoneInfo = company == null
-                    ? await dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
-                    : TZConvert.GetTimeZoneInfo(company.TimeZone);
-
-                var now = dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
-                var today = now.Date;
-                var tomorrow = today.AddDays(1);
-
-                foreach (var time in availableTimes)
-                {
-                    var deliveryTimeModel = new DeliveryTimeModel
-                    {
-                        DateTime = time,
-                        DisplayText = FormatDeliveryTimeDisplay(time, now),
-                        TimeDisplayText = time.ToString("h:mm tt", CultureInfo.InvariantCulture),
-                        IsToday = time.Date == today,
-                        IsTomorrow = time.Date == tomorrow
-                    };
-
-                    // Set date display text
-                    if (deliveryTimeModel.IsToday)
-                        deliveryTimeModel.DateDisplayText = "Today";
-                    else if (deliveryTimeModel.IsTomorrow)
-                        deliveryTimeModel.DateDisplayText = "Tomorrow";
-                    else
-                        deliveryTimeModel.DateDisplayText = time.ToString("dddd, MMM dd", CultureInfo.InvariantCulture);
-
-                    model.AvailableDeliveryTimes.Add(deliveryTimeModel);
                 }
             }
             catch

@@ -89,20 +89,21 @@ namespace Nop.Web.Areas.Admin.Controllers
             try
             {
                 IPagedList<Customer> notificationCustomers = await _customerService.GetAllPushNotificationCustomersAsync(sendToAll: true);
-                foreach (var customer in notificationCustomers)
-                {
-                    if (!string.IsNullOrEmpty(customer.PushToken))
-                    {
-                        var expoSDKClient = new PushApiClient();
-                        var pushTicketReq = new PushTicketRequest()
-                        {
-                            PushTo = new List<string>() { customer.PushToken },
-                            PushTitle = model.MessageTitle,
-                            PushBody = model.MessageBody
-                        };
-                        var result = await expoSDKClient.PushSendAsync(pushTicketReq);
-                    }
-                }
+                throw new NotImplementedException("Push notification sending logic needs implementation");
+                // foreach (var customer in notificationCustomers)
+                // {
+                //     if (!string.IsNullOrEmpty(customer.PushToken))
+                //     {
+                //         var expoSDKClient = new PushApiClient();
+                //         var pushTicketReq = new PushTicketRequest()
+                //         {
+                //             PushTo = new List<string>() { customer.PushToken },
+                //             PushTitle = model.MessageTitle,
+                //             PushBody = model.MessageBody
+                //         };
+                //         var result = await expoSDKClient.PushSendAsync(pushTicketReq);
+                //     }
+                // }
             }
             catch (Exception ex)
             {

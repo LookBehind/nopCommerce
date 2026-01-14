@@ -12,7 +12,6 @@ namespace Nop.Plugin.Company.Company.Models
     {
         public DeliveryDatePickerModel()
         {
-            AvailableDeliveryTimes = new List<DeliveryTimeModel>();
         }
 
         /// <summary>
@@ -24,11 +23,6 @@ namespace Nop.Plugin.Company.Company.Models
         /// Display text for selected delivery time
         /// </summary>
         public string SelectedDeliveryTimeText { get; set; }
-
-        /// <summary>
-        /// Available delivery times grouped by date
-        /// </summary>
-        public IList<DeliveryTimeModel> AvailableDeliveryTimes { get; set; }
 
         /// <summary>
         /// Maximum days ahead allowed for ordering
