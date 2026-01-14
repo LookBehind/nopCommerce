@@ -53,7 +53,7 @@ public class PushNotificationService
             if (string.IsNullOrWhiteSpace(customer.PushToken))
                 return;
 
-            var isSuppressed = notificationType switch
+            var subscribedToNotification = notificationType switch
             {
                 NotificationType.OrderStatusChange => customer.OrderStatusNotification,
                 NotificationType.RemindMe => customer.RemindMeNotification,
@@ -61,7 +61,7 @@ public class PushNotificationService
                 _ => throw new ArgumentOutOfRangeException(nameof(notificationType))
             };
 
-            if (isSuppressed)
+            if (!subscribedToNotification)
                 return;
 
             var failedCount =
