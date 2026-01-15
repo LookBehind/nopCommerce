@@ -48,6 +48,12 @@
                 Width = "200",
                 Render = new RenderDate()
             },
+            new ColumnProperty(nameof(CustomerOrderModel.ScheduleDate))
+            {
+                Title = T("Admin.Orders.Fields.ScheduleDate").Text,
+                Width = "120",
+                Render = new RenderDate()
+            },
             new ColumnProperty(nameof(CustomerOrderModel.Id))
             {
                 Title = T("Admin.Common.View").Text,

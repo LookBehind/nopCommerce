@@ -1740,7 +1740,8 @@ namespace Nop.Web.Areas.Admin.Factories
 
             //get orders
             var orders = await _orderService.SearchOrdersAsync(productId: searchModel.ProductId,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, 
+                pageSize: searchModel.PageSize);
 
             //prepare grid model
             var model = await new ProductOrderListModel().PrepareToGridAsync(searchModel, orders, () =>
@@ -1754,8 +1755,7 @@ namespace Nop.Web.Areas.Admin.Factories
                     {
                         Id = order.Id,
                         CustomerEmail = billingAddress.Email,
-                        CustomOrderNumber = order.CustomOrderNumber,
-                        DeliverySlot = order.DeliverySlot.ToString()
+                        CustomOrderNumber = order.CustomOrderNumber
                     };
 
                     //convert dates to the user time

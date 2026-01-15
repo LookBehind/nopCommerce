@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -162,7 +162,8 @@ namespace Nop.Services.Messages
                     Body = body,
                     CreatedOnUtc = DateTime.UtcNow,
                     EmailAccountId = emailAccount.Id,
-                    DontSendBeforeDateUtc = campaign.DontSendBeforeDateUtc
+                    DontSendBeforeDateUtc = campaign.DontSendBeforeDateUtc,
+                    StoreId = customer?.RegisteredInStoreId ?? 0
                 };
                 await _queuedEmailService.InsertQueuedEmailAsync(email);
                 totalEmailsSent++;

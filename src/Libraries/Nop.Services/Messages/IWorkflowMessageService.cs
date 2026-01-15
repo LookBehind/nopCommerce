@@ -639,6 +639,7 @@ namespace Nop.Services.Messages
         /// <param name="fromEmail">Sender email. If specified, then it overrides passed "emailAccount" details</param>
         /// <param name="fromName">Sender name. If specified, then it overrides passed "emailAccount" details</param>
         /// <param name="subject">Subject. If specified, then it overrides subject of a message template</param>
+        /// <param name="storeId"></param>
         /// <returns>
         /// A task that represents the asynchronous operation
         /// The task result contains the queued email identifier
@@ -648,7 +649,7 @@ namespace Nop.Services.Messages
             string toEmailAddress, string toName,
             string attachmentFilePath = null, string attachmentFileName = null,
             string replyToEmailAddress = null, string replyToName = null,
-            string fromEmail = null, string fromName = null, string subject = null);
+            string fromEmail = null, string fromName = null, string subject = null, int storeId = 0);
 
         #endregion
     }

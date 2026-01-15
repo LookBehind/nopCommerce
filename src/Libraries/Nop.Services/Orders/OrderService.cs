@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -357,7 +357,7 @@ namespace Nop.Services.Orders
             string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue,
             bool getOnlyTotalCount = false, bool sendRateNotification = false,
             bool sortByDeliveryDate = false, DateTime? schedulDate = null, DateTime? scheduleDateTime = null,
-            string companyName = null, int deliverySlot = 0, int deliveryHour = 0)
+            string companyName = null, int deliveryHour = 0)
         {
             var query = _orderRepository.Table;
 
@@ -377,11 +377,6 @@ namespace Nop.Services.Orders
 
             if (customerId > 0)
                 query = query.Where(o => o.CustomerId == customerId);
-
-            if (deliverySlot > 0)
-            {
-                query = query.Where(o => o.DeliverySlot == deliverySlot);
-            }
 
             if (deliveryHour > 0)
             {

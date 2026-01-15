@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -590,8 +590,7 @@ namespace Nop.Web.Factories
             {
                 OrderId = order.Id,
                 OnePageCheckoutEnabled = _orderSettings.OnePageCheckoutEnabled,
-                CustomOrderNumber = order.CustomOrderNumber,
-                DeliverySlot = (int)order.DeliverySlot
+                CustomOrderNumber = order.CustomOrderNumber
             };
 
             return model;

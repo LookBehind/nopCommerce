@@ -51,7 +51,7 @@ RUN dotnet publish Nop.Web.csproj --no-restore -c Release -o /app/published
 FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine AS runtime 
 
 # add globalization support
-RUN apk add --no-cache icu-libs
+RUN apk add --no-cache icu-libs icu-data-full
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 # installs required packages

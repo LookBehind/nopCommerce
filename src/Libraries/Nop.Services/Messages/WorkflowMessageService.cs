@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -219,7 +219,7 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -262,7 +262,7 @@ namespace Nop.Services.Messages
                 var toEmail = customer.Email;
                 var toName = await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -305,7 +305,7 @@ namespace Nop.Services.Messages
                 var toEmail = customer.Email;
                 var toName = await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -349,7 +349,7 @@ namespace Nop.Services.Messages
                 var toEmail = customer.EmailToRevalidate;
                 var toName = await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -392,7 +392,7 @@ namespace Nop.Services.Messages
                 var toEmail = customer.Email;
                 var toName = await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -444,7 +444,7 @@ namespace Nop.Services.Messages
                 var toEmail = vendor.Email;
                 var toName = vendor.Name;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -500,7 +500,7 @@ namespace Nop.Services.Messages
                 var toEmail = vendor.Email;
                 var toName = vendor.Name;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -544,7 +544,7 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -594,7 +594,7 @@ namespace Nop.Services.Messages
                 var toEmail = affiliateAddress.Email;
                 var toName = $"{affiliateAddress.FirstName} {affiliateAddress.LastName}";
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -638,7 +638,7 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -688,7 +688,7 @@ namespace Nop.Services.Messages
                 var toEmail = affiliateAddress.Email;
                 var toName = $"{affiliateAddress.FirstName} {affiliateAddress.LastName}";
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -738,7 +738,7 @@ namespace Nop.Services.Messages
                 var toName = $"{billingAddress.FirstName} {billingAddress.LastName}";
 
                 return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
-                    attachmentFilePath, attachmentFileName);
+                    attachmentFilePath, attachmentFileName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -786,7 +786,7 @@ namespace Nop.Services.Messages
                 var toEmail = vendor.Email;
                 var toName = vendor.Name;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -836,7 +836,7 @@ namespace Nop.Services.Messages
                 var toName = $"{billingAddress.FirstName} {billingAddress.LastName}";
 
                 return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
-                    attachmentFilePath, attachmentFileName);
+                    attachmentFilePath, attachmentFileName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -887,7 +887,7 @@ namespace Nop.Services.Messages
                 var toEmail = billingAddress.Email;
                 var toName = $"{billingAddress.FirstName} {billingAddress.LastName}";
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -939,7 +939,7 @@ namespace Nop.Services.Messages
                 var toEmail = billingAddress.Email;
                 var toName = $"{billingAddress.FirstName} {billingAddress.LastName}";
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -989,7 +989,7 @@ namespace Nop.Services.Messages
                 var toName = $"{billingAddress.FirstName} {billingAddress.LastName}";
 
                 return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
-                    attachmentFilePath, attachmentFileName);
+                    attachmentFilePath, attachmentFileName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1035,7 +1035,7 @@ namespace Nop.Services.Messages
                 var toEmail = billingAddress.Email;
                 var toName = $"{billingAddress.FirstName} {billingAddress.LastName}";
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1081,7 +1081,7 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1129,7 +1129,7 @@ namespace Nop.Services.Messages
                 var toEmail = billingAddress.Email;
                 var toName = $"{billingAddress.FirstName} {billingAddress.LastName}";
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1181,7 +1181,7 @@ namespace Nop.Services.Messages
                 var toEmail = billingAddress.Email;
                 var toName = $"{billingAddress.FirstName} {billingAddress.LastName}";
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1231,7 +1231,7 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1283,7 +1283,7 @@ namespace Nop.Services.Messages
                 var toEmail = billingAddress.Email;
                 var toName = $"{billingAddress.FirstName} {billingAddress.LastName}";
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1335,7 +1335,7 @@ namespace Nop.Services.Messages
                 var toEmail = billingAddress.Email;
                 var toName = $"{billingAddress.FirstName} {billingAddress.LastName}";
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1379,7 +1379,8 @@ namespace Nop.Services.Messages
                 //event notification
                 await _eventPublisher.MessageTokensAddedAsync(messageTemplate, tokens);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, subscription.Email, string.Empty);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens,
+                    subscription.Email, string.Empty, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1419,7 +1420,8 @@ namespace Nop.Services.Messages
                 //event notification
                 await _eventPublisher.MessageTokensAddedAsync(messageTemplate, tokens);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, subscription.Email, string.Empty);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens,
+                    subscription.Email, string.Empty, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1474,7 +1476,8 @@ namespace Nop.Services.Messages
                 //event notification
                 await _eventPublisher.MessageTokensAddedAsync(messageTemplate, tokens);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, friendsEmail, string.Empty);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, friendsEmail,
+                    string.Empty, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1520,7 +1523,8 @@ namespace Nop.Services.Messages
                 //event notification
                 await _eventPublisher.MessageTokensAddedAsync(messageTemplate, tokens);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, friendsEmail, string.Empty);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, friendsEmail,
+                    string.Empty, storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1577,7 +1581,8 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1637,7 +1642,8 @@ namespace Nop.Services.Messages
                     ? billingAddress.FirstName
                     : await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1697,7 +1703,8 @@ namespace Nop.Services.Messages
                     ? billingAddress.FirstName
                     : await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1747,7 +1754,8 @@ namespace Nop.Services.Messages
                 var toEmail = customer.Email;
                 var toName = await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1797,7 +1805,8 @@ namespace Nop.Services.Messages
                 var toEmail = customer.Email;
                 var toName = await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1841,7 +1850,8 @@ namespace Nop.Services.Messages
                 var toEmail = customer.Email;
                 var toName = await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1893,7 +1903,8 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1936,7 +1947,8 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -1982,7 +1994,8 @@ namespace Nop.Services.Messages
                 var toEmail = giftCard.RecipientEmail;
                 var toName = giftCard.RecipientName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2026,7 +2039,8 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2072,7 +2086,8 @@ namespace Nop.Services.Messages
                 var toEmail = customer.Email;
                 var toName = await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2114,7 +2129,8 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2159,7 +2175,8 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2206,7 +2223,8 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2250,7 +2268,8 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2294,7 +2313,8 @@ namespace Nop.Services.Messages
                 var toEmail = emailAccount.Email;
                 var toName = emailAccount.DisplayName;
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2347,7 +2367,8 @@ namespace Nop.Services.Messages
                 var toEmail = customer.Email;
                 var toName = await _customerService.GetCustomerFullNameAsync(customer);
 
-                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName);
+                return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2411,11 +2432,9 @@ namespace Nop.Services.Messages
                 var toName = emailAccount.DisplayName;
 
                 return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
-                    fromEmail: fromEmail,
-                    fromName: fromName,
-                    subject: subject,
                     replyToEmailAddress: senderEmail,
-                    replyToName: senderName);
+                    replyToName: senderName, fromEmail: fromEmail, fromName: fromName, subject: subject,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2483,11 +2502,9 @@ namespace Nop.Services.Messages
                 var toName = vendor.Name;
 
                 return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, toEmail, toName,
-                    fromEmail: fromEmail,
-                    fromName: fromName,
-                    subject: subject,
                     replyToEmailAddress: senderEmail,
-                    replyToName: senderName);
+                    replyToName: senderName, fromEmail: fromEmail, fromName: fromName, subject: subject,
+                    storeId: store.Id);
             }).ToListAsync();
         }
 
@@ -2508,6 +2525,8 @@ namespace Nop.Services.Messages
             if (messageTemplate == null)
                 throw new ArgumentException("Template cannot be loaded");
 
+            var currentStore = await _storeContext.GetCurrentStoreAsync();
+            
             //email account
             var emailAccount = await GetEmailAccountOfMessageTemplateAsync(messageTemplate, languageId);
 
@@ -2517,7 +2536,7 @@ namespace Nop.Services.Messages
             //force sending
             messageTemplate.DelayBeforeSend = null;
 
-            return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, sendToEmail, null);
+            return await SendNotificationAsync(messageTemplate, emailAccount, languageId, tokens, sendToEmail, null, storeId: currentStore.Id);
         }
 
         #endregion
@@ -2540,6 +2559,7 @@ namespace Nop.Services.Messages
         /// <param name="fromEmail">Sender email. If specified, then it overrides passed "emailAccount" details</param>
         /// <param name="fromName">Sender name. If specified, then it overrides passed "emailAccount" details</param>
         /// <param name="subject">Subject. If specified, then it overrides subject of a message template</param>
+        /// <param name="storeId">Store identifier, from which the email was being sent</param>
         /// <returns>
         /// A task that represents the asynchronous operation
         /// The task result contains the queued email identifier
@@ -2549,7 +2569,8 @@ namespace Nop.Services.Messages
             string toEmailAddress, string toName,
             string attachmentFilePath = null, string attachmentFileName = null,
             string replyToEmailAddress = null, string replyToName = null,
-            string fromEmail = null, string fromName = null, string subject = null)
+            string fromEmail = null, string fromName = null, string subject = null,
+            int storeId = 0)
         {
             if (messageTemplate == null)
                 throw new ArgumentNullException(nameof(messageTemplate));
@@ -2589,7 +2610,8 @@ namespace Nop.Services.Messages
                 CreatedOnUtc = DateTime.UtcNow,
                 EmailAccountId = emailAccount.Id,
                 DontSendBeforeDateUtc = !messageTemplate.DelayBeforeSend.HasValue ? null
-                    : GetMessageSendingDateTime(messageTemplate, tokens)
+                    : GetMessageSendingDateTime(messageTemplate, tokens),
+                StoreId = storeId
             };
 
             await _queuedEmailService.InsertQueuedEmailAsync(email);

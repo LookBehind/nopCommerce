@@ -4,9 +4,11 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Nop.Core;
+using Nop.Data;
 using Nop.Services.Customers;
 
 namespace Nop.Web.Middleware
@@ -22,12 +24,23 @@ namespace Nop.Web.Middleware
             _appSettings = appSettings.Value;
         }
 
-        public async Task Invoke(HttpContext context, ICustomerService userService, IWorkContext workContext)
+        public async Task Invoke(HttpContext context)
         {
+            // Skip JWT authentication if database is not installed
+            if (!await DataSettingsManager.IsDatabaseInstalledAsync())
+            {
+                await _next(context);
+                return;
+            }
+
             var token = context.Request.Headers["Authorization"].FirstOrDefault()?.Split(" ").Last();
 
             if (token != null)
+            {
+                var userService = context.RequestServices.GetRequiredService<ICustomerService>();
+                var workContext = context.RequestServices.GetRequiredService<IWorkContext>();
                 await attachUserToContext(context, userService, workContext, token);
+            }
 
             await _next(context);
         }

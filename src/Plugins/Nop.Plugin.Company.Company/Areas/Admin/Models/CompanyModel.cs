@@ -26,6 +26,9 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Models
         [NopResourceDisplayName("Admin.Companies.Company.Fields.OrderAheadDays")]
         public int OrderAheadDays { get; set; }
 
+        [NopResourceDisplayName("Admin.Companies.Company.Fields.AmountLimitType")]
+        public int AmountLimitTypeId { get; set; }
+
         public CompanyCustomerSearchModel CompanyCustomerSearchModel { get; set; }
 
         public IList<CompanyLocalizedModel> Locales { get; set; }

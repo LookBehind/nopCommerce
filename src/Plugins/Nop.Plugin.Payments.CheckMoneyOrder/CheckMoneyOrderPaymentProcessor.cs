@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
@@ -12,19 +12,29 @@ using Nop.Services.Payments;
 using Nop.Services.Plugins;
 using System.Linq;
 using System.Text.Json;
+using LinqToDB;
+using Nop.Core.Domain.Cms;
+using Nop.Core.Domain.Companies;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Payments;
 using Nop.Data;
+using Nop.Services.Catalog;
 using Nop.Services.Common;
 using Nop.Services.Companies;
 using Nop.Services.Customers;
+using Nop.Services.Cms;
+using Nop.Web.Framework.Infrastructure;
 
 namespace Nop.Plugin.Payments.CheckMoneyOrder
 {
     /// <summary>
     /// CheckMoneyOrder payment processor
     /// </summary>
-    public class CheckMoneyOrderPaymentProcessor : BasePlugin, IPaymentMethod, ICompanyAllowancePaymentMethod
+    public class CheckMoneyOrderPaymentProcessor : 
+        BasePlugin, 
+        IPaymentMethod, 
+        ICompanyAllowancePaymentMethod,
+        IWidgetPlugin
     {
         // keep in sync with IdramMerchantPaymentProcessor.CompanyBenefitExemptionRole
         private const string CompanyBenefitExemptionRole = "Allowance Excempt";
@@ -46,6 +56,8 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         private readonly IOrderTotalCalculationService _orderTotalCalculationService;
         private readonly IGenericAttributeService _genericAttribute;
         private readonly ICustomerService _customerService;
+        private readonly WidgetSettings _widgetSettings;
+        private readonly IPriceFormatter _priceFormatter;
 
         #endregion
 
@@ -107,7 +119,8 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             ICompanyService companyService, 
             IOrderTotalCalculationService orderTotalCalculationService, 
             IGenericAttributeService genericAttribute, 
-            ICustomerService customerService)
+            ICustomerService customerService,
+            WidgetSettings widgetSettings, IPriceFormatter priceFormatter)
         {
             _checkMoneyOrderPaymentSettings = checkMoneyOrderPaymentSettings;
             _localizationService = localizationService;
@@ -122,6 +135,8 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             _orderTotalCalculationService = orderTotalCalculationService;
             _genericAttribute = genericAttribute;
             _customerService = customerService;
+            _widgetSettings = widgetSettings;
+            _priceFormatter = priceFormatter;
         }
 
         #endregion
@@ -140,21 +155,35 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         {
             var customer = await _customerService.GetCustomerByIdAsync(processPaymentRequest.CustomerId);
 
-            var remainingAllowance = 
-                await GetCustomerRemainingAllowance(processPaymentRequest.ScheduleDate, customer);
+            var customerBalance = 
+                await GetCustomerRemainingAllowance(new CustomerBalanceRequest()
+                {
+                    Customer = customer,
+                    OrderDateUtc = processPaymentRequest.ScheduleDate
+                });
             
             var result = new ProcessPaymentResult();
+
+            if (customerBalance == null)
+            {
+                result.AddError("Your account is not eligible for company allowance. " +
+                                "If you think that's a mistake, please contact us.");
+                return result;
+            }
             
             // Within the company's allowance or account is unlimited
             if (await IsUnlimitedAccount(customer) ||
-                remainingAllowance >= processPaymentRequest.OrderTotal)
+                customerBalance.RemainingAllowance >= processPaymentRequest.OrderTotal)
             {
                 result.NewPaymentStatus = PaymentStatus.Paid;
             }
             else
             {
-                result.AddError($"Your remaining allowance ({(int)remainingAllowance} AMD) is not enough to " +
-                                $"purchase your current order ({(int)processPaymentRequest.OrderTotal} AMD).");
+                var remainingAllowance = 
+                    await _priceFormatter.FormatPriceAsync(customerBalance.RemainingAllowance);
+                var orderTotal = await _priceFormatter.FormatPriceAsync(processPaymentRequest.OrderTotal);
+                result.AddError($"Your remaining allowance ({remainingAllowance}) is not enough to " +
+                                $"purchase your current order ({orderTotal}).");
             }
             
             return result;
@@ -200,10 +229,17 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 store.Id,
                 DateTime.UtcNow.Date);
             
-            var remainingAllowance = 
-                await GetCustomerRemainingAllowance(orderDayDate, customer);
+            var customerBalance = 
+                await GetCustomerRemainingAllowance(new CustomerBalanceRequest()
+                {
+                    Customer = customer,
+                    OrderDateUtc = orderDayDate
+                });
 
-            return shoppingCartTotal.shoppingCartTotal > remainingAllowance;
+            if (customerBalance == null)
+                return true;
+            
+            return shoppingCartTotal.shoppingCartTotal > customerBalance.RemainingAllowance;
         }
 
         /// <summary>
@@ -372,6 +408,13 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                 ["Plugins.Payment.CheckMoneyOrder.ShippableProductRequired.Hint"] = "An option indicating whether shippable products are required in order to display this payment method during checkout."
             });
 
+            //activate widget
+            if (!_widgetSettings.ActiveWidgetSystemNames.Contains("Payments.CheckMoneyOrder"))
+            {
+                _widgetSettings.ActiveWidgetSystemNames.Add("Payments.CheckMoneyOrder");
+                await _settingService.SaveSettingAsync(_widgetSettings);
+            }
+
             await base.InstallAsync();
         }
 
@@ -386,6 +429,10 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
 
             //locales
             await _localizationService.DeleteLocaleResourcesAsync("Plugins.Payment.CheckMoneyOrder");
+
+            //deactivate widget
+            _widgetSettings.ActiveWidgetSystemNames.Remove("Payments.CheckMoneyOrder");
+            await _settingService.SaveSettingAsync(_widgetSettings);
 
             await base.UninstallAsync();
         }
@@ -403,24 +450,85 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             return await _localizationService.GetResourceAsync("Plugins.Payment.CheckMoneyOrder.PaymentMethodDescription");
         }
 
+        /// <summary>
+        /// Gets widget zones where this widget should be rendered
+        /// </summary>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the widget zones
+        /// </returns>
+        public Task<IList<string>> GetWidgetZonesAsync()
+        {
+            return Task.FromResult<IList<string>>(new List<string> { PublicWidgetZones.HeaderLinksBefore });
+        }
+
+        /// <summary>
+        /// Gets a name of a view component for displaying widget
+        /// </summary>
+        /// <param name="widgetZone">Name of the widget zone</param>
+        /// <returns>View component name</returns>
+        public string GetWidgetViewComponentName(string widgetZone)
+        {
+            return "Balance";
+        }
+
+        /// <summary>
+        /// Gets a value indicating whether to hide this plugin on the widget list page in the admin area
+        /// </summary>
+        public bool HideInWidgetList => true;
+
         #endregion
 
         // keep in sync with IdramMerchantPaymentProcessor.GetOrderDayTotal
-        private async Task<decimal> GetOrderDayTotal(DateTime scheduleDateUtc, Customer customer = null)
+        private async Task<(decimal UsedAllowance, TimeSpan RefreshedAfter)> GetUsedAllowanceForPeriod(
+            AmountLimitType limitType,
+            DateTime scheduleDateUtc, 
+            Customer customer = null)
         {
             var store = await _storeContext.GetCurrentStoreAsync();
             customer ??= await _workContext.GetCurrentCustomerAsync();
 
-            var thatDayOrders = await _orderRepository.Table
-                .Where(o => o.StoreId == store.Id && 
-                            o.CustomerId == customer.Id && 
-                            o.ScheduleDate.Date == scheduleDateUtc.Date &&
+            var periodOrdersQuery = _orderRepository.Table
+                .Where(o => o.StoreId == store.Id &&
+                            o.CustomerId == customer.Id &&
                             (OrderStatus)o.OrderStatusId != OrderStatus.Cancelled &&
                             (PaymentStatus)o.PaymentStatusId == PaymentStatus.Paid &&
-                            !o.Deleted)
-                .SumAsync(x => x.OrderTotal);
+                            !o.Deleted);
 
-            return thatDayOrders;
+            TimeSpan periodEnd;
+            
+            switch (limitType)
+            {
+                case AmountLimitType.Daily:
+                    periodOrdersQuery = periodOrdersQuery
+                        .Where(o => o.ScheduleDate.Date == scheduleDateUtc.Date);
+                    
+                    periodEnd = DateTime.UtcNow.AddDays(1).Date - DateTime.UtcNow;
+                    
+                    break;
+                case AmountLimitType.Weekly:
+                    var startOfWeek = scheduleDateUtc.Date.AddDays(-(int)scheduleDateUtc.DayOfWeek);
+                    var endOfWeek = startOfWeek.AddDays(6);
+                    periodOrdersQuery = periodOrdersQuery
+                        .Where(o => o.ScheduleDate.Date.Between(startOfWeek, endOfWeek));
+                    
+                    periodEnd = endOfWeek - DateTime.UtcNow;
+                    
+                    break;
+                case AmountLimitType.Monthly:
+                    var startOfMonth = new DateTime(scheduleDateUtc.Year, scheduleDateUtc.Month, 1);
+                    var endOfMonth = startOfMonth.AddMonths(1).AddDays(-1);
+                    periodOrdersQuery = periodOrdersQuery
+                        .Where(o => o.ScheduleDate.Date.Between(startOfMonth, endOfMonth));
+                    
+                    periodEnd = endOfMonth - DateTime.UtcNow;
+                    
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(limitType), limitType, null);
+            }
+
+            return (await periodOrdersQuery.SumAsync(x => x.OrderTotal), periodEnd);
         }
 
         private async Task<bool> IsUnlimitedAccount(Customer customer)
@@ -433,35 +541,52 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         }
 
         // Keep in sync with IdramMerchantPaymentProcessor.GetCustomerCompanyLimit
-        private async Task<decimal> GetCustomerCompanyLimit(Customer customer = null)
+        private async Task<(AmountLimitType limitType, decimal limitAmount)> GetCustomerCompanyLimit(Customer customer = null)
         {
             customer ??= await _workContext.GetCurrentCustomerAsync();
             var customerRoles = await _customerService.GetCustomerRolesAsync(customer);
 
             if (customerRoles.Any(role =>
                     string.Equals(role.Name, CompanyBenefitExemptionRole, StringComparison.OrdinalIgnoreCase)))
-                return 0M;
+                return (AmountLimitType.Daily, 0M);
             
             var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
 
-            return company?.AmountLimit ?? 0M;
+            return company != null ? 
+                (company.AmountLimitType, company.AmountLimit) : 
+                (AmountLimitType.Daily, 0M);
         }
 
-        public async Task<decimal> GetCustomerRemainingAllowance(DateTime date, Customer customer = null)
+        public async Task<CustomerBalanceResult> GetCustomerRemainingAllowance(
+            CustomerBalanceRequest customerBalanceRequest)
         {
-            var customerCompanyLimit = await GetCustomerCompanyLimit(customer);
-            if (customerCompanyLimit == 0)
-                return 0;
+            var customerCompanyLimit = 
+                await GetCustomerCompanyLimit(customerBalanceRequest.Customer);
+            if (customerCompanyLimit.limitAmount == 0)
+                return null;
 
-            var existingDates = await LoadAttribute(customer);
+            var existingDates = 
+                await LoadAttribute(customerBalanceRequest.Customer);
 
-            if (existingDates.UtcDates.Any(d => d.Date == date.Date))
-                return 0;
+            if (existingDates.UtcDates.Any(d => d.Date == customerBalanceRequest.OrderDateUtc))
+                return null;
 
-            var orderDayTotal = await GetOrderDayTotal(date, customer);
-            return orderDayTotal > customerCompanyLimit ? 
-                0 : 
-                customerCompanyLimit - orderDayTotal;
+            var usedAllowanceForPeriod =
+                await GetUsedAllowanceForPeriod(customerCompanyLimit.limitType,
+                    customerBalanceRequest.OrderDateUtc,
+                    customerBalanceRequest.Customer);
+
+            var remainingAllowance = usedAllowanceForPeriod.UsedAllowance > customerCompanyLimit.limitAmount
+                ? 0
+                : customerCompanyLimit.limitAmount - usedAllowanceForPeriod.UsedAllowance;
+            
+            return new CustomerBalanceResult()
+            {
+                TotalAllowance = customerCompanyLimit.limitAmount,
+                RemainingAllowance = remainingAllowance,
+                RefreshCadence = customerCompanyLimit.limitType,
+                RefreshedAfter = usedAllowanceForPeriod.RefreshedAfter
+            };
         }
 
         public async Task<bool> VoidAllowance(DateTime date, Customer customer = null)
@@ -480,6 +605,8 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             return true;
         }
 
+        
+        
         private async Task<VoidedAllowanceSettings> LoadAttribute(Customer customer)
         {
             var store = await _storeContext.GetCurrentStoreAsync();

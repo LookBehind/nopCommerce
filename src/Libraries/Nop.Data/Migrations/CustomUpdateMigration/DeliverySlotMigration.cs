@@ -20,15 +20,15 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
         {
             if (!Schema
                     .Table(NameCompatibilityManager.GetTableName(typeof(Order)))
-                    .Column(nameof(Order.DeliverySlot))
+                    .Column("DeliverySlot")
                     .Exists())
             {
                 Alter.Table(NameCompatibilityManager.GetTableName(typeof(Order)))
-                    .AddColumn(nameof(Order.DeliverySlot)).AsInt32().Nullable();
+                    .AddColumn("DeliverySlot").AsInt32().Nullable();
                 
                 Execute.Sql($"update [{NameCompatibilityManager.GetTableName(typeof(Order))}] " +
-                            $"set [{nameof(Order.DeliverySlot)}] = [{nameof(Order.Id)}] " + 
-                            $"where [{nameof(Order.DeliverySlot)}] is null");
+                            $"set [{"DeliverySlot"}] = [{nameof(Order.Id)}] " + 
+                            $"where [{"DeliverySlot"}] is null");
             }
 
             if (!Schema
@@ -63,7 +63,7 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
             
             if (Schema
                     .Table(NameCompatibilityManager.GetTableName(typeof(Order)))
-                    .Column(nameof(Order.DeliverySlot))
+                    .Column("DeliverySlot")
                     .Exists()
                 &&
                 !Schema
@@ -75,7 +75,7 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
                     .UniqueConstraint("DeliverSlotUnique")
                     .OnTable(NameCompatibilityManager.GetTableName(typeof(Order)))
                     .Columns(nameof(Order.ScheduleDateTime), 
-                        nameof(Order.DeliverySlot), 
+                        "DeliverySlot", 
                         nameof(Order.CompanyId));
             }
         }
@@ -83,7 +83,7 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
         public override void Down()
         {
             Alter.Table(NameCompatibilityManager.GetTableName(typeof(Order)))
-                .AlterColumn(nameof(Order.DeliverySlot));
+                .AlterColumn("DeliverySlot");
         }
     }
 }

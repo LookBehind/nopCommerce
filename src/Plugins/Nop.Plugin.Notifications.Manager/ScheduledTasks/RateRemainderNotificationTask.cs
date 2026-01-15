@@ -4,6 +4,7 @@ using System.Linq;
 using Expo.Server.Client;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Orders;
+using Nop.Plugin.Notifications.Manager.Services;
 using Nop.Services.Common.PushApiTask;
 using Nop.Services.Configuration;
 using Nop.Services.Customers;
@@ -25,6 +26,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         private readonly ICustomerService _customerService;
         private readonly IOrderService _orderService;
         private readonly ILocalizationService _localizationService;
+        private readonly PushNotificationService _pushNotificationService;
 
         #endregion
 
@@ -34,13 +36,15 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             ICustomerService customerService,
             ISettingService settingService,
             IOrderService orderService,
-            ILocalizationService localizationService)
+            ILocalizationService localizationService, 
+            PushNotificationService pushNotificationService)
         {
             _catalogSettings = catalogSettings;
             _customerService = customerService;
             _settingService = settingService;
             _orderService = orderService;
             _localizationService = localizationService;
+            _pushNotificationService = pushNotificationService;
         }
 
         #endregion
@@ -52,38 +56,41 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         /// </summary>
         public async System.Threading.Tasks.Task ExecuteAsync()
         {
-            var rateRemainderCustomers = await _customerService.GetAllPushNotificationCustomersAsync(isRateReminderNotification: true);
-            if (rateRemainderCustomers.Count > 0)
-            {
-                //DateTime currentDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
-                var osIds = new List<int> { (int)OrderStatus.Complete };
-                foreach (var rateRemainderCustomer in rateRemainderCustomers)
-                {
-                    var customerOrder = (await _orderService.SearchOrdersAsync(customerId: rateRemainderCustomer.Id, osIds: osIds, sendRateNotification: true, schedulDate: DateTime.UtcNow))
-                        .OrderByDescending(o => o.ScheduleDate).FirstOrDefault();
-                    if (customerOrder != null)
-                    {
-                        TimeSpan diff = DateTime.UtcNow.Subtract(customerOrder.ScheduleDate);
-                        if (diff.Hours >= 1 && DateTime.UtcNow.Date == customerOrder.ScheduleDate.Date)
-                        {
-                            if (!string.IsNullOrEmpty(rateRemainderCustomer.PushToken))
-                            {
-                                var expoSDKClient = new PushApiTaskClient();
-                                var pushTicketReq = new PushApiTaskTicketRequest()
-                                {
-                                    PushTo = new List<string>() { rateRemainderCustomer.PushToken },
-                                    PushTitle = await _localizationService.GetResourceAsync("RateRemainderNotificationTask.Title"),
-                                    PushBody = await _localizationService.GetResourceAsync("RateRemainderNotificationTask.Body"),
-                                    PushData = new { customerOrder.Id }
-                                };
-                                var result = await expoSDKClient.PushSendAsync(pushTicketReq);
+            var rateRemainderCustomers = 
+                await _customerService.GetAllPushNotificationCustomersAsync(isRateReminderNotification: true);
 
-                                customerOrder.RateNotificationSend = true;
-                                await _orderService.UpdateOrderAsync(customerOrder);
-                            }
-                        }
-                    }
-                }
+            if (rateRemainderCustomers.Count == 0)
+                return;
+            
+            var osIds = new List<int> { (int)OrderStatus.Complete };
+            foreach (var rateRemainderCustomer in rateRemainderCustomers)
+            {
+                var customerOrder = (await _orderService.SearchOrdersAsync(
+                        customerId: rateRemainderCustomer.Id,
+                        osIds: osIds,
+                        sendRateNotification: true,
+                        schedulDate: DateTime.UtcNow))
+                    .OrderByDescending(o => o.ScheduleDate)
+                    .FirstOrDefault();
+
+                // Couldn't find order for today
+                if (customerOrder == null)
+                    continue;
+
+                var diff = DateTime.UtcNow.Subtract(customerOrder.ScheduleDate);
+                // Didn't pass an hour after the delivery
+                if (diff.Hours < 1 || DateTime.UtcNow.Date != customerOrder.ScheduleDate.Date)
+                    continue;
+
+                await _pushNotificationService.SendNotificationAsync(rateRemainderCustomer,
+                    NotificationType.RateReminder,
+                    await _localizationService.GetResourceAsync("RateRemainderNotificationTask.Title"),
+                    await _localizationService.GetResourceAsync("RateRemainderNotificationTask.Body"),
+                    new Dictionary<string, string>() { { "Id", customerOrder.Id.ToString() } });
+
+                customerOrder = await _orderService.GetOrderByIdAsync(customerOrder.Id);
+                customerOrder.RateNotificationSend = true;
+                await _orderService.UpdateOrderAsync(customerOrder);
             }
         }
 

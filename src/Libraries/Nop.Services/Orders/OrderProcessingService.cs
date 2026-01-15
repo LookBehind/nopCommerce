@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -392,26 +392,6 @@ namespace Nop.Services.Orders
         #region Utilities
 
         /// <summary>
-        /// Add Delivery slot to order, retry in case of fail as there can be update issue with DeliverySlot,SchedulDateTime couple uniqueness
-        /// </summary>
-        /// <param name="note">Note text</param>
-        /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task AddOrderDeliverSlotAsync(Order order)
-        {
-            var retryPolicy = Policy.Handle<Exception>()
-                .WaitAndRetry(retryCount: 5,
-                    sleepDurationProvider: _ => TimeSpan.FromSeconds(1));
-
-            await retryPolicy.Execute(async () =>
-            {
-                var orders = (await _orderService.SearchOrdersAsync(scheduleDateTime: order.ScheduleDateTime))
-                    .Where(o => o.CompanyId == order.CompanyId);
-                order.DeliverySlot = (orders.Where(o => o.DeliverySlot > 0).Max(o => o.DeliverySlot) ?? 0) + 1;
-                await _orderService.UpdateOrderAsync(order);
-            });
-        }
-
-        /// <summary>
         /// Add order note
         /// </summary>
         /// <param name="order">Order</param>
@@ -478,7 +458,7 @@ namespace Nop.Services.Orders
                 billingAddress = await _addressService.GetAddressByIdAsync(details.Customer.BillingAddressId.Value);
 
             if (!CommonHelper.IsValidEmail(billingAddress?.Email))
-                throw new NopException("Email is not valid");
+                throw new NopException($"Email is not valid, Id={billingAddress?.Id}, Email={billingAddress?.Email}, BillingAddressId={details.Customer.BillingAddressId}");
 
             details.BillingAddress = _addressService.CloneAddress(billingAddress);
 
@@ -579,7 +559,7 @@ namespace Nop.Services.Orders
                     var shippingAddress = await _customerService.GetCustomerShippingAddressAsync(details.Customer);
 
                     if (!CommonHelper.IsValidEmail(shippingAddress?.Email))
-                        throw new NopException("Email is not valid");
+                        throw new NopException($"Email is not valid. ShippingAddressId={details.Customer.ShippingAddressId}, Id={shippingAddress?.Id}, Email={shippingAddress?.Email}");
 
                     //clone shipping address
                     details.ShippingAddress = _addressService.CloneAddress(shippingAddress);
@@ -880,7 +860,6 @@ namespace Nop.Services.Orders
             }
 
             //set temporary values for order delivery slot. in checkout will be updated
-            order.DeliverySlot = -int.Parse(DateTime.UtcNow.ToString("HHmmssfff")) % 1000;
             order.ScheduleDateTime = DateTime.UtcNow;
 
             await _orderService.InsertOrderAsync(order);
@@ -1634,9 +1613,7 @@ namespace Nop.Services.Orders
                     
                     order.CompanyId = (await _companyService.GetCompanyByCustomerIdAsync(
                         processPaymentRequest.CustomerId))?.Id ?? 0;
-                    //update order delivery slot
-                    await AddOrderDeliverSlotAsync(order);
-
+                    
                     //move shopping cart items to order items
                     await MoveShoppingCartItemsToOrderItemsAsync(details, order);
 

@@ -65,9 +65,6 @@ namespace Nop.Web.Areas.Admin.Models.Orders
         [NopResourceDisplayName("Admin.Orders.List.Store")]
         public int StoreId { get; set; }
 
-        [NopResourceDisplayName("Admin.Orders.List.DeliverySlot")]
-        public int DeliverySlot { get; set; }
-
         [NopResourceDisplayName("Admin.Orders.List.Company")]
         public string Company { get; set; }
 

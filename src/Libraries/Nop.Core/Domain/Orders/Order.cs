@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Payments;
 using Nop.Core.Domain.Shipping;
@@ -302,11 +302,6 @@ namespace Nop.Core.Domain.Orders
 
         public int Rating { get; set; }
         public string RatingText { get; set; }
-
-        /// <summary>
-        /// Gets or sets order delivery slot
-        /// </summary>
-        public int? DeliverySlot { get; set; }
 
         /// <summary>
         /// Gets or sets order CompanyId

@@ -8,11 +8,14 @@ using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
+using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
 using Nop.Core.Domain.Shipping;
+using Nop.Core.Domain.Vendors;
 using Nop.Services.Catalog;
+using Nop.Services.Common;
 using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Logging;
@@ -48,6 +51,7 @@ namespace Nop.Web.Controllers.Integration
         private readonly IProductService _productService;
         private readonly IVendorService _vendorService;
         private readonly ILogger _logger;
+        private readonly IAddressService _addressService;
 
         private async Task<IEnumerable<Product>> UpsertProducts(int storeId,
             int vendorId,
@@ -131,6 +135,12 @@ namespace Nop.Web.Controllers.Integration
                 return BadRequest(new ErrorMessage("Invalid parameters"));
             }
 
+            if (string.IsNullOrWhiteSpace(orderRequest.Vendor) ||
+                !orderRequest.Vendor.All(c => char.IsAsciiLetterOrDigit(c) || char.IsWhiteSpace(c)))
+            {
+                return BadRequest(new ErrorMessage("VendorName contains invalid characters. Should be ASCII letters or digits or whitespace"));
+            }
+            
             await _logger.InformationAsync($"Order from integration {integration}: {JsonSerializer.Serialize(orderRequest)}");
 
             if (!await _permission.AuthorizeAsync("ExternalOrdersCreation"))
@@ -146,9 +156,56 @@ namespace Nop.Web.Controllers.Integration
 
             if (targetVendorId == null)
             {
-                await _logger.ErrorAsync($"Ordering through kerpak and couldn't find vendor with name {orderRequest.Vendor}. " +
-                                           $"Possibly invalid name was passed or vendor needs to be added");
-                return Problem("Something went wrong");
+                await _logger.InformationAsync($"Ordering through kerpak and couldn't find vendor with name {orderRequest.Vendor}. " +
+                                           $"Going to add new vendor");
+
+                var vendorRole = await _customer.GetCustomerRoleBySystemNameAsync("Vendors");
+                if (vendorRole == null)
+                {
+                    await _logger.ErrorAsync("Couldn't find vendor role");
+                    return Problem("Something went wrong");
+                }
+                
+                var newVendorAddr = new Address() { CreatedOnUtc = DateTime.UtcNow, };
+                await _addressService.InsertAddressAsync(newVendorAddr);
+
+                var newVendor = new Vendor()
+                {
+                    Name = orderRequest.Vendor,
+                    AddressId = newVendorAddr.Id,
+                    Active = false,
+                    Deleted = false,
+                    PageSizeOptions = "6, 3, 9",
+                    Email = orderRequest.Vendor.Replace(" ", "").ToLower() + "@mysnacks.shop",
+                    PageSize = 6,
+                    AllowCustomersToSelectPageSize = true,
+                    PriceRangeFiltering = true,
+                    PriceFrom = 0,
+                    PriceTo = 10000,
+                    ManuallyPriceRange = true
+                };
+                await _vendorService.InsertVendorAsync(newVendor);
+
+                var newVendorCustomer = new Customer()
+                {
+                    Email = newVendor.Email,
+                    CustomerGuid = Guid.NewGuid(),
+                    VendorId = newVendor.Id,
+                    Active = true,
+                    Deleted = false,
+                    CreatedOnUtc = DateTime.UtcNow,
+                    LastActivityDateUtc = DateTime.UtcNow,
+                    RegisteredInStoreId = storeId
+                };
+                await _customer.InsertCustomerAsync(newVendorCustomer);
+                await _customer.AddCustomerRoleMappingAsync(new CustomerCustomerRoleMapping()
+                {
+                    CustomerId = newVendorCustomer.Id, CustomerRoleId = vendorRole.Id
+                });
+                
+                targetVendorId = newVendor.Id;
+                
+                await _logger.InformationAsync($"Created new vendor {newVendor.Name}");
             }
             
             var orderProducts = await UpsertProducts(storeId, targetVendorId.Value, orderRequest.Products);
@@ -217,9 +274,19 @@ namespace Nop.Web.Controllers.Integration
                 .Single(p => p is ICompanyAllowancePaymentMethod);
 
             var remainingAllowance = 
-                await allowancePaymentMethod.GetCustomerRemainingAllowance(DateTime.UtcNow, customer);
+                await allowancePaymentMethod.GetCustomerRemainingAllowance(new CustomerBalanceRequest()
+                {
+                    Customer = customer,
+                    OrderDateUtc = DateTime.UtcNow
+                });
 
-            return Ok(new { Allowance = remainingAllowance });
+            if (remainingAllowance == null)
+            {
+                return StatusCode(StatusCodes.Status402PaymentRequired, 
+                    new ErrorMessage("Customer is not eligible for company allowance."));
+            }
+            
+            return Ok(new { Allowance = remainingAllowance.RemainingAllowance });
         }
         
         [HttpPost("voidallowance")]
@@ -269,7 +336,7 @@ namespace Nop.Web.Controllers.Integration
             IShoppingCartService shoppingCartService, 
             IProductService productService, 
             IVendorService vendorService, 
-            ILogger logger)
+            ILogger logger, IAddressService addressService)
         {
             _customer = customer;
             _order = order;
@@ -285,6 +352,7 @@ namespace Nop.Web.Controllers.Integration
             _productService = productService;
             _vendorService = vendorService;
             _logger = logger;
+            _addressService = addressService;
         }
     }
 }

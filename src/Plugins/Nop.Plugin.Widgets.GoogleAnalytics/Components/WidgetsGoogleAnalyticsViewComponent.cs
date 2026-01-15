@@ -86,8 +86,10 @@ namespace Nop.Plugin.Widgets.GoogleAnalytics.Components
         /// <returns>A task that represents the asynchronous operation</returns>
         private async Task<Order> GetLastOrderAsync()
         {
-            var order = (await _orderService.SearchOrdersAsync(storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
-                customerId: (await _workContext.GetCurrentCustomerAsync()).Id, pageSize: 1)).FirstOrDefault();
+            var order = (await _orderService.SearchOrdersAsync(
+                storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
+                customerId: (await _workContext.GetCurrentCustomerAsync()).Id, 
+                pageSize: 1)).FirstOrDefault();
             return order;
         }
 

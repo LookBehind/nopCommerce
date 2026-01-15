@@ -279,14 +279,6 @@
                                         </div>
                                         <div class="form-group row">
                                             <div class="col-md-4">
-                                                <nop-label asp-for="DeliverySlot" />
-                                            </div>
-                                            <div class="col-md-8">
-                                                <input class="form-control text-box single-line" type="number" name="DeliverySlot" id="DeliverySlot" />
-                                            </div>
-                                        </div>
-                                        <div class="form-group row">
-                                            <div class="col-md-4">
                                                 <nop-label asp-for="GoDirectlyToCustomOrderNumber" />
                                             </div>
                                             <div class="col-md-8">
@@ -363,7 +355,6 @@
                                                     //new FilterParameter(nameof(Model.WarehouseId)),
                                                     //new FilterParameter(nameof(Model.BillingEmail)),
                                                     //new FilterParameter(nameof(Model.BillingPhone)),
-                                                    new FilterParameter(nameof(Model.DeliverySlot)),
                                                     new FilterParameter(nameof(Model.Company)),
                                                     new FilterParameter(nameof(Model.PaymentMethodSystemName)),
                                                     new FilterParameter(nameof(Model.ProductId)),
@@ -385,11 +376,6 @@
                                 new ColumnProperty(nameof(OrderModel.CustomOrderNumber))
                                 {
                                     Title = T("Admin.Orders.Fields.CustomOrderNumber").Text,
-                                    Width = "80"
-                                },
-                                new ColumnProperty(nameof(OrderModel.DeliverySlot))
-                                {
-                                    Title = "Delivery slot",
                                     Width = "80"
                                 }
                             };
@@ -441,13 +427,13 @@
                                 }
                                 gridModel.ColumnCollection.Add(new ColumnProperty(nameof(OrderModel.ShippingAddress))
                                 {
-                                    Title = "Shipping address",
+                                    Title = T("Admin.Orders.Fields.ShippingAddress").Text,
                                     Width = "120",
                                     Render = new RenderCustom("renderShippingAddress")
                                 });
                                 gridModel.ColumnCollection.Add(new ColumnProperty(nameof(OrderModel.ScheduleDate))
                                 {
-                                    Title = "Delivery date",
+                                    Title = T("Admin.Orders.Fields.ScheduleDate").Text,
                                     Width = "120",
                                     Render = new RenderDate()
                                 });
@@ -460,15 +446,11 @@
                                         Width = "100",
                                         Visible = (await storeService.GetAllStoresAsync()).Count > 1
                                     });
-                                    //a vendor does not have access to this functionality
-                                    if (!Model.IsLoggedInAsVendor)
+                                    gridModel.ColumnCollection.Add(new ColumnProperty(nameof(OrderModel.OrderTotal))
                                     {
-                                        gridModel.ColumnCollection.Add(new ColumnProperty(nameof(OrderModel.OrderTotal))
-                                        {
-                                            Title = T("Admin.Orders.Fields.OrderTotal").Text,
-                                            Width = "100",
-                                        });
-                                    }
+                                        Title = T("Admin.Orders.Fields.OrderTotal").Text,
+                                        Width = "100",
+                                    });
                                 }
                                 gridModel.ColumnCollection.Add(new ColumnProperty(nameof(OrderModel.Id))
                                 {
@@ -524,7 +506,6 @@
                                     ShippingStatusIds: $('#@Html.IdFor(model => model.ShippingStatusIds)').val(),
                                     StoreId: $('#@Html.IdFor(model => model.StoreId)').val(),
                                     VendorId: $('#@Html.IdFor(model => model.VendorId)').val(),
-                                    DeliverSlot: $('#@Html.IdFor(model => model.DeliverySlot)').val(),
                                     WarehouseId: $('#@Html.IdFor(model => model.WarehouseId)').val(),
                                     @*BillingEmail: $('#@Html.IdFor(model => model.BillingEmail)').val(),
                                     BillingPhone: $('#@Html.IdFor(model => model.BillingPhone)').val(),

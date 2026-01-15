@@ -1,4 +1,6 @@
-﻿@using Nop.Plugin.Company.Company.Areas.Admin.Models
+﻿@using Nop.Core.Domain.Companies
+@using Nop.Plugin.Company.Company.Areas.Admin.Models
+@using Nop.Services
 @model CompanyModel
 
 <div class="card-body">
@@ -63,6 +65,16 @@
         <div class="col-md-9">
             <nop-editor asp-for="OrderAheadDays" />
             <span asp-validation-for="OrderAheadDays"></span>
+        </div>
+    </div>
+
+    <div class="form-group row">
+        <div class="col-md-3">
+            <nop-label asp-for="AmountLimitTypeId" />
+        </div>
+        <div class="col-md-9">
+            <nop-select asp-for="AmountLimitTypeId" asp-items="@await ((AmountLimitType)Model.AmountLimitTypeId).ToSelectListAsync()" />
+            <span asp-validation-for="AmountLimitTypeId"></span>
         </div>
     </div>
 </div>

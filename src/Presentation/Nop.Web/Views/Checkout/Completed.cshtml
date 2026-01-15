@@ -1,4 +1,4 @@
-﻿@model CheckoutCompletedModel
+@model CheckoutCompletedModel
 @{
     Layout = "_ColumnsOne";
 
@@ -24,7 +24,7 @@
             </div>
             <div class="details">
                 <div class="order-number">
-                    <strong>@T("Checkout.OrderNumber"): @Model.DeliverySlot</strong>
+                    <strong>@T("Checkout.OrderNumber"): @Model.OrderId</strong>
                 </div>
                 <div class="details-link">
                     <a href="@Url.RouteUrl("OrderDetails", new { orderID = Model.OrderId })">@T("Checkout.PlacedOrderDetails")</a>

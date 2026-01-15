@@ -1209,6 +1209,7 @@ namespace Nop.Web.Areas.Admin.Infrastructure.Mapper
         {
             CreateMap<Order, CustomerOrderModel>()
                 .ForMember(model => model.CreatedOn, options => options.Ignore())
+                .ForMember(model => model.ScheduleDate, options => options.Ignore())
                 .ForMember(model => model.OrderStatus, options => options.Ignore())
                 .ForMember(model => model.PaymentStatus, options => options.Ignore())
                 .ForMember(model => model.ShippingStatus, options => options.Ignore())

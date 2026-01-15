@@ -189,6 +189,14 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Factories
                 if (companyCustomers.Any())
                     model.CustomerExist = true;
             }
+            else
+            {
+                //set default values for new company
+                if (model != null && model.AmountLimitTypeId == 0)
+                {
+                    model.AmountLimitTypeId = (int)AmountLimitType.Daily;
+                }
+            }
 
             //prepare localized models
             if (!excludeProperties)

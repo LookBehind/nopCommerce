@@ -471,7 +471,6 @@ namespace Nop.Web.Areas.Admin.Controllers
                 ssIds: shippingStatusIds,
                 schedulDate: model.DeliveryDate,
                 deliveryHour: model.DeliveryHourId,
-                deliverySlot: model.DeliverySlot,
                 sortByDeliveryDate: model.SortByDeliveryDate,
                 //billingPhone: model.BillingPhone,
                 //billingEmail: model.BillingEmail,
@@ -591,18 +590,6 @@ namespace Nop.Web.Areas.Admin.Controllers
                 await _orderProcessingService.CancelOrderAsync(order, true);
                 await LogEditOrderAsync(order.Id);
 
-                if (customer.OrderStatusNotification)
-                {
-                    // var expoSDKClient = new PushApiClient();
-                    // var pushTicketReq = new PushTicketRequest()
-                    // {
-                    //     PushTo = new List<string>() { customer.PushToken },
-                    //     PushTitle = await _localizationService.GetResourceAsync("PushNotification.OrderCancelTitle"),
-                    //     PushBody = await _localizationService.GetResourceAsync("PushNotification.OrderCancelBody")
-                    // };
-                    // var result = await expoSDKClient.PushSendAsync(pushTicketReq);
-                }
-
                 //prepare model
                 var model = await _orderModelFactory.PrepareOrderModelAsync(null, order);
 
@@ -682,18 +669,6 @@ namespace Nop.Web.Areas.Admin.Controllers
             {
                 await _orderProcessingService.MarkOrderAsPaidAsync(order);
                 await LogEditOrderAsync(order.Id);
-
-                if (customer.OrderStatusNotification)
-                {
-                    // var expoSDKClient = new PushApiClient();
-                    // var pushTicketReq = new PushTicketRequest()
-                    // {
-                    //     PushTo = new List<string>() { customer.PushToken },
-                    //     PushTitle = await _localizationService.GetResourceAsync("PushNotification.OrderPaidTitle"),
-                    //     PushBody = await _localizationService.GetResourceAsync("PushNotification.OrderPaidBody")
-                    // };
-                    // var result = await expoSDKClient.PushSendAsync(pushTicketReq);
-                }
 
                 //prepare model
                 var model = await _orderModelFactory.PrepareOrderModelAsync(null, order);
@@ -980,17 +955,6 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                 await LogEditOrderAsync(order.Id);
 
-                if (customer.OrderStatusNotification)
-                {
-                    // var expoSDKClient = new PushApiClient();
-                    // var pushTicketReq = new PushTicketRequest()
-                    // {
-                    //     PushTo = new List<string>() { customer.PushToken },
-                    //     PushTitle = await _localizationService.GetResourceAsync("PushNotification.OrderStatusChangeTitle"),
-                    //     PushBody = string.Format(await _localizationService.GetResourceAsync("PushNotification.OrderStatusChangeBody"), await _localizationService.GetLocalizedEnumAsync(order.OrderStatus))
-                    // };
-                    // var result = await expoSDKClient.PushSendAsync(pushTicketReq);
-                }
                 //prepare model
                 model = await _orderModelFactory.PrepareOrderModelAsync(model, order);
 

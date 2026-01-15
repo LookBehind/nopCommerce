@@ -100,7 +100,7 @@ namespace Nop.Web.Controllers.Api.Customer
             {
                 Adresses = new List<Address>();
             }
-            public List<Address> Adresses { get; set; }
+            public IList<Address> Adresses { get; set; }
             public decimal AmoutLimit { get; set; }
             public string CompanyName { get; set; }
         }
@@ -113,7 +113,8 @@ namespace Nop.Web.Controllers.Api.Customer
             {
                 return Ok(new
                 {
-                    success = false, message = await _localizationService.GetResourceAsync("Customer.Not.Found")
+                    success = false, 
+                    message = await _localizationService.GetResourceAsync("Customer.Not.Found")
                 });
             }
 
@@ -158,7 +159,7 @@ namespace Nop.Web.Controllers.Api.Customer
             customer.BillingAddressId = addressId;
             customer.ShippingAddressId = addressId;
             await _customerService.UpdateCustomerAsync(customer);
-
+            
             return Ok(new { success = true, message = await _localizationService.GetResourceAsync("DeliveryAddressSet.Successfully") });
         }
 
@@ -166,35 +167,22 @@ namespace Nop.Web.Controllers.Api.Customer
         public async Task<IActionResult> GetCompanyDetails()
         {
             var companyDetails = new CompanyDetailsModel();
-            var addresses = new List<Address>();
             var currentCustomer = await _workContext.GetCurrentCustomerAsync();
             var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
-            if (company != null)
+
+            if (company == null)
             {
-                companyDetails.CompanyName = company.Name;
-                companyDetails.AmoutLimit = company.AmountLimit;
-                var companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(company.Id);
-                if (companyCustomers.Any())
-                {
-                    var customerId = companyCustomers.FirstOrDefault().CustomerId;
-                    foreach (var address in await _customerService.GetAddressesByCustomerIdAsync(customerId))
-                    {
-                        if (!addresses.Where(x => x.Id == address.Id).Any())
-                            addresses.Add(address);
-                    }
-                    companyDetails.Adresses = addresses;
-                }
                 return Ok(new
                 {
-                    success = true, 
-                    companyDetails
+                    success = false, message = await _localizationService.GetResourceAsync("Company.NotFound")
                 });
             }
-            return Ok(new
-            {
-                success = false, 
-                message = await _localizationService.GetResourceAsync("Company.NotFound")
-            });
+            
+            companyDetails.CompanyName = company.Name;
+            companyDetails.AmoutLimit = company.AmountLimit;
+            companyDetails.Adresses = await _customerService.GetAddressesByCustomerIdAsync(currentCustomer.Id);
+            
+            return Ok(new { success = true, companyDetails });
         }
 
         [HttpGet("update-customer-pushtoken/{pushToken}")]

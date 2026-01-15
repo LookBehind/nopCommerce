@@ -672,7 +672,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                         await _companyService.InsertCompanyCustomerAsync(new CompanyCustomer { CompanyId = model.CompanyId, CustomerId = customer.Id });
                         companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(model.CompanyId);
                     }
-                    //todo clearify
+                    //TODO: Change this when Company plugin is introduced, get addresses from company - not any user!
                     if (companyCustomers.Any() && !companyCustomers.Where(x => x.CustomerId == customer.Id).Any())
                     {
                         var addressId = 0;
@@ -1125,7 +1125,8 @@ namespace Nop.Web.Areas.Admin.Controllers
                     Body = model.SendEmail.Body,
                     CreatedOnUtc = DateTime.UtcNow,
                     DontSendBeforeDateUtc = model.SendEmail.SendImmediately || !model.SendEmail.DontSendBeforeDate.HasValue ?
-                        null : (DateTime?)_dateTimeHelper.ConvertToUtcTime(model.SendEmail.DontSendBeforeDate.Value)
+                        null : (DateTime?)_dateTimeHelper.ConvertToUtcTime(model.SendEmail.DontSendBeforeDate.Value),
+                    StoreId = customer.RegisteredInStoreId
                 };
                 await _queuedEmailService.InsertQueuedEmailAsync(email);
 

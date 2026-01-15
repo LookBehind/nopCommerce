@@ -168,7 +168,8 @@ namespace Nop.Web.Areas.Admin.Controllers
                 CreatedOnUtc = DateTime.UtcNow,
                 EmailAccountId = queuedEmail.EmailAccountId,
                 DontSendBeforeDateUtc = queuedEmailModel.SendImmediately || !queuedEmailModel.DontSendBeforeDate.HasValue ?
-                    null : (DateTime?)_dateTimeHelper.ConvertToUtcTime(queuedEmailModel.DontSendBeforeDate.Value)
+                    null : (DateTime?)_dateTimeHelper.ConvertToUtcTime(queuedEmailModel.DontSendBeforeDate.Value),
+                StoreId = queuedEmail.StoreId
             };
             await _queuedEmailService.InsertQueuedEmailAsync(requeuedEmail);
 
