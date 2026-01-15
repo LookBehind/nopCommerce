@@ -986,8 +986,10 @@ namespace Nop.Web.Areas.Admin.Factories
                 throw new ArgumentNullException(nameof(customer));
 
             //get customer orders
-            var orders = await _orderService.SearchOrdersAsync(customerId: customer.Id,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+            var orders = await _orderService.SearchOrdersAsync(
+                customerId: customer.Id,
+                pageIndex: searchModel.Page - 1, 
+                pageSize: searchModel.PageSize);
 
             //prepare list model
             var model = await new CustomerOrderListModel().PrepareToGridAsync(searchModel, orders, () =>
@@ -998,6 +1000,7 @@ namespace Nop.Web.Areas.Admin.Factories
                     var orderModel = order.ToModel<CustomerOrderModel>();
 
                     //convert dates to the user time
+                    orderModel.ScheduleDate = await _dateTimeHelper.ConvertToUserTimeAsync(order.ScheduleDate, DateTimeKind.Utc);
                     orderModel.CreatedOn = await _dateTimeHelper.ConvertToUserTimeAsync(order.CreatedOnUtc, DateTimeKind.Utc);
 
                     //fill in additional values (not existing in the entity)

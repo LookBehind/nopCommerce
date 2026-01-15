@@ -133,8 +133,10 @@ namespace Nop.Web.Controllers
             if (_orderSettings.MinimumOrderPlacementInterval == 0)
                 return true;
 
-            var lastOrder = (await _orderService.SearchOrdersAsync(storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
-                customerId: (await _workContext.GetCurrentCustomerAsync()).Id, pageSize: 1))
+            var lastOrder = (await _orderService.SearchOrdersAsync(
+                    storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
+                    customerId: (await _workContext.GetCurrentCustomerAsync()).Id, 
+                    pageSize: 1))
                 .FirstOrDefault();
             if (lastOrder == null)
                 return true;
@@ -292,8 +294,10 @@ namespace Nop.Web.Controllers
             }
             if (order == null)
             {
-                order = (await _orderService.SearchOrdersAsync(storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
-                customerId: (await _workContext.GetCurrentCustomerAsync()).Id, pageSize: 1))
+                order = (await _orderService.SearchOrdersAsync(
+                        storeId: (await _storeContext.GetCurrentStoreAsync()).Id, 
+                        customerId: (await _workContext.GetCurrentCustomerAsync()).Id, 
+                        pageSize: 1))
                     .FirstOrDefault();
             }
             if (order == null || order.Deleted || (await _workContext.GetCurrentCustomerAsync()).Id != order.CustomerId)
@@ -1914,8 +1918,10 @@ namespace Nop.Web.Controllers
                     return Challenge();
 
                 //get the order
-                var order = (await _orderService.SearchOrdersAsync(storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
-                customerId: (await _workContext.GetCurrentCustomerAsync()).Id, pageSize: 1)).FirstOrDefault();
+                var order = (await _orderService.SearchOrdersAsync(
+                    storeId: (await _storeContext.GetCurrentStoreAsync()).Id, 
+                    customerId: (await _workContext.GetCurrentCustomerAsync()).Id, 
+                    pageSize: 1)).FirstOrDefault();
                 if (order == null)
                     return RedirectToRoute("Homepage");
 

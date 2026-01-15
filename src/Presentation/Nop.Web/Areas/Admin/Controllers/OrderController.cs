@@ -471,7 +471,6 @@ namespace Nop.Web.Areas.Admin.Controllers
                 ssIds: shippingStatusIds,
                 schedulDate: model.DeliveryDate,
                 deliveryHour: model.DeliveryHourId,
-                deliverySlot: model.DeliverySlot,
                 sortByDeliveryDate: model.SortByDeliveryDate,
                 //billingPhone: model.BillingPhone,
                 //billingEmail: model.BillingEmail,

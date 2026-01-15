@@ -1115,7 +1115,10 @@ namespace Nop.Web.Areas.Admin.Factories
         {
             var model = new CommonStatisticsModel
             {
-                NumberOfOrders = (await _orderService.SearchOrdersAsync(pageIndex: 0, pageSize: 1, getOnlyTotalCount: true)).TotalCount
+                NumberOfOrders = (await _orderService.SearchOrdersAsync(
+                    pageIndex: 0, 
+                    pageSize: 1, 
+                    getOnlyTotalCount: true)).TotalCount
             };
 
             var customerRoleIds = new[] { (await _customerService.GetCustomerRoleBySystemNameAsync(NopCustomerDefaults.RegisteredRoleName)).Id };

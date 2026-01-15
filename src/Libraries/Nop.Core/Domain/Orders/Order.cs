@@ -304,11 +304,6 @@ namespace Nop.Core.Domain.Orders
         public string RatingText { get; set; }
 
         /// <summary>
-        /// Gets or sets order delivery slot
-        /// </summary>
-        public int? DeliverySlot { get; set; }
-
-        /// <summary>
         /// Gets or sets order CompanyId
         /// </summary>
         public int? CompanyId { get; set; }

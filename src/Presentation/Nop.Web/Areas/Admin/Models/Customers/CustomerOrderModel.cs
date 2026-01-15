@@ -36,6 +36,9 @@ namespace Nop.Web.Areas.Admin.Models.Customers
 
         [NopResourceDisplayName("Admin.Customers.Customers.Orders.CreatedOn")]
         public DateTime CreatedOn { get; set; }
+        
+        [NopResourceDisplayName("Admin.Orders.Fields.ScheduleDate")]
+        public DateTime ScheduleDate { get; set; }
 
         #endregion
     }

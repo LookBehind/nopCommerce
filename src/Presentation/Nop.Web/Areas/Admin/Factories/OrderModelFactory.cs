@@ -1010,8 +1010,11 @@ namespace Nop.Web.Areas.Admin.Factories
                 //billingLastName: searchModel.BillingLastName,
                 //billingCountryId: searchModel.BillingCountryId,
                 orderNotes: searchModel.OrderNotes,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize, sortByDeliveryDate: searchModel.SortByDeliveryDate,
-                deliverySlot: searchModel.DeliverySlot, companyName: searchModel.Company, deliveryHour: searchModel.DeliveryHourId,
+                pageIndex: searchModel.Page - 1, 
+                pageSize: searchModel.PageSize, 
+                sortByDeliveryDate: searchModel.SortByDeliveryDate,
+                companyName: searchModel.Company, 
+                deliveryHour: searchModel.DeliveryHourId,
                 schedulDate: searchModel.DeliveryDate);
 
             //prepare list model
@@ -1036,7 +1039,6 @@ namespace Nop.Web.Areas.Admin.Factories
                         CustomerId = order.CustomerId,
                         CustomOrderNumber = order.CustomOrderNumber,
                         ShippingAddress = shippingAddress,
-                        DeliverySlot = order.DeliverySlot.ToString()
                     };
 
                     //convert dates to the user time
@@ -1174,7 +1176,6 @@ namespace Nop.Web.Areas.Admin.Factories
                 model.CustomerInfo = await _customerService.IsRegisteredAsync(customer) ? customer.Email : await _localizationService.GetResourceAsync("Admin.Customers.Guest");
                 model.CreatedOn = await _dateTimeHelper.ConvertToUserTimeAsync(order.CreatedOnUtc, DateTimeKind.Utc);
                 model.CustomValues = _paymentService.DeserializeCustomValues(order);
-                model.DeliverySlot = order.DeliverySlot.ToString();
                 model.Company = (await _companyService.GetCompanyByCustomerIdAsync(order.CustomerId)).Name;
                 var affiliate = await _affiliateService.GetAffiliateByIdAsync(order.AffiliateId);
                 if (affiliate != null)

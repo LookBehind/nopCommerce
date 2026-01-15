@@ -269,7 +269,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 psIds: paymentStatusIds,
                 ssIds: shippingStatusIds,
                 affiliateId: affiliate.Id,
-                pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize);
+                pageIndex: searchModel.Page - 1, 
+                pageSize: searchModel.PageSize);
 
             //prepare list model
             var model = await new AffiliatedOrderListModel().PrepareToGridAsync(searchModel, orders, () =>

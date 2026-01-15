@@ -606,8 +606,7 @@ namespace Nop.Web.Factories
                 OrderId = order.Id,
                 OnePageCheckoutEnabled = _orderSettings.OnePageCheckoutEnabled,
                 CustomOrderNumber = order.CustomOrderNumber,
-                DeliveryTimeWindowMessage = message,
-                DeliverySlot = (int)order.DeliverySlot
+                DeliveryTimeWindowMessage = message
             };
 
             return model;
