@@ -1,8 +1,6 @@
 using System;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
 using Nop.Core;
-using Nop.Services.Customers;
 using Nop.Services.Helpers;
 using Nop.Services.Companies;
 using Nop.Services.Localization;
@@ -18,8 +16,9 @@ namespace Nop.Plugin.Company.Company.Services
         #region Fields
 
         private readonly IDeliveryTimeService _deliveryTimeService;
-        private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IDeliveryTimeStorageService _deliveryTimeStorageService;
         private readonly IWorkContext _workContext;
+        private readonly IStoreContext _storeContext;
         private readonly IDateTimeHelper _dateTimeHelper;
         private readonly ICompanyService _companyService;
         private readonly ILocalizationService _localizationService;
@@ -30,15 +29,17 @@ namespace Nop.Plugin.Company.Company.Services
 
         public GlobalDeliveryTimeValidationService(
             IDeliveryTimeService deliveryTimeService,
-            IHttpContextAccessor httpContextAccessor,
+            IDeliveryTimeStorageService deliveryTimeStorageService,
             IWorkContext workContext,
+            IStoreContext storeContext,
             IDateTimeHelper dateTimeHelper,
             ICompanyService companyService,
             ILocalizationService localizationService)
         {
             _deliveryTimeService = deliveryTimeService;
-            _httpContextAccessor = httpContextAccessor;
+            _deliveryTimeStorageService = deliveryTimeStorageService;
             _workContext = workContext;
+            _storeContext = storeContext;
             _dateTimeHelper = dateTimeHelper;
             _companyService = companyService;
             _localizationService = localizationService;
@@ -83,35 +84,15 @@ namespace Nop.Plugin.Company.Company.Services
 
                 if (!isAvailable)
                 {
-                    // Check if it's expired (past) vs just invalid
+                    result.ShouldPrompt = true;
+                    result.PromptType = DeliveryTimePromptType.SelectionInvalid;
+                    result.InvalidReason = "Selected delivery time is no longer available";
+                    result.PromptMessage = await _localizationService.GetResourceAsync("DeliveryTime.Prompt.SelectionInvalid");
+
+                    // Clear invalid selection
                     var currentCustomer = await _workContext.GetCurrentCustomerAsync();
-                    var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
-                    var timezoneInfo = company == null
-                        ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
-                        : TZConvert.GetTimeZoneInfo(company.TimeZone);
-
-                    var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
-
-                    if (selectedTime.Value < now)
-                    {
-                        result.ShouldPrompt = true;
-                        result.PromptType = DeliveryTimePromptType.SelectionExpired;
-                        result.InvalidReason = "Selected delivery time has passed";
-                        result.PromptMessage = await _localizationService.GetResourceAsync("DeliveryTime.Prompt.SelectionExpired");
-                        
-                        // Clear invalid selection
-                        await ClearSelectedDeliveryTimeAsync();
-                    }
-                    else
-                    {
-                        result.ShouldPrompt = true;
-                        result.PromptType = DeliveryTimePromptType.SelectionInvalid;
-                        result.InvalidReason = "Selected delivery time is no longer available";
-                        result.PromptMessage = await _localizationService.GetResourceAsync("DeliveryTime.Prompt.SelectionInvalid");
-                        
-                        // Clear invalid selection
-                        await ClearSelectedDeliveryTimeAsync();
-                    }
+                    var currentStore = await _storeContext.GetCurrentStoreAsync();
+                    await _deliveryTimeStorageService.ClearSelectedDeliveryTimeAsync(currentCustomer, currentStore.Id);
                     
                     return result;
                 }
@@ -172,43 +153,14 @@ namespace Nop.Plugin.Company.Company.Services
         #region Utilities
 
         /// <summary>
-        /// Gets the selected delivery time from session/cookie
+        /// Gets the selected delivery time from generic attribute service
         /// </summary>
         /// <returns>Selected delivery time or null</returns>
         private async Task<DateTime?> GetSelectedDeliveryTimeAsync()
         {
-            var httpContext = _httpContextAccessor.HttpContext;
-            if (httpContext == null)
-                return null;
-
-            // Try session first
-            if (httpContext.Session.TryGetValue("SelectedDeliveryTime", out var sessionBytes))
-            {
-                var ticks = BitConverter.ToInt64(sessionBytes, 0);
-                return new DateTime(ticks);
-            }
-
-            // Try cookie as fallback
-            if (httpContext.Request.Cookies.TryGetValue("SelectedDeliveryTime", out var cookieValue) &&
-                DateTime.TryParse(cookieValue, out var cookieDateTime))
-            {
-                return cookieDateTime;
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Clears the selected delivery time from session and cookie
-        /// </summary>
-        private async Task ClearSelectedDeliveryTimeAsync()
-        {
-            var httpContext = _httpContextAccessor.HttpContext;
-            if (httpContext == null)
-                return;
-
-            httpContext.Session.Remove("SelectedDeliveryTime");
-            httpContext.Response.Cookies.Delete("SelectedDeliveryTime");
+            var currentCustomer = await _workContext.GetCurrentCustomerAsync();
+            var currentStore = await _storeContext.GetCurrentStoreAsync();
+            return await _deliveryTimeStorageService.GetSelectedDeliveryTimeAsync(currentCustomer, currentStore.Id);
         }
 
         #endregion

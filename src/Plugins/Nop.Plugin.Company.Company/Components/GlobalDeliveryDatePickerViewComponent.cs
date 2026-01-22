@@ -1,13 +1,10 @@
 using System;
 using System.Globalization;
-using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Plugin.Company.Company.Models;
 using Nop.Plugin.Company.Company.Services;
-using Nop.Services.Customers;
 using Nop.Services.Helpers;
 using Nop.Services.Companies;
 using Nop.Web.Framework.Components;
@@ -24,7 +21,6 @@ namespace Nop.Plugin.Company.Company.Components
         IGlobalDeliveryTimeValidationService globalValidationService,
         IDateTimeHelper dateTimeHelper,
         IWorkContext workContext,
-        IHttpContextAccessor httpContextAccessor,
         ICompanyService companyService)
         : NopViewComponent
     {
@@ -70,33 +66,6 @@ namespace Nop.Plugin.Company.Company.Components
             }
 
             return View("~/Plugins/Company.Company/Views/Shared/Components/GlobalDeliveryDatePicker/Default.cshtml", model);
-        }
-
-        /// <summary>
-        /// Gets the selected delivery time from session/cookie
-        /// </summary>
-        /// <returns>Selected delivery time or null</returns>
-        private DateTime? GetSelectedDeliveryTime()
-        {
-            var httpContext = httpContextAccessor.HttpContext;
-            if (httpContext == null)
-                return null;
-
-            // Try session first
-            if (httpContext.Session.TryGetValue("SelectedDeliveryTime", out var sessionBytes))
-            {
-                var ticks = BitConverter.ToInt64(sessionBytes, 0);
-                return new DateTime(ticks);
-            }
-
-            // Try cookie as fallback
-            if (httpContext.Request.Cookies.TryGetValue("SelectedDeliveryTime", out var cookieValue) &&
-                DateTime.TryParse(cookieValue, out var cookieDateTime))
-            {
-                return cookieDateTime;
-            }
-
-            return null;
         }
 
         /// <summary>

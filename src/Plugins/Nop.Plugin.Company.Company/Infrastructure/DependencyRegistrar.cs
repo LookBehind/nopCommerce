@@ -3,6 +3,7 @@ using Nop.Core.Configuration;
 using Nop.Core.Infrastructure;
 using Nop.Core.Infrastructure.DependencyManagement;
 using Nop.Plugin.Company.Company.Areas.Admin.Factories;
+using Nop.Plugin.Company.Company.Controllers;
 using Nop.Plugin.Company.Company.Services;
 
 namespace Nop.Plugin.Company.Company.Infrastructure
@@ -23,7 +24,9 @@ namespace Nop.Plugin.Company.Company.Infrastructure
             services.AddScoped<ICompanyModelFactory, CompanyModelFactory>();
             services.AddScoped<ICompanyAddressService, CompanyAddressService>();
             services.AddScoped<IDeliveryTimeService, DeliveryTimeService>();
+            services.AddScoped<IDeliveryTimeStorageService, DeliveryTimeStorageService>();
             services.AddScoped<IGlobalDeliveryTimeValidationService, GlobalDeliveryTimeValidationService>();
+            services.AddScoped<Nop.Web.Controllers.CheckoutController, CheckoutController_Overriden>();
         }
 
         /// <summary>

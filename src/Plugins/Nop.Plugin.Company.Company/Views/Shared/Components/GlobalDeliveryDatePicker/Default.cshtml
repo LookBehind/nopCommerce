@@ -680,6 +680,7 @@
         var currentMonth = new Date().getMonth();
         var currentYear = new Date().getFullYear();
         var selectedDate = null;
+        var selectedDateTime = null; // Track the full selected datetime
         var availableTimesData = [];
         var availableTimesByDate = {};
 
@@ -724,6 +725,10 @@
                     // Update display if selectedDeliveryTime exists
                     if (response.selectedDeliveryTime) {
                         var selectedDt = new Date(response.selectedDeliveryTime);
+                        selectedDateTime = response.selectedDeliveryTime; // Store the selected datetime
+                        selectedDate = selectedDt.getFullYear() + '-' +
+                                      String(selectedDt.getMonth() + 1).padStart(2, '0') + '-' +
+                                      String(selectedDt.getDate()).padStart(2, '0');
                         var displayText = formatDeliveryTimeDisplay(selectedDt);
                         $('#delivery-display .delivery-text').text(displayText);
                         $('#delivery-display .delivery-icon').text('🕐');
@@ -803,6 +808,7 @@
                 var isCurrentMonth = date.getMonth() === currentMonth;
                 var isToday = date.toDateString() === new Date().toDateString();
                 var hasAvailableTimes = availableTimesByDate[dateStr] && availableTimesByDate[dateStr].length > 0;
+                var isSelected = selectedDate === dateStr;
 
                 if (!isCurrentMonth) {
                     dayClass += ' other-month';
@@ -812,6 +818,9 @@
                 }
                 if (hasAvailableTimes && isCurrentMonth) {
                     dayClass += ' available';
+                }
+                if (isSelected) {
+                    dayClass += ' selected';
                 }
 
                 calendarHtml += '<div class="' + dayClass + '" data-date="' + dateStr + '">' + date.getDate() + '</div>';
@@ -838,22 +847,77 @@
         // Show modal when display is clicked
         display.click(function() {
             // Load fresh data from AJAX when modal opens
-            loadAvailableTimesFromAjax();
+            $.ajax({
+                url: '@Url.Action("GetDeliveryTime", "DeliveryTime", new { area = "" })',
+                type: 'GET',
+                timeout: 10000,
+                dataType: 'json'
+            })
+            .done(function(response) {
+                if (response.success && response.possibleDeliveryTimes) {
+                    // Convert possibleDeliveryTimes to the format expected by the calendar
+                    availableTimesData = response.possibleDeliveryTimes.map(function(timeStr) {
+                        var dt = new Date(timeStr);
+                        return {
+                            date: dt.getFullYear() + '-' +
+                                  String(dt.getMonth() + 1).padStart(2, '0') + '-' +
+                                  String(dt.getDate()).padStart(2, '0'),
+                            time: formatTime(dt),
+                            datetime: timeStr,
+                            display: formatDeliveryTimeDisplay(dt),
+                            fullDate: dt.getFullYear() + '-' +
+                                     String(dt.getMonth() + 1).padStart(2, '0') + '-' +
+                                     String(dt.getDate()).padStart(2, '0') + ' ' +
+                                     String(dt.getHours()).padStart(2, '0') + ':' +
+                                     String(dt.getMinutes()).padStart(2, '0') + ':' +
+                                     String(dt.getSeconds()).padStart(2, '0')
+                        };
+                    });
 
-            modal.addClass('show');
-            initCalendar();
+                    // Group by date
+                    availableTimesByDate = {};
+                    availableTimesData.forEach(function(item) {
+                        if (!availableTimesByDate[item.date]) {
+                            availableTimesByDate[item.date] = [];
+                        }
+                        availableTimesByDate[item.date].push(item);
+                    });
 
-            // Show/hide close button based on whether there's a valid selection
-            if (hasValidSelection) {
-                $('#delivery-modal-close').show();
-            } else {
-                $('#delivery-modal-close').hide();
-            }
+                    // Update selected date/time if exists
+                    if (response.selectedDeliveryTime) {
+                        var selectedDt = new Date(response.selectedDeliveryTime);
+                        selectedDateTime = response.selectedDeliveryTime;
+                        selectedDate = selectedDt.getFullYear() + '-' +
+                                      String(selectedDt.getMonth() + 1).padStart(2, '0') + '-' +
+                                      String(selectedDt.getDate()).padStart(2, '0');
 
-            // Pause validation checks while modal is open
-            if (window.DeliveryTimeValidator) {
-                window.DeliveryTimeValidator.pauseValidation();
-            }
+                        // Set calendar to the month of the selected date
+                        currentMonth = selectedDt.getMonth();
+                        currentYear = selectedDt.getFullYear();
+                    }
+                }
+
+                // Show modal and initialize calendar
+                modal.addClass('show');
+                initCalendar();
+
+                // If there's a selected date, automatically show its time slots
+                if (selectedDate && availableTimesByDate[selectedDate]) {
+                    showTimeSlots(selectedDate);
+                }
+
+                // Show/hide close button based on whether there's a valid selection
+                if (hasValidSelection) {
+                    $('#delivery-modal-close').show();
+                } else {
+                    $('#delivery-modal-close').hide();
+                }
+
+                // Pause validation checks while modal is open
+                if (window.DeliveryTimeValidator) {
+                    window.DeliveryTimeValidator.pauseValidation();
+                }
+            });
         });
 
         // Close button click handler
@@ -933,7 +997,9 @@
             // Generate time slots HTML
             var timeSlotsHtml = '';
             times.forEach(function(timeSlot) {
-                timeSlotsHtml += '<div class="time-slot-item" data-datetime="' + timeSlot.datetime + '" data-display="' + timeSlot.display + '">' +
+                var isSelected = selectedDateTime && timeSlot.datetime === selectedDateTime;
+                var selectedClass = isSelected ? ' selected' : '';
+                timeSlotsHtml += '<div class="time-slot-item' + selectedClass + '" data-datetime="' + timeSlot.datetime + '" data-display="' + timeSlot.display + '">' +
                     '<div class="time-slot-time">' + timeSlot.time + '</div>' +
                     '<div class="time-slot-orders">0 orders</div>' +
                     '</div>';
@@ -947,6 +1013,13 @@
         $(document).on('click', '.time-slot-item', function() {
             var datetime = $(this).data('datetime');
             var displayText = $(this).data('display');
+
+            // Update selected datetime and date
+            selectedDateTime = datetime;
+            var selectedDt = new Date(datetime);
+            selectedDate = selectedDt.getFullYear() + '-' +
+                          String(selectedDt.getMonth() + 1).padStart(2, '0') + '-' +
+                          String(selectedDt.getDate()).padStart(2, '0');
 
             // Update display immediately and close modal
             $('#delivery-display .delivery-text').text(displayText);

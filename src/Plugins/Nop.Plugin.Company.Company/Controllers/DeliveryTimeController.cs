@@ -23,15 +23,14 @@ namespace Nop.Plugin.Company.Company.Controllers
     /// </summary>
     public class DeliveryTimeController(
         IDeliveryTimeService deliveryTimeService,
+        IDeliveryTimeStorageService deliveryTimeStorageService,
         IWorkContext workContext,
         ILocalizationService localizationService,
         ICustomerService customerService,
-        IGenericAttributeService genericAttributeService,
         IStoreContext storeContext,
         ILogger logger)
         : BasePublicController
     {
-        private const string SELECTED_DELIVERY_TIME_KEY = nameof(SELECTED_DELIVERY_TIME_KEY);
         
         /// <summary>
         /// Set delivery time via AJAX
@@ -56,8 +55,8 @@ namespace Nop.Plugin.Company.Company.Controllers
                     });
                 }
 
-                await genericAttributeService.SaveAttributeAsync(currentCustomer,
-                    SELECTED_DELIVERY_TIME_KEY, setDeliveryTimeRequest.DeliveryTime, currentStore.Id);
+                await deliveryTimeStorageService.SaveSelectedDeliveryTimeAsync(currentCustomer,
+                    setDeliveryTimeRequest.DeliveryTime, currentStore.Id);
 
                 await logger.InformationAsync($"Updated delivery time of customer '{currentCustomer.Email}' to '{setDeliveryTimeRequest}'", 
                     customer: currentCustomer);
@@ -92,15 +91,14 @@ namespace Nop.Plugin.Company.Company.Controllers
             
             try
             {
-                var selectedTime = await genericAttributeService.GetAttributeAsync<DateTime?>(
-                    currentCustomer, SELECTED_DELIVERY_TIME_KEY, currentStore.Id);
+                var selectedTime = await deliveryTimeStorageService.GetSelectedDeliveryTimeAsync(
+                    currentCustomer, currentStore.Id);
 
                 // Validate that the time is still available
-                if (selectedTime.HasValue && 
+                if (selectedTime.HasValue &&
                     !await deliveryTimeService.IsDeliveryTimeAvailableAsync(selectedTime.Value))
                 {
-                    await genericAttributeService.SaveAttributeAsync<DateTime?>(currentCustomer,
-                        SELECTED_DELIVERY_TIME_KEY, null, currentStore.Id);
+                    await deliveryTimeStorageService.ClearSelectedDeliveryTimeAsync(currentCustomer, currentStore.Id);
                     selectedTime = null;
                 }
 
@@ -137,8 +135,7 @@ namespace Nop.Plugin.Company.Company.Controllers
             
             try
             {
-                await genericAttributeService.SaveAttributeAsync<DateTime?>(currentCustomer,
-                    SELECTED_DELIVERY_TIME_KEY, null, currentStore.Id);
+                await deliveryTimeStorageService.ClearSelectedDeliveryTimeAsync(currentCustomer, currentStore.Id);
 
                 return Json(new { 
                     success = true, 

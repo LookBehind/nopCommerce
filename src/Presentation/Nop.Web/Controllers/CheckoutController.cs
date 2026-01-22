@@ -1168,7 +1168,7 @@ namespace Nop.Web.Controllers
         #region Methods (one page checkout)
 
         /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task<JsonResult> OpcLoadStepAfterShippingAddress(IList<ShoppingCartItem> cart, DateTime? deliverTime = null)
+        protected virtual async Task<JsonResult> OpcLoadStepAfterShippingAddress(IList<ShoppingCartItem> cart)
         {
             var shippingMethodModel = await _checkoutModelFactory.PrepareShippingMethodModelAsync(cart, await _customerService.GetCustomerShippingAddressAsync(await _workContext.GetCurrentCustomerAsync()));
             if (_shippingSettings.BypassShippingMethodSelectionIfOnlyOne &&
@@ -1181,7 +1181,7 @@ namespace Nop.Web.Controllers
                     (await _storeContext.GetCurrentStoreAsync()).Id);
 
                 //load next step
-                return await OpcLoadStepAfterShippingMethod(cart, deliverTime);
+                return await OpcLoadStepAfterShippingMethod(cart);
             }
 
             return Json(new
@@ -1196,7 +1196,7 @@ namespace Nop.Web.Controllers
         }
 
         /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task<JsonResult> OpcLoadStepAfterShippingMethod(IList<ShoppingCartItem> cart, DateTime? deliveryTime = null)
+        protected virtual async Task<JsonResult> OpcLoadStepAfterShippingMethod(IList<ShoppingCartItem> cart)
         {
             //Check whether payment workflow is required
             //we ignore reward points during cart total calculation
@@ -1463,35 +1463,6 @@ namespace Nop.Web.Controllers
         {
             try
             {
-                //validation
-
-                // Get delivery time from session (set by global header picker)
-                DateTime? deliveryTime = null;
-                if (HttpContext.Session.TryGetValue("SelectedDeliveryTime", out var sessionBytes))
-                {
-                    var ticks = BitConverter.ToInt64(sessionBytes, 0);
-                    deliveryTime = new DateTime(ticks);
-                }
-                // Try cookie as fallback
-                else if (HttpContext.Request.Cookies.TryGetValue("SelectedDeliveryTime", out var cookieValue) &&
-                         DateTime.TryParse(cookieValue, out var cookieDateTime))
-                {
-                    deliveryTime = cookieDateTime;
-                }
-
-                if (!deliveryTime.HasValue)
-                {
-                    throw new Exception("Please select a delivery time from the header before proceeding with checkout.");
-                }
-
-                // Validate the delivery time is still available
-                if (!(await _orderProcessingService.GetAvailableDeliverTimesAsync()).Contains(deliveryTime.Value))
-                {
-                    throw new Exception("The selected delivery time is no longer available. Please select a new delivery time.");
-                }
-
-                await _genericAttributeService.SaveAttributeAsync(await _workContext.GetCurrentCustomerAsync(),
-                    OrderProcessingService.DeliveryTimeAttributeName, deliveryTime.Value, (await _storeContext.GetCurrentStoreAsync()).Id);
                 if (_orderSettings.CheckoutDisabled)
                     throw new Exception(await _localizationService.GetResourceAsync("Checkout.Disabled"));
 
@@ -1590,7 +1561,7 @@ namespace Nop.Web.Controllers
                     await _customerService.UpdateCustomerAsync(await _workContext.GetCurrentCustomerAsync());
                 }
 
-                return await OpcLoadStepAfterShippingAddress(cart, deliveryTime);
+                return await OpcLoadStepAfterShippingAddress(cart);
             }
             catch (Exception exc)
             {
