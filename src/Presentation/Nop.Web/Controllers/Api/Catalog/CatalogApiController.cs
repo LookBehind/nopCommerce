@@ -543,7 +543,8 @@ namespace Nop.Web.Controllers.Api.Security
                         searchProductTags: false,
                         searchCustomerVendors: false,
                         searchSku: true,
-                        keywords: sku);
+                        keywords: sku,
+                        showHidden: true);
                     
                     var skuToUpdate = skusFound.Where(p => p.Sku == sku).ToArray();
                     if (skuToUpdate.Length > 1)
