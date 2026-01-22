@@ -519,7 +519,7 @@ namespace Nop.Web.Controllers.Api.Security
             
             var companyAllVendors =
                 (await _vendorService.GetAllVendorsAsync(showHidden: true))
-                .Where(x => companyAllowedVendorIds.Contains(x.Id))
+                .Where(x => !companyAllowedVendorIds.Any() || companyAllowedVendorIds.Contains(x.Id))
                 .ToArray();
             
             var unpublishedProductIdsByVendor = new Dictionary<int, List<int>>();
