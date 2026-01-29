@@ -88,37 +88,66 @@ namespace Nop.Plugin.Company.Company.Controllers
         {
             var currentCustomer = await workContext.GetCurrentCustomerAsync();
             var currentStore = await storeContext.GetCurrentStoreAsync();
-            
+
             try
             {
                 var selectedTime = await deliveryTimeStorageService.GetSelectedDeliveryTimeAsync(
                     currentCustomer, currentStore.Id);
 
+                bool isValid = true;
+                bool shouldPrompt = false;
+                string promptType = "none";
+                string stateClass = "";
+
                 // Validate that the time is still available
-                if (selectedTime.HasValue &&
-                    !await deliveryTimeService.IsDeliveryTimeAvailableAsync(selectedTime.Value))
+                if (selectedTime.HasValue)
                 {
-                    await deliveryTimeStorageService.ClearSelectedDeliveryTimeAsync(currentCustomer, currentStore.Id);
-                    selectedTime = null;
+                    if (!await deliveryTimeService.IsDeliveryTimeAvailableAsync(selectedTime.Value))
+                    {
+                        await deliveryTimeStorageService.ClearSelectedDeliveryTimeAsync(currentCustomer, currentStore.Id);
+                        selectedTime = null;
+                        isValid = false;
+                        shouldPrompt = true;
+                        promptType = "selection-invalid";
+                        stateClass = "selection-invalid";
+                    }
+                    else
+                    {
+                        stateClass = "has-selection";
+                    }
+                }
+                else
+                {
+                    shouldPrompt = true;
+                    promptType = "no-selection";
+                    stateClass = "no-selection";
                 }
 
-                return Json(new { 
+                return Json(new {
                     success = true,
                     selectedDeliveryTime = selectedTime,
                     possibleDeliveryTimes = await deliveryTimeService.GetAvailableDeliveryTimesAsync(),
-                    message = selectedTime == null ? await localizationService.GetResourceAsync("DeliveryTime.Retrieved") 
+                    isValid = isValid,
+                    shouldPrompt = shouldPrompt,
+                    promptType = promptType,
+                    stateClass = stateClass,
+                    message = selectedTime == null ? await localizationService.GetResourceAsync("DeliveryTime.Retrieved")
                         : string.Empty
                 });
             }
             catch (Exception ex)
             {
                 await logger.ErrorAsync("Error retrieving delivery time", ex, customer: currentCustomer);
-                
-                return Json(new { 
-                    success = false, 
+
+                return Json(new {
+                    success = false,
                     selectedDeliveryTime = (string)null,
                     possibleDeliveryTimes = await deliveryTimeService.GetAvailableDeliveryTimesAsync(),
-                    message = await localizationService.GetResourceAsync("DeliveryTime.ErrorRetrieving") 
+                    isValid = false,
+                    shouldPrompt = true,
+                    promptType = "no-selection",
+                    stateClass = "no-selection",
+                    message = await localizationService.GetResourceAsync("DeliveryTime.ErrorRetrieving")
                 });
             }
         }

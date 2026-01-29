@@ -1,14 +1,8 @@
-using System;
-using System.Globalization;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Nop.Core;
 using Nop.Plugin.Company.Company.Models;
 using Nop.Plugin.Company.Company.Services;
-using Nop.Services.Helpers;
-using Nop.Services.Companies;
 using Nop.Web.Framework.Components;
-using TimeZoneConverter;
 
 namespace Nop.Plugin.Company.Company.Components
 {
@@ -16,12 +10,7 @@ namespace Nop.Plugin.Company.Company.Components
     /// Global delivery date picker view component
     /// </summary>
     [ViewComponent(Name = "GlobalDeliveryDatePicker")]
-    public class GlobalDeliveryDatePickerViewComponent(
-        IDeliveryTimeService deliveryTimeService,
-        IGlobalDeliveryTimeValidationService globalValidationService,
-        IDateTimeHelper dateTimeHelper,
-        IWorkContext workContext,
-        ICompanyService companyService)
+    public class GlobalDeliveryDatePickerViewComponent(IDeliveryTimeService deliveryTimeService)
         : NopViewComponent
     {
         /// <summary>
@@ -33,80 +22,12 @@ namespace Nop.Plugin.Company.Company.Components
         /// </returns>
         public async Task<IViewComponentResult> InvokeAsync()
         {
-            var model = new DeliveryDatePickerModel();
-
-            try
+            var model = new DeliveryDatePickerModel
             {
-                // Get validation result first
-                var validationResult = await globalValidationService.ValidateCurrentSelectionAsync();
-                
-                // Populate validation info in model
-                model.IsSelectionValid = validationResult.IsValid;
-                model.ShouldShowPrompt = validationResult.ShouldPrompt;
-                model.PromptType = validationResult.PromptType;
-                model.PromptMessage = validationResult.PromptMessage ?? string.Empty;
-                model.InvalidReason = validationResult.InvalidReason ?? string.Empty;
-
-                // Get available delivery times
-                model.MaxDaysAhead = await deliveryTimeService.GetMaxDaysAheadAsync();
-
-                // Set selected delivery time from validation result
-                if (validationResult.IsValid && validationResult.SelectedDeliveryTime.HasValue)
-                {
-                    model.SelectedDeliveryTime = validationResult.SelectedDeliveryTime;
-                    model.SelectedDeliveryTimeText = await FormatDeliveryTimeDisplayAsync(validationResult.SelectedDeliveryTime.Value);
-                }
-            }
-            catch
-            {
-                // If there's any error, show prompt for no selection
-                model.ShouldShowPrompt = true;
-                model.PromptType = DeliveryTimePromptType.NoSelection;
-                model.PromptMessage = "Please select a delivery time";
-            }
+                MaxDaysAhead = await deliveryTimeService.GetMaxDaysAheadAsync()
+            };
 
             return View("~/Plugins/Company.Company/Views/Shared/Components/GlobalDeliveryDatePicker/Default.cshtml", model);
-        }
-
-        /// <summary>
-        /// Formats delivery time for display using current user timezone
-        /// </summary>
-        /// <param name="deliveryTime">Delivery time</param>
-        /// <returns>Formatted display string</returns>
-        private async Task<string> FormatDeliveryTimeDisplayAsync(DateTime deliveryTime)
-        {
-            // Get proper timezone conversion
-            var currentCustomer = await workContext.GetCurrentCustomerAsync();
-            var company = await companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
-            var timezoneInfo = company == null
-                ? await dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
-                : TZConvert.GetTimeZoneInfo(company.TimeZone);
-
-            var now = dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
-            return FormatDeliveryTimeDisplay(deliveryTime, now);
-        }
-
-        /// <summary>
-        /// Formats delivery time for display using provided current time
-        /// </summary>
-        /// <param name="deliveryTime">Delivery time</param>
-        /// <param name="now">Current time</param>
-        /// <returns>Formatted display string</returns>
-        private string FormatDeliveryTimeDisplay(DateTime deliveryTime, DateTime now)
-        {
-            var today = now.Date;
-            var tomorrow = today.AddDays(1);
-
-            string dateText;
-            if (deliveryTime.Date == today)
-                dateText = "Today";
-            else if (deliveryTime.Date == tomorrow)
-                dateText = "Tomorrow";
-            else
-                dateText = deliveryTime.ToString("dddd, MMM dd", CultureInfo.InvariantCulture);
-
-            var timeText = deliveryTime.ToString("h:mm tt", CultureInfo.InvariantCulture);
-            return $"{dateText} at {timeText}";
         }
     }
 }

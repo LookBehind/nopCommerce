@@ -1,41 +1,10 @@
 @model DeliveryDatePickerModel
 @using Nop.Plugin.Company.Company.Models
-@using Nop.Plugin.Company.Company.Services
 
-<div class="global-delivery-picker @Model.StateClass">
-    <div class="delivery-display @(Model.ShouldShowPrompt ? "needs-attention" : "")" id="delivery-display">
-        @if (Model.HasSelectedTime && Model.IsSelectionValid)
-        {
-            <span class="delivery-icon">🕐</span>
-            <span class="delivery-text">@Model.SelectedDeliveryTimeText</span>
-        }
-        else if (Model.ShouldShowPrompt)
-        {
-            @switch (Model.PromptType)
-            {
-                case DeliveryTimePromptType.NoSelection:
-                    <span class="delivery-icon animated-pulse">📅</span>
-                    <span class="delivery-text">⚠️ Select delivery time</span>
-                    break;
-                case DeliveryTimePromptType.SelectionExpired:
-                    <span class="delivery-icon animated-pulse">⏰</span>
-                    <span class="delivery-text">⚠️ Time expired - Select new time</span>
-                    break;
-                case DeliveryTimePromptType.SelectionInvalid:
-                    <span class="delivery-icon animated-pulse">❌</span>
-                    <span class="delivery-text">⚠️ Time unavailable - Select new time</span>
-                    break;
-                default:
-                    <span class="delivery-icon">📅</span>
-                    <span class="delivery-text">Select delivery time</span>
-                    break;
-            }
-        }
-        else
-        {
-            <span class="delivery-icon">📅</span>
-            <span class="delivery-text">Select delivery time</span>
-        }
+<div class="global-delivery-picker" id="global-delivery-picker">
+    <div class="delivery-display" id="delivery-display">
+        <span class="delivery-icon">📅</span>
+        <span class="delivery-text">Select delivery time</span>
         <span class="delivery-arrow">▼</span>
     </div>
 </div>
@@ -280,9 +249,6 @@
         cursor: not-allowed;
     }
 
-    .calendar-day.today {
-        border: 2px solid #007bff;
-    }
 
     /* Selected Day Section */
     .selected-day-section {
@@ -598,12 +564,16 @@
                 if (!response.success) {
                     this.state.hasValidSelection = false;
                     hasValidSelection = false;
+                    this.updateDisplayClasses(response);
                     this.openDeliveryPicker();
                     return;
                 }
 
                 this.state.hasValidSelection = !!response.selectedDeliveryTime;
                 hasValidSelection = !!response.selectedDeliveryTime;
+
+                // Update display classes based on response
+                this.updateDisplayClasses(response);
 
                 // Update display with selectedDeliveryTime from AJAX response
                 if (response.selectedDeliveryTime) {
@@ -613,6 +583,26 @@
                     $('#delivery-display .delivery-icon').text('🕐');
                 } else {
                     this.openDeliveryPicker();
+                }
+            },
+
+            // Update display classes based on validation response
+            updateDisplayClasses: function(response) {
+                var $picker = $('#global-delivery-picker');
+                var $display = $('#delivery-display');
+
+                // Remove all state classes
+                $picker.removeClass('no-selection selection-expired selection-invalid has-selection');
+                $display.removeClass('needs-attention');
+
+                // Add appropriate state class
+                if (response.stateClass) {
+                    $picker.addClass(response.stateClass);
+                }
+
+                // Add needs-attention class if should prompt
+                if (response.shouldPrompt) {
+                    $display.addClass('needs-attention');
                 }
             },
 
@@ -722,6 +712,11 @@
                         availableTimesByDate[item.date].push(item);
                     });
 
+                    // Update display classes based on response
+                    if (window.DeliveryTimeValidator && window.DeliveryTimeValidator.updateDisplayClasses) {
+                        window.DeliveryTimeValidator.updateDisplayClasses(response);
+                    }
+
                     // Update display if selectedDeliveryTime exists
                     if (response.selectedDeliveryTime) {
                         var selectedDt = new Date(response.selectedDeliveryTime);
@@ -830,8 +825,8 @@
             $('#calendar-days').html(calendarHtml);
         }
 
-        // Track if there's a valid selection
-        var hasValidSelection = @Json.Serialize(Model.HasSelectedTime && Model.IsSelectionValid);
+        // Track if there's a valid selection (will be updated from AJAX response)
+        var hasValidSelection = false;
 
         // Function to close modal
         function closeModal() {
@@ -1070,19 +1065,5 @@
         $(window).on('unload', function() {
             DeliveryTimeValidator.destroy();
         });
-
-        // Check if user needs to select delivery time on page load
-        @if (!Model.HasSelectedTime)
-        {
-            <text>
-            // Show modal automatically if no time is selected
-            // You can customize this behavior
-            setTimeout(function() {
-                // Uncomment the line below to show popup automatically
-                // modal.addClass('show');
-                // initCalendar();
-            }, 1000);
-            </text>
-        }
     });
 </script>

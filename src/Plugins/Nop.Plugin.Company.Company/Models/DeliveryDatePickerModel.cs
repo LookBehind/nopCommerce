@@ -59,21 +59,6 @@ namespace Nop.Plugin.Company.Company.Models
         /// </summary>
         public string InvalidReason { get; set; }
 
-        /// <summary>
-        /// Whether to show the picker as urgent/highlighted
-        /// </summary>
-        public bool IsUrgent => ShouldShowPrompt && (PromptType == DeliveryTimePromptType.SelectionExpired || PromptType == DeliveryTimePromptType.SelectionInvalid);
-
-        /// <summary>
-        /// CSS class for the picker state
-        /// </summary>
-        public string StateClass => ShouldShowPrompt switch
-        {
-            true when PromptType == DeliveryTimePromptType.NoSelection => "no-selection",
-            true when PromptType == DeliveryTimePromptType.SelectionExpired => "selection-expired",
-            true when PromptType == DeliveryTimePromptType.SelectionInvalid => "selection-invalid",
-            _ => HasSelectedTime ? "has-selection" : "no-selection"
-        };
     }
 
     /// <summary>
