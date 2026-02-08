@@ -540,6 +540,52 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
                    true;
         }
 
+        private static int CountWorkingDays(DateTime startInclusive, DateTime endInclusive)
+        {
+            var count = 0;
+            for (var date = startInclusive.Date; date <= endInclusive.Date; date = date.AddDays(1))
+            {
+                if (date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday)
+                    count++;
+            }
+            return count;
+        }
+
+        // Keep in sync with IdramMerchantPaymentProcessor.GetProratedLimit
+        private static decimal GetProratedLimit(
+            decimal limitAmount, AmountLimitType limitType, DateTime scheduleDateUtc, DateTime customerCreatedOnUtc)
+        {
+            if (limitType == AmountLimitType.Daily)
+                return limitAmount;
+
+            DateTime periodStart, periodEnd;
+
+            switch (limitType)
+            {
+                case AmountLimitType.Weekly:
+                    periodStart = scheduleDateUtc.Date.AddDays(-(int)scheduleDateUtc.DayOfWeek);
+                    periodEnd = periodStart.AddDays(6);
+                    break;
+                case AmountLimitType.Monthly:
+                    periodStart = new DateTime(scheduleDateUtc.Year, scheduleDateUtc.Month, 1);
+                    periodEnd = periodStart.AddMonths(1).AddDays(-1);
+                    break;
+                default:
+                    return limitAmount;
+            }
+
+            if (customerCreatedOnUtc.Date <= periodStart)
+                return limitAmount;
+
+            var totalWorkingDays = CountWorkingDays(periodStart, periodEnd);
+            if (totalWorkingDays == 0)
+                return 0;
+
+            var customerWorkingDays = CountWorkingDays(customerCreatedOnUtc.Date, periodEnd);
+
+            return limitAmount * customerWorkingDays / totalWorkingDays;
+        }
+
         // Keep in sync with IdramMerchantPaymentProcessor.GetCustomerCompanyLimit
         private async Task<(AmountLimitType limitType, decimal limitAmount)> GetCustomerCompanyLimit(Customer customer = null)
         {
@@ -571,18 +617,24 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             if (existingDates.UtcDates.Any(d => d.Date == customerBalanceRequest.OrderDateUtc))
                 return null;
 
+            var proratedLimit = GetProratedLimit(
+                customerCompanyLimit.limitAmount,
+                customerCompanyLimit.limitType,
+                customerBalanceRequest.OrderDateUtc,
+                customerBalanceRequest.Customer.CreatedOnUtc);
+
             var usedAllowanceForPeriod =
                 await GetUsedAllowanceForPeriod(customerCompanyLimit.limitType,
                     customerBalanceRequest.OrderDateUtc,
                     customerBalanceRequest.Customer);
 
-            var remainingAllowance = usedAllowanceForPeriod.UsedAllowance > customerCompanyLimit.limitAmount
+            var remainingAllowance = usedAllowanceForPeriod.UsedAllowance > proratedLimit
                 ? 0
-                : customerCompanyLimit.limitAmount - usedAllowanceForPeriod.UsedAllowance;
-            
+                : proratedLimit - usedAllowanceForPeriod.UsedAllowance;
+
             return new CustomerBalanceResult()
             {
-                TotalAllowance = customerCompanyLimit.limitAmount,
+                TotalAllowance = proratedLimit,
                 RemainingAllowance = remainingAllowance,
                 RefreshCadence = customerCompanyLimit.limitType,
                 RefreshedAfter = usedAllowanceForPeriod.RefreshedAfter

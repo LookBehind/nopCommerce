@@ -19,42 +19,54 @@
   <ItemGroup>
     <None Update="Content\Images\accountkit-email-account-logo.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\accountkit-phone-account-logo.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\amazon-account-logo.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\doc\facebook.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\doc\Google.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Content\Images\doc\LinkedIn.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\doc\microsoft.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\doc\Twitter.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\facebook-account-logo.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\facebook-signing.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\foursquare-account-logo.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\github-account-logo.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\google-account-logo.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
     <None Update="Content\Images\instagram-account-logo.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -103,12 +115,15 @@
     </None>
     <None Update="Views\Configure.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Views\Configure.cshtml</Link>
     </None>
     <None Update="Views\PublicInfo.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Views\PublicInfo.cshtml</Link>
     </None>
     <None Update="Views\_ViewImports.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Views\_ViewImports.cshtml</Link>
     </None>
   </ItemGroup>
   <ItemGroup>
