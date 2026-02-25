@@ -27,6 +27,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -495,6 +496,8 @@ namespace Nop.Web.Controllers.Api.Security
             public string[] VendorsWhitelist { get; set; }
             public int CompanyId { get; set; }
             public bool DoNotUseLastUnpublishedProductList { get; set; }
+            public string[] PublishProductSkus { get; set; }
+            public string[] UnpublishProductSkus { get; set; }
         }
         
         [HttpPost("product-publish-whitelist")]
@@ -508,7 +511,7 @@ namespace Nop.Web.Controllers.Api.Security
             var company = await _companyService.GetCompanyByIdAsync(model.CompanyId);
             if (company == null)
                 return BadRequest(new {success = false, message = "Company not found"});
-            
+
             var companyAllowedVendorIds =
                 (await _companyService.GetCompanyVendorsByCompanyAsync(model.CompanyId))
                 .Select(x => x.VendorId)
@@ -516,9 +519,79 @@ namespace Nop.Web.Controllers.Api.Security
             
             var companyAllVendors =
                 (await _vendorService.GetAllVendorsAsync(showHidden: true))
-                .Where(x => companyAllowedVendorIds.Contains(x.Id))
+                .Where(x => !companyAllowedVendorIds.Any() || companyAllowedVendorIds.Contains(x.Id))
                 .ToArray();
             
+            var unpublishedProductIdsByVendor = new Dictionary<int, List<int>>();
+            var publishedProductIdsByVendor = new Dictionary<int, List<int>>();
+            
+            if (model.PublishProductSkus?.Any() == true || model.UnpublishProductSkus?.Any() == true)
+            {
+                if (model.VendorsWhitelist?.Any() == true)
+                {
+                    return BadRequest(new
+                    {
+                        success = false, message = "Vendors whitelist cannot be used with product skus"
+                    });
+                }
+
+                foreach (var sku in (model.PublishProductSkus ?? Enumerable.Empty<string>()).Concat(model.UnpublishProductSkus ?? Enumerable.Empty<string>()))
+                {
+                    var skusFound = await _productService.SearchProductsAsync(
+                        searchManufacturerPartNumber: false,
+                        searchDescriptions: false,
+                        searchProductTags: false,
+                        searchCustomerVendors: false,
+                        searchSku: true,
+                        keywords: sku,
+                        showHidden: true);
+                    
+                    var skuToUpdate = skusFound.Where(p => p.Sku == sku).ToArray();
+                    if (skuToUpdate.Length > 1)
+                    {
+                        await _logger.ErrorAsync($"Found {skuToUpdate.Length} products with SKU '{sku}'");
+                        return BadRequest(new { success = false, message = $"Found {skuToUpdate.Length} products with SKU '{sku}'" });
+                    }
+                    if (skuToUpdate.Length == 0)
+                    {
+                        await _logger.ErrorAsync($"No products found with SKU '{sku}'");
+                        return BadRequest(new { success = false, message = $"No products found with SKU '{sku}'" });
+                    }
+                    
+                    var product = await _productService.GetProductByIdAsync(skuToUpdate[0].Id);
+                    if (model.PublishProductSkus?.Contains(sku) == true)
+                    {
+                        product.Published = true;
+                        await _logger.InformationAsync($"Product with SKU '{sku}' published successfully");
+                        if (!publishedProductIdsByVendor.TryAdd(product.VendorId, new List<int> { skuToUpdate[0].Id }))
+                        {
+                            publishedProductIdsByVendor[product.VendorId].Add(skuToUpdate[0].Id);
+                        }
+                    }
+                    else
+                    {
+                        product.Published = false;
+                        await _logger.InformationAsync($"Product with SKU '{sku}' unpublished successfully");
+                        if (!unpublishedProductIdsByVendor.TryAdd(product.VendorId, new List<int> { skuToUpdate[0].Id }))
+                        {
+                            unpublishedProductIdsByVendor[product.VendorId].Add(skuToUpdate[0].Id);
+                        }
+                    }
+                    
+                    await _productService.UpdateProductAsync(product);
+                }
+                
+                return Ok(new
+                {
+                    success = true,
+                    notFoundVendors = Array.Empty<string>(),
+                    publishedProductCountByVendor = publishedProductIdsByVendor
+                        .ToDictionary(x => companyAllVendors.First(v => v.Id == x.Key).Name, x => x.Value.Count),
+                    unpublishedProductCountByVendor = unpublishedProductIdsByVendor
+                        .ToDictionary(x => companyAllVendors.First(v => v.Id == x.Key).Name, x => x.Value.Count),
+                });
+            }
+
             var vendorsToUnpublish = companyAllVendors
                 .Where(x => !model.VendorsWhitelist.Contains(x.Name, StringComparer.OrdinalIgnoreCase))
                 .ToArray();
@@ -541,7 +614,6 @@ namespace Nop.Web.Controllers.Api.Security
             await _logger.InformationAsync($"Unpublishing vendors: {string.Join(',', vendorsToUnpublish.Select(x => x.Name))}");
             
             // Unpublish products and save their IDs for future publishing back
-            var unpublishedProductIdsByVendor = new Dictionary<int, List<int>>();
             foreach (var vendor in vendorsToUnpublish)
             {
                 var unpublishedProductIds = new List<int>();
@@ -563,7 +635,6 @@ namespace Nop.Web.Controllers.Api.Security
                 storeId);
             
             // Publish products
-            var publishedProductIdsByVendor = new Dictionary<int, List<int>>();
             foreach (var vendor in vendorsToPublish)
             {
                 var publishedProductIds = new List<int>();
