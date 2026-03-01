@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LinqToDB;
 using Nop.Core;
 using Nop.Core.Domain.Orders;
+using Nop.Data;
 using Nop.Services.Companies;
 using Nop.Services.Configuration;
 using Nop.Services.Helpers;
@@ -27,6 +29,7 @@ namespace Nop.Plugin.Company.Company.Services
         private readonly IDateTimeHelper _dateTimeHelper;
         private readonly ICompanyService _companyService;
         private readonly ILogger _logger;
+        private readonly IRepository<Order> _orderRepository;
 
         #endregion
 
@@ -37,13 +40,15 @@ namespace Nop.Plugin.Company.Company.Services
             IWorkContext workContext,
             IDateTimeHelper dateTimeHelper,
             ICompanyService companyService,
-            ILogger logger)
+            ILogger logger,
+            IRepository<Order> orderRepository)
         {
             _settingService = settingService;
             _workContext = workContext;
             _dateTimeHelper = dateTimeHelper;
             _companyService = companyService;
             _logger = logger;
+            _orderRepository = orderRepository;
         }
 
         #endregion
@@ -122,7 +127,7 @@ namespace Nop.Plugin.Company.Company.Services
                 if (isToday)
                 {
                     // For today, check if we're still before the cutoff time
-                    var lastOrderTime = date.Date.Add(slot.LastOrderTime);
+                    var lastOrderTime = date.Date.Add(slot.CutoffTime);
                     if (now <= lastOrderTime)
                     {
                         deliveryTimes.Add(deliveryTime);
@@ -216,15 +221,17 @@ namespace Nop.Plugin.Company.Company.Services
 
                 try
                 {
-                    var label = parts[0];
-                    var lastOrderTime = TimeSpan.Parse(parts[1]);
+                    var openTime = TimeSpan.Parse(parts[0]);
+                    var cutoffTime = TimeSpan.Parse(parts[1]);
                     var deliveryTime = TimeSpan.Parse(parts[2]);
 
                     slots.Add(new DeliverySlot
                     {
-                        Label = label,
-                        LastOrderTime = lastOrderTime,
-                        DeliveryTime = deliveryTime
+                        OpenTime = openTime,
+                        CutoffTime = cutoffTime,
+                        DeliveryTime = deliveryTime,
+                        IsEnabled = true,
+                        SortOrder = 0
                     });
                 }
                 catch (Exception ex)
@@ -234,6 +241,38 @@ namespace Nop.Plugin.Company.Company.Services
             }
 
             return slots.OrderBy(s => s.DeliveryTime).ToList();
+        }
+
+        /// <summary>
+        /// Gets the count of non-cancelled orders for each delivery time
+        /// </summary>
+        public virtual async Task<Dictionary<DateTime, int>> GetOrderCountsByDeliveryTimesAsync(List<DateTime> deliveryTimes)
+        {
+            if (deliveryTimes == null || deliveryTimes.Count == 0)
+                return new Dictionary<DateTime, int>();
+
+            // Get unique dates to query
+            var dates = deliveryTimes.Select(dt => dt.Date).Distinct().ToList();
+
+            // Query all non-cancelled, non-deleted orders for those dates
+            var orders = await _orderRepository.Table
+                .Where(o => !o.Deleted &&
+                            (OrderStatus)o.OrderStatusId != OrderStatus.Cancelled &&
+                            dates.Contains(o.ScheduleDate.Date))
+                .Select(o => o.ScheduleDate)
+                .ToListAsync();
+
+            // Count orders per delivery time (matching both date and time of day)
+            var result = new Dictionary<DateTime, int>();
+            foreach (var deliveryTime in deliveryTimes)
+            {
+                var count = orders.Count(o => o.Date == deliveryTime.Date &&
+                                              o.TimeOfDay.Hours == deliveryTime.TimeOfDay.Hours &&
+                                              o.TimeOfDay.Minutes == deliveryTime.TimeOfDay.Minutes);
+                result[deliveryTime] = count;
+            }
+
+            return result;
         }
 
         #endregion

@@ -56,6 +56,16 @@ namespace Nop.Plugin.Company.Company.Services
         /// The task result contains delivery slots configuration
         /// </returns>
         Task<List<DeliverySlot>> GetDeliverySlotsAsync();
+
+        /// <summary>
+        /// Gets the count of non-cancelled orders for each delivery time
+        /// </summary>
+        /// <param name="deliveryTimes">List of delivery times to count orders for</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains a dictionary mapping delivery time to order count
+        /// </returns>
+        Task<Dictionary<DateTime, int>> GetOrderCountsByDeliveryTimesAsync(List<DateTime> deliveryTimes);
     }
 
     /// <summary>
@@ -64,19 +74,29 @@ namespace Nop.Plugin.Company.Company.Services
     public partial record DeliverySlot
     {
         /// <summary>
-        /// Display label for the slot (e.g., "Lunch")
+        /// Time the ordering window opens
         /// </summary>
-        public string Label { get; set; }
+        public TimeSpan OpenTime { get; set; }
 
         /// <summary>
-        /// Last time orders can be placed for this slot
+        /// Last time orders can be placed for this slot (cutoff)
         /// </summary>
-        public TimeSpan LastOrderTime { get; set; }
+        public TimeSpan CutoffTime { get; set; }
 
         /// <summary>
-        /// Delivery time for this slot
+        /// When the delivery happens
         /// </summary>
         public TimeSpan DeliveryTime { get; set; }
+
+        /// <summary>
+        /// Whether this slot is currently active
+        /// </summary>
+        public bool IsEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Display order (0-based)
+        /// </summary>
+        public int SortOrder { get; set; }
     }
 }
 
