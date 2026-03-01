@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using LinqToDB;
 using Nop.Core;
@@ -23,13 +25,20 @@ namespace Nop.Plugin.Company.Company.Services
         #region Fields
 
         private const int ORDER_AHEAD_DAYS_DEFAULT = 14;
-        
+
+        private static readonly JsonSerializerOptions _jsonOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
         private readonly ISettingService _settingService;
         private readonly IWorkContext _workContext;
         private readonly IDateTimeHelper _dateTimeHelper;
         private readonly ICompanyService _companyService;
         private readonly ILogger _logger;
         private readonly IRepository<Order> _orderRepository;
+        private readonly IStoreContext _storeContext;
 
         #endregion
 
@@ -41,7 +50,8 @@ namespace Nop.Plugin.Company.Company.Services
             IDateTimeHelper dateTimeHelper,
             ICompanyService companyService,
             ILogger logger,
-            IRepository<Order> orderRepository)
+            IRepository<Order> orderRepository,
+            IStoreContext storeContext)
         {
             _settingService = settingService;
             _workContext = workContext;
@@ -49,6 +59,7 @@ namespace Nop.Plugin.Company.Company.Services
             _companyService = companyService;
             _logger = logger;
             _orderRepository = orderRepository;
+            _storeContext = storeContext;
         }
 
         #endregion
@@ -202,22 +213,48 @@ namespace Nop.Plugin.Company.Company.Services
         /// </returns>
         public virtual async Task<List<DeliverySlot>> GetDeliverySlotsAsync()
         {
-            var slots = new List<DeliverySlot>();
-            var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>();
+            var store = await _storeContext.GetCurrentStoreAsync();
+            var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>(store.Id);
 
             if (string.IsNullOrWhiteSpace(orderSettings.ScheduleDate))
-                return slots;
+                return new List<DeliverySlot>();
 
-            var scheduleDateValues = orderSettings.ScheduleDate.Split(',');
+            var raw = orderSettings.ScheduleDate.Trim();
+
+            try
+            {
+                // New JSON format
+                if (raw.StartsWith("["))
+                {
+                    var slots = JsonSerializer.Deserialize<List<DeliverySlot>>(raw, _jsonOptions);
+                    return slots?
+                        .Where(s => s.IsEnabled)
+                        .OrderBy(s => s.SortOrder)
+                        .ThenBy(s => s.DeliveryTime)
+                        .ToList() ?? new List<DeliverySlot>();
+                }
+
+                // Legacy CSV format: "HH:MM:SS-HH:MM:SS-HH:MM:SS,..."
+                return ParseLegacyCsv(raw);
+            }
+            catch (Exception ex)
+            {
+                await _logger.ErrorAsync($"Error parsing delivery schedule configuration: {raw}", ex);
+                return new List<DeliverySlot>();
+            }
+        }
+
+        private List<DeliverySlot> ParseLegacyCsv(string csv)
+        {
+            var slots = new List<DeliverySlot>();
+            var scheduleDateValues = csv.Split(',');
+            var sortOrder = 0;
 
             foreach (var scheduleDate in scheduleDateValues)
             {
                 var parts = scheduleDate.Split('-');
                 if (parts.Length < 3)
-                {
-                    await _logger.ErrorAsync($"Delivery schedule is of invalid format: {scheduleDate}");
                     continue;
-                }
 
                 try
                 {
@@ -231,12 +268,12 @@ namespace Nop.Plugin.Company.Company.Services
                         CutoffTime = cutoffTime,
                         DeliveryTime = deliveryTime,
                         IsEnabled = true,
-                        SortOrder = 0
+                        SortOrder = sortOrder++
                     });
                 }
-                catch (Exception ex)
+                catch
                 {
-                    await _logger.ErrorAsync($"Error parsing delivery schedule: {scheduleDate}", ex);
+                    // Skip malformed entries
                 }
             }
 
