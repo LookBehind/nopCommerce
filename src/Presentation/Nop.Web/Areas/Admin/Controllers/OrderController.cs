@@ -1942,11 +1942,39 @@ namespace Nop.Web.Areas.Admin.Controllers
             var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>(storeId);
             var model = new OrderScheduleModel();
 
-            var scheduleDateSetting = await _settingService.SettingExistsAsync(orderSettings, x => x.ScheduleDate, storeId);
-            if (scheduleDateSetting && !string.IsNullOrWhiteSpace(orderSettings.ScheduleDate))
+            if (!string.IsNullOrWhiteSpace(orderSettings.ScheduleDate))
             {
-                model.ScheduleDates = orderSettings.ScheduleDate.Split(',').ToList();
+                var raw = orderSettings.ScheduleDate.Trim();
+
+                if (raw.StartsWith("["))
+                {
+                    // New JSON format
+                    var slots = JsonSerializer.Deserialize<List<DeliverySlotModel>>(raw, new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                    });
+                    model.Slots = slots ?? new List<DeliverySlotModel>();
+                }
+                else
+                {
+                    // Legacy CSV format: "HH:MM:SS-HH:MM:SS-HH:MM:SS,..."
+                    foreach (var csv in raw.Split(','))
+                    {
+                        var parts = csv.Split('-');
+                        if (parts.Length >= 3)
+                        {
+                            model.Slots.Add(new DeliverySlotModel
+                            {
+                                OpenTime = parts[0].Length > 5 ? parts[0].Substring(0, 5) : parts[0],
+                                CutoffTime = parts[1].Length > 5 ? parts[1].Substring(0, 5) : parts[1],
+                                DeliveryTime = parts[2].Length > 5 ? parts[2].Substring(0, 5) : parts[2],
+                                IsEnabled = true
+                            });
+                        }
+                    }
+                }
             }
+
             return View(model);
         }
 
@@ -1956,94 +1984,109 @@ namespace Nop.Web.Areas.Admin.Controllers
             if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageOrders))
                 return AccessDeniedView();
 
-            if (model.ScheduleDates == null || model.ScheduleDates.All(string.IsNullOrWhiteSpace))
-                return View(model);
-
-            var storeId = await _storeContext.GetActiveStoreScopeConfigurationAsync();
-            var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>(storeId);
-            long ticksPerMinute = 600000000;
-            var array = model.ScheduleDates;
-            var isErrorExist = false;
-            for (var i = 0; i <= array.Count; i++)
+            // Read slots from form data (model binding doesn't handle indexed complex objects well)
+            var slots = new List<DeliverySlotModel>();
+            for (var i = 0; HttpContext.Request.Form.ContainsKey($"Slots[{i}].OpenTime"); i++)
             {
-                if (i == 0)
+                slots.Add(new DeliverySlotModel
                 {
-                    var firstRow = Array.ConvertAll(array[i].Split('-'), s => TimeSpan.Parse(s));
-                    if (firstRow.Length == 3)
-                    {
-                        if (firstRow[2].Ticks < firstRow[1].Ticks)
-                        {
-                            _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[i].ToString()));
-                            isErrorExist = true;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        _notificationService.ErrorNotification(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateValueLengthError"));
-                        isErrorExist = true;
-                        break;
-                    }
-                }
-                if (i > 0 && (i + 1) < array.Count)
+                    OpenTime = HttpContext.Request.Form[$"Slots[{i}].OpenTime"],
+                    CutoffTime = HttpContext.Request.Form[$"Slots[{i}].CutoffTime"],
+                    DeliveryTime = HttpContext.Request.Form[$"Slots[{i}].DeliveryTime"],
+                    IsEnabled = HttpContext.Request.Form.ContainsKey($"Slots[{i}].IsEnabled")
+                });
+            }
+            model.Slots = slots;
+
+            if (model.Slots.Count == 0)
+            {
+                _notificationService.ErrorNotification("At least one delivery slot is required.");
+                return View(model);
+            }
+
+            // Validate each slot
+            var hasError = false;
+            for (var i = 0; i < model.Slots.Count; i++)
+            {
+                var slot = model.Slots[i];
+
+                if (!TimeSpan.TryParse(slot.OpenTime, out var open) ||
+                    !TimeSpan.TryParse(slot.CutoffTime, out var cutoff) ||
+                    !TimeSpan.TryParse(slot.DeliveryTime, out var delivery))
                 {
-                    var prevRow = Array.ConvertAll(array[i - 1].Split('-'), s => TimeSpan.Parse(s));
-                    var currentRow = Array.ConvertAll(array[i].Split('-'), s => TimeSpan.Parse(s));
-                    if (currentRow.Length == 3)
-                    {
-                        if (currentRow[0].Ticks > currentRow[1].Ticks || currentRow[2].Ticks < currentRow[1].Ticks)
-                        {
-                            _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[i].ToString()));
-                            isErrorExist = true;
-                            break;
-                        }
-                        if (currentRow[0].Ticks - prevRow[1].Ticks != ticksPerMinute)
-                        {
-                            _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[i - 1].ToString()));
-                            isErrorExist = true;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        _notificationService.ErrorNotification(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateValueLengthError"));
-                        isErrorExist = true;
-                        break;
-                    }
+                    _notificationService.ErrorNotification($"Slot {i + 1}: Invalid time format.");
+                    hasError = true;
+                    continue;
                 }
 
-                if ((i + 1) == array.Count)
+                if (open >= cutoff)
                 {
-                    var firstRow = Array.ConvertAll(array[0].Split('-'), s => TimeSpan.Parse(s));
-                    var prevRow = Array.ConvertAll(array[i - 1].Split('-'), s => TimeSpan.Parse(s));
-                    var currRow = Array.ConvertAll(array[array.Count - 1].Split('-'), s => TimeSpan.Parse(s));
-                    if (currRow[0].Ticks > currRow[1].Ticks || currRow[2].Ticks < currRow[1].Ticks)
+                    _notificationService.ErrorNotification(
+                        $"Slot {i + 1}: Open time ({slot.OpenTime}) must be before cutoff time ({slot.CutoffTime}).");
+                    hasError = true;
+                }
+
+                if (cutoff >= delivery)
+                {
+                    _notificationService.ErrorNotification(
+                        $"Slot {i + 1}: Cutoff time ({slot.CutoffTime}) must be before delivery time ({slot.DeliveryTime}).");
+                    hasError = true;
+                }
+            }
+
+            // At least one enabled slot
+            if (!model.Slots.Any(s => s.IsEnabled))
+            {
+                _notificationService.ErrorNotification("At least one slot must be enabled.");
+                hasError = true;
+            }
+
+            // Check for overlapping ordering windows among enabled slots
+            if (!hasError)
+            {
+                var enabledSlots = model.Slots
+                    .Where(s => s.IsEnabled)
+                    .Select(s => new
                     {
-                        _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[array.Count - 1].ToString()));
-                        isErrorExist = true;
-                        break;
-                    }
-                    if (currRow[0].Ticks - prevRow[1].Ticks != ticksPerMinute)
+                        Open = TimeSpan.Parse(s.OpenTime),
+                        Cutoff = TimeSpan.Parse(s.CutoffTime),
+                        Display = $"{s.OpenTime}-{s.CutoffTime}"
+                    })
+                    .OrderBy(s => s.Open)
+                    .ToList();
+
+                for (var i = 1; i < enabledSlots.Count; i++)
+                {
+                    if (enabledSlots[i].Open < enabledSlots[i - 1].Cutoff)
                     {
-                        _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[i - 1].ToString()));
-                        isErrorExist = true;
-                        break;
-                    }
-                    if (firstRow[0].Ticks - currRow[1].Ticks != ticksPerMinute)
-                    {
-                        _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Order.ScheduleDateWarning"), array[0].ToString()));
-                        isErrorExist = true;
+                        _notificationService.ErrorNotification(
+                            $"Overlapping ordering windows: [{enabledSlots[i - 1].Display}] and [{enabledSlots[i].Display}].");
+                        hasError = true;
                         break;
                     }
                 }
             }
-            
-            if (isErrorExist)
+
+            if (hasError)
                 return View(model);
 
-            orderSettings.ScheduleDate = string.Join(',', model.ScheduleDates);
+            // Serialize to JSON and save
+            var jsonSlots = model.Slots.Select((s, idx) => new
+            {
+                open = s.OpenTime,
+                cutoff = s.CutoffTime,
+                delivery = s.DeliveryTime,
+                enabled = s.IsEnabled,
+                sortOrder = idx
+            });
+
+            var storeId = await _storeContext.GetActiveStoreScopeConfigurationAsync();
+            var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>(storeId);
+            orderSettings.ScheduleDate = JsonSerializer.Serialize(jsonSlots);
             await _settingService.SaveSettingAsync(orderSettings, x => x.ScheduleDate, clearCache: true);
-            _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Orders.ScheduleDate.Updated"));
+
+            _notificationService.SuccessNotification(
+                await _localizationService.GetResourceAsync("Admin.Orders.ScheduleDate.Updated"));
 
             return View(model);
         }

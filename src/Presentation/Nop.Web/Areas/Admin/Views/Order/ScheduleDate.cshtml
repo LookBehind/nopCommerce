@@ -2,11 +2,7 @@
 
 @{ //page title
     ViewBag.PageTitle = T("Admin.Orders.EditOrderScheduleDetails").Text;
-    //active menu item (system name)
-    Html.AppendScriptParts("~/lib/timeRangePicker/timeRangePicker.js");
-    Html.AppendCssFileParts("~/lib/timeRangePicker/timeRangePicker.css");
     Html.SetActiveMenuItemSystemName("OrderSchedule");
-
 }
 
 <form asp-controller="Order" asp-action="ScheduleDate" method="post" id="orderschedule-form">
@@ -19,7 +15,6 @@
                 <i class="fa fa-save"></i>
                 @T("Admin.Common.Save")
             </button>
-            @await Component.InvokeAsync("AdminWidget", new { widgetZone = AdminWidgetZones.OrderDetailsButtons, additionalData = Model })
         </div>
     </div>
 
@@ -30,24 +25,31 @@
             <div class="panel-body">
                 <div class="panel panel-default sub-panel">
                     <div class="panel-body">
-                        @for (var i = 0; i < Model.ScheduleDates.Count; i++)
-                        {
-                            <div class="form-group row">
-                                <div class="col-md-2">
-                                    <nop-label asp-for="ScheduleDates[i]" />
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="input-group timerange">
-                                        @Html.EditorFor(m => m.ScheduleDates[i])
-                                        @* <nop-editor asp-for="ScheduleDates[i]" /> *@
-                                        <span class="input-group-addon" style="">
-                                            <i aria-hidden="true" class="far fa-calendar"></i>
-                                        </span>
+                        <div id="slots-container">
+                            @for (var i = 0; i < Model.Slots.Count; i++)
+                            {
+                                <div class="form-group row slot-row" data-index="@i">
+                                    <div class="col-md-2">
+                                        <label>Slot @(i + 1)</label>
                                     </div>
-                                    <span asp-validation-for="ScheduleDates[i]"></span>
+                                    <div class="col-md-2">
+                                        <input type="time" name="Slots[@i].OpenTime" value="@Model.Slots[i].OpenTime" class="form-control" placeholder="Open" />
+                                    </div>
+                                    <div class="col-md-2">
+                                        <input type="time" name="Slots[@i].CutoffTime" value="@Model.Slots[i].CutoffTime" class="form-control" placeholder="Cutoff" />
+                                    </div>
+                                    <div class="col-md-2">
+                                        <input type="time" name="Slots[@i].DeliveryTime" value="@Model.Slots[i].DeliveryTime" class="form-control" placeholder="Delivery" />
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label>
+                                            <input type="checkbox" name="Slots[@i].IsEnabled" value="true" @(Model.Slots[i].IsEnabled ? "checked" : "") />
+                                            Enabled
+                                        </label>
+                                    </div>
                                 </div>
-                            </div>
-                        }
+                            }
+                        </div>
                     </div>
                 </div>
             </div>
