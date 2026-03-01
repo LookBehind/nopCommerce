@@ -1,6 +1,6 @@
 @model OrderScheduleModel
 
-@{ //page title
+@{
     ViewBag.PageTitle = T("Admin.Orders.EditOrderScheduleDetails").Text;
     Html.SetActiveMenuItemSystemName("OrderSchedule");
 }
@@ -22,37 +22,134 @@
 
     <div class="content">
         <div class="form-horizontal">
-            <div class="panel-body">
-                <div class="panel panel-default sub-panel">
-                    <div class="panel-body">
-                        <div id="slots-container">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    Delivery Time Slots
+                </div>
+                <div class="panel-body">
+                    <table class="table table-hover" id="slots-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 50px">#</th>
+                                <th>Open Time</th>
+                                <th>Cutoff Time</th>
+                                <th>Delivery Time</th>
+                                <th style="width: 80px">Enabled</th>
+                                <th style="width: 60px"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="slots-body">
                             @for (var i = 0; i < Model.Slots.Count; i++)
                             {
-                                <div class="form-group row slot-row" data-index="@i">
-                                    <div class="col-md-2">
-                                        <label>Slot @(i + 1)</label>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <input type="time" name="Slots[@i].OpenTime" value="@Model.Slots[i].OpenTime" class="form-control" placeholder="Open" />
-                                    </div>
-                                    <div class="col-md-2">
-                                        <input type="time" name="Slots[@i].CutoffTime" value="@Model.Slots[i].CutoffTime" class="form-control" placeholder="Cutoff" />
-                                    </div>
-                                    <div class="col-md-2">
-                                        <input type="time" name="Slots[@i].DeliveryTime" value="@Model.Slots[i].DeliveryTime" class="form-control" placeholder="Delivery" />
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label>
-                                            <input type="checkbox" name="Slots[@i].IsEnabled" value="true" @(Model.Slots[i].IsEnabled ? "checked" : "") />
-                                            Enabled
-                                        </label>
-                                    </div>
-                                </div>
+                                <tr class="slot-row">
+                                    <td class="slot-number">@(i + 1)</td>
+                                    <td>
+                                        <input type="time" name="Slots[@i].OpenTime"
+                                               value="@Model.Slots[i].OpenTime"
+                                               class="form-control slot-open" required />
+                                    </td>
+                                    <td>
+                                        <input type="time" name="Slots[@i].CutoffTime"
+                                               value="@Model.Slots[i].CutoffTime"
+                                               class="form-control slot-cutoff" required />
+                                    </td>
+                                    <td>
+                                        <input type="time" name="Slots[@i].DeliveryTime"
+                                               value="@Model.Slots[i].DeliveryTime"
+                                               class="form-control slot-delivery" required />
+                                    </td>
+                                    <td class="text-center">
+                                        <input type="checkbox" name="Slots[@i].IsEnabled"
+                                               value="true"
+                                               @(Model.Slots[i].IsEnabled ? "checked" : "") />
+                                    </td>
+                                    <td class="text-center">
+                                        <button type="button" class="btn btn-danger btn-sm remove-slot"
+                                                title="Remove slot">
+                                            <i class="fa fa-times"></i>
+                                        </button>
+                                    </td>
+                                </tr>
                             }
-                        </div>
-                    </div>
+                        </tbody>
+                    </table>
+
+                    <button type="button" id="add-slot" class="btn bg-green">
+                        <i class="fa fa-plus"></i>
+                        Add Slot
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 </form>
+
+<script>
+    $(function () {
+        function reindexSlots() {
+            $('#slots-body .slot-row').each(function (idx) {
+                $(this).find('.slot-number').text(idx + 1);
+                $(this).find('input[name*="OpenTime"]').attr('name', 'Slots[' + idx + '].OpenTime');
+                $(this).find('input[name*="CutoffTime"]').attr('name', 'Slots[' + idx + '].CutoffTime');
+                $(this).find('input[name*="DeliveryTime"]').attr('name', 'Slots[' + idx + '].DeliveryTime');
+                $(this).find('input[name*="IsEnabled"]').attr('name', 'Slots[' + idx + '].IsEnabled');
+            });
+        }
+
+        $('#add-slot').on('click', function () {
+            var idx = $('#slots-body .slot-row').length;
+            var row = '<tr class="slot-row">' +
+                '<td class="slot-number">' + (idx + 1) + '</td>' +
+                '<td><input type="time" name="Slots[' + idx + '].OpenTime" class="form-control slot-open" required /></td>' +
+                '<td><input type="time" name="Slots[' + idx + '].CutoffTime" class="form-control slot-cutoff" required /></td>' +
+                '<td><input type="time" name="Slots[' + idx + '].DeliveryTime" class="form-control slot-delivery" required /></td>' +
+                '<td class="text-center"><input type="checkbox" name="Slots[' + idx + '].IsEnabled" value="true" checked /></td>' +
+                '<td class="text-center"><button type="button" class="btn btn-danger btn-sm remove-slot" title="Remove slot"><i class="fa fa-times"></i></button></td>' +
+                '</tr>';
+            $('#slots-body').append(row);
+        });
+
+        $(document).on('click', '.remove-slot', function () {
+            if ($('#slots-body .slot-row').length <= 1) {
+                alert('At least one delivery slot is required.');
+                return;
+            }
+            $(this).closest('.slot-row').remove();
+            reindexSlots();
+        });
+
+        // Client-side validation before submit
+        $('#orderschedule-form').on('submit', function (e) {
+            var rows = $('#slots-body .slot-row');
+            var hasError = false;
+
+            rows.each(function () {
+                var open = $(this).find('.slot-open').val();
+                var cutoff = $(this).find('.slot-cutoff').val();
+                var delivery = $(this).find('.slot-delivery').val();
+
+                $(this).find('input[type="time"]').css('border-color', '');
+
+                if (!open || !cutoff || !delivery) {
+                    hasError = true;
+                    $(this).find('input[type="time"]').filter(function() { return !$(this).val(); }).css('border-color', 'red');
+                    return;
+                }
+
+                if (open >= cutoff) {
+                    hasError = true;
+                    $(this).find('.slot-open, .slot-cutoff').css('border-color', 'red');
+                }
+                if (cutoff >= delivery) {
+                    hasError = true;
+                    $(this).find('.slot-cutoff, .slot-delivery').css('border-color', 'red');
+                }
+            });
+
+            if (hasError) {
+                e.preventDefault();
+                alert('Please fix the highlighted time fields. Open < Cutoff < Delivery is required.');
+            }
+        });
+    });
+</script>
