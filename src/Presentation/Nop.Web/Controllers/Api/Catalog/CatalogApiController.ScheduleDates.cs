@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -28,27 +29,42 @@ public partial class CatalogApiController
 
         string[] dates = null;
         var scheduleDateSetting = await _settingService.SettingExistsAsync(orderSettings, x => x.ScheduleDate, storeId);
-        if (scheduleDateSetting)
+        if (scheduleDateSetting && !string.IsNullOrWhiteSpace(orderSettings.ScheduleDate))
         {
-            dates = (await _staticCacheManager.GetAsync(
+            dates = await _staticCacheManager.GetAsync(
                 _staticCacheManager.PrepareKeyForDefaultCache(NopModelCacheDefaults.StoreScheduleDate,
                     await _storeContext.GetCurrentStoreAsync()),
-                async () =>
+                () =>
                 {
-                    var scheduleDate =
-                        await _settingService.GetSettingAsync("ordersettings.scheduledate",
-                            (await _storeContext.GetCurrentStoreAsync()).Id,
-                            true);
-                    return !string.IsNullOrWhiteSpace(scheduleDate.Value) ? scheduleDate.Value.Split(',') : null;
-                }));
+                    var raw = orderSettings.ScheduleDate.Trim();
 
-            return Ok(new { success = true, dates = dates });
+                    // New JSON format → convert to legacy string array
+                    if (raw.StartsWith("["))
+                    {
+                        var slots = JsonSerializer.Deserialize<JsonElement[]>(raw);
+                        return Task.FromResult(slots
+                            .Where(s => s.TryGetProperty("enabled", out var e) && e.GetBoolean())
+                            .Select(s =>
+                            {
+                                var open = s.GetProperty("open").GetString();
+                                var cutoff = s.GetProperty("cutoff").GetString();
+                                var delivery = s.GetProperty("delivery").GetString();
+                                return $"{open}:00-{cutoff}:00-{delivery}:00";
+                            })
+                            .ToArray());
+                    }
+
+                    // Legacy CSV format — return as-is
+                    return Task.FromResult(raw.Split(','));
+                });
+
+            return Ok(new { success = true, dates });
         }
 
         return Ok(new
         {
             success = true,
-            dates = dates,
+            dates = (string[])null,
             message = await _localizationService.GetResourceAsync("Setting.Not.Found")
         });
     }
@@ -65,39 +81,45 @@ public partial class CatalogApiController
 
         var dates = await _staticCacheManager.GetAsync(
             _staticCacheManager.PrepareKeyForDefaultCache(NopModelCacheDefaults.StoreScheduleDate, storeId),
-            async () =>
+            () =>
             {
-                var scheduleDate = await _settingService.GetSettingAsync("ordersettings.scheduledate", 
-                    storeId, true);
-                
-                return !string.IsNullOrWhiteSpace(scheduleDate.Value) ? scheduleDate.Value.Split(',') : null;
+                var raw = orderSettings.ScheduleDate?.Trim();
+                if (string.IsNullOrWhiteSpace(raw))
+                    return Task.FromResult<string[]>(null);
+
+                // New JSON format → convert to legacy strings
+                if (raw.StartsWith("["))
+                {
+                    var slots = JsonSerializer.Deserialize<JsonElement[]>(raw);
+                    return Task.FromResult(slots
+                        .Where(s => s.TryGetProperty("enabled", out var e) && e.GetBoolean())
+                        .Select(s =>
+                        {
+                            var open = s.GetProperty("open").GetString();
+                            var cutoff = s.GetProperty("cutoff").GetString();
+                            var delivery = s.GetProperty("delivery").GetString();
+                            return $"{open}:00-{cutoff}:00-{delivery}:00";
+                        })
+                        .ToArray());
+                }
+
+                return Task.FromResult(raw.Split(','));
             });
 
-        if(dates is null)
+        if (dates is null)
             return Ok(Enumerable.Empty<ScheduleDatesResponse>());
 
+        var yerevanTz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Yerevan");
         var allowedTimeRange = dates
             .Select(d => d.Split('-'))
-            .Select(splitDates => new
+            .Where(parts => parts.Length >= 3)
+            .Select(splitDates => new ScheduleDatesResponse
             {
-                FromUtc = TimeZoneInfo.ConvertTime(DateTime.Parse(splitDates[0]),
-                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Yerevan"),
-                    TimeZoneInfo.Utc),
-                ToUtc = TimeZoneInfo.ConvertTime(DateTime.Parse(splitDates[1]),
-                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Yerevan"),
-                    TimeZoneInfo.Utc),
-                DeliveredAtUtc = TimeZoneInfo.ConvertTime(DateTime.Parse(splitDates[2]),
-                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Yerevan"),
-                    TimeZoneInfo.Utc)
+                FromUtc = TimeZoneInfo.ConvertTime(DateTime.Parse(splitDates[0]), yerevanTz, TimeZoneInfo.Utc),
+                ToUtc = TimeZoneInfo.ConvertTime(DateTime.Parse(splitDates[1]), yerevanTz, TimeZoneInfo.Utc),
+                DeliveredAtUtc = TimeZoneInfo.ConvertTime(DateTime.Parse(splitDates[2]), yerevanTz, TimeZoneInfo.Utc)
             });
-        
-        // Enumerable.Range(0, 14)
-        //     .Select(idx => DateTime.UtcNow.AddDays(idx))
-        //     .Select(day => new ScheduleDatesResponse()
-        //     {
-        //         FromUtc = 
-        //     })
-        
-        return Ok();
+
+        return Ok(allowedTimeRange);
     }
 }
