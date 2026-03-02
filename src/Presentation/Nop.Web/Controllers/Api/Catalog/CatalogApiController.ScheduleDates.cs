@@ -43,12 +43,12 @@ public partial class CatalogApiController
                     {
                         var slots = JsonSerializer.Deserialize<JsonElement[]>(raw);
                         return Task.FromResult(slots
-                            .Where(s => s.TryGetProperty("enabled", out var e) && e.GetBoolean())
+                            .Where(s => s.TryGetProperty("isEnabled", out var e) && e.GetBoolean())
                             .Select(s =>
                             {
-                                var open = s.GetProperty("open").GetString();
-                                var cutoff = s.GetProperty("cutoff").GetString();
-                                var delivery = s.GetProperty("delivery").GetString();
+                                var open = s.GetProperty("openTime").GetString();
+                                var cutoff = s.GetProperty("cutoffTime").GetString();
+                                var delivery = s.GetProperty("deliveryTime").GetString();
                                 return $"{open}:00-{cutoff}:00-{delivery}:00";
                             })
                             .ToArray());
@@ -68,7 +68,7 @@ public partial class CatalogApiController
             message = await _localizationService.GetResourceAsync("Setting.Not.Found")
         });
     }
-    
+
     [HttpGet("get-schedules")]
     [ProducesResponseType(typeof(IEnumerable<ScheduleDatesResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<ScheduleDatesResponse>>> GetSchedules()
@@ -92,12 +92,12 @@ public partial class CatalogApiController
                 {
                     var slots = JsonSerializer.Deserialize<JsonElement[]>(raw);
                     return Task.FromResult(slots
-                        .Where(s => s.TryGetProperty("enabled", out var e) && e.GetBoolean())
+                        .Where(s => s.TryGetProperty("isEnabled", out var e) && e.GetBoolean())
                         .Select(s =>
                         {
-                            var open = s.GetProperty("open").GetString();
-                            var cutoff = s.GetProperty("cutoff").GetString();
-                            var delivery = s.GetProperty("delivery").GetString();
+                            var open = s.GetProperty("openTime").GetString();
+                            var cutoff = s.GetProperty("cutoffTime").GetString();
+                            var delivery = s.GetProperty("deliveryTime").GetString();
                             return $"{open}:00-{cutoff}:00-{delivery}:00";
                         })
                         .ToArray());

@@ -29,8 +29,23 @@ namespace Nop.Plugin.Company.Company.Services
         private static readonly JsonSerializerOptions _jsonOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Converters = { new TimeSpanJsonConverter() }
         };
+
+        private class TimeSpanJsonConverter : JsonConverter<TimeSpan>
+        {
+            public override TimeSpan Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                var value = reader.GetString();
+                return TimeSpan.TryParse(value, out var ts) ? ts : TimeSpan.Zero;
+            }
+
+            public override void Write(Utf8JsonWriter writer, TimeSpan value, JsonSerializerOptions options)
+            {
+                writer.WriteStringValue(value.ToString(@"hh\:mm"));
+            }
+        }
 
         private readonly ISettingService _settingService;
         private readonly IWorkContext _workContext;

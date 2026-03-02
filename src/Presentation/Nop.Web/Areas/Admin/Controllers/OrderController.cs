@@ -2073,10 +2073,10 @@ namespace Nop.Web.Areas.Admin.Controllers
             // Serialize to JSON and save
             var jsonSlots = model.Slots.Select((s, idx) => new
             {
-                open = s.OpenTime,
-                cutoff = s.CutoffTime,
-                delivery = s.DeliveryTime,
-                enabled = s.IsEnabled,
+                openTime = s.OpenTime,
+                cutoffTime = s.CutoffTime,
+                deliveryTime = s.DeliveryTime,
+                isEnabled = s.IsEnabled,
                 sortOrder = idx
             });
 
