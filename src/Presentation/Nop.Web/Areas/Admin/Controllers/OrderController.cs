@@ -45,6 +45,11 @@ namespace Nop.Web.Areas.Admin.Controllers
     {
         #region Fields
 
+        private static readonly JsonSerializerOptions _camelCaseJsonOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
         private readonly IAddressAttributeParser _addressAttributeParser;
         private readonly IAddressService _addressService;
         private readonly ICustomerActivityService _customerActivityService;
@@ -1949,10 +1954,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 if (raw.StartsWith("["))
                 {
                     // New JSON format
-                    var slots = JsonSerializer.Deserialize<List<DeliverySlotModel>>(raw, new JsonSerializerOptions
-                    {
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                    });
+                    var slots = JsonSerializer.Deserialize<List<DeliverySlotModel>>(raw, _camelCaseJsonOptions);
                     model.Slots = slots ?? new List<DeliverySlotModel>();
                 }
                 else
@@ -2083,7 +2085,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             var storeId = await _storeContext.GetActiveStoreScopeConfigurationAsync();
             var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>(storeId);
             orderSettings.ScheduleDate = JsonSerializer.Serialize(jsonSlots);
-            await _settingService.SaveSettingAsync(orderSettings, x => x.ScheduleDate, clearCache: true);
+            await _settingService.SaveSettingAsync(orderSettings, x => x.ScheduleDate, storeId, clearCache: true);
 
             _notificationService.SuccessNotification(
                 await _localizationService.GetResourceAsync("Admin.Orders.ScheduleDate.Updated"));
