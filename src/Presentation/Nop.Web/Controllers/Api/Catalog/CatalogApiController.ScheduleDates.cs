@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -20,7 +20,7 @@ public partial class CatalogApiController
         public DateTime ToUtc { get; set; }
         public DateTime DeliveredAtUtc { get; set; }
     }
-    
+
     [HttpGet("get-schedule-dates")]
     public async Task<IActionResult> GetScheduleDates()
     {
@@ -37,25 +37,17 @@ public partial class CatalogApiController
                 () =>
                 {
                     var raw = orderSettings.ScheduleDate.Trim();
-
-                    // New JSON format → convert to legacy string array
-                    if (raw.StartsWith("["))
-                    {
-                        var slots = JsonSerializer.Deserialize<JsonElement[]>(raw);
-                        return Task.FromResult(slots
-                            .Where(s => s.TryGetProperty("isEnabled", out var e) && e.GetBoolean())
-                            .Select(s =>
-                            {
-                                var open = s.GetProperty("openTime").GetString();
-                                var cutoff = s.GetProperty("cutoffTime").GetString();
-                                var delivery = s.GetProperty("deliveryTime").GetString();
-                                return $"{open}:00-{cutoff}:00-{delivery}:00";
-                            })
-                            .ToArray());
-                    }
-
-                    // Legacy CSV format — return as-is
-                    return Task.FromResult(raw.Split(','));
+                    var slots = JsonSerializer.Deserialize<JsonElement[]>(raw);
+                    return Task.FromResult(slots
+                        .Where(s => s.TryGetProperty("isEnabled", out var e) && e.GetBoolean())
+                        .Select(s =>
+                        {
+                            var open = s.GetProperty("openTime").GetString();
+                            var cutoff = s.GetProperty("cutoffTime").GetString();
+                            var delivery = s.GetProperty("deliveryTime").GetString();
+                            return $"{open}:00-{cutoff}:00-{delivery}:00";
+                        })
+                        .ToArray());
                 });
 
             return Ok(new { success = true, dates });
@@ -87,23 +79,17 @@ public partial class CatalogApiController
                 if (string.IsNullOrWhiteSpace(raw))
                     return Task.FromResult<string[]>(null);
 
-                // New JSON format → convert to legacy strings
-                if (raw.StartsWith("["))
-                {
-                    var slots = JsonSerializer.Deserialize<JsonElement[]>(raw);
-                    return Task.FromResult(slots
-                        .Where(s => s.TryGetProperty("isEnabled", out var e) && e.GetBoolean())
-                        .Select(s =>
-                        {
-                            var open = s.GetProperty("openTime").GetString();
-                            var cutoff = s.GetProperty("cutoffTime").GetString();
-                            var delivery = s.GetProperty("deliveryTime").GetString();
-                            return $"{open}:00-{cutoff}:00-{delivery}:00";
-                        })
-                        .ToArray());
-                }
-
-                return Task.FromResult(raw.Split(','));
+                var slots = JsonSerializer.Deserialize<JsonElement[]>(raw);
+                return Task.FromResult(slots
+                    .Where(s => s.TryGetProperty("isEnabled", out var e) && e.GetBoolean())
+                    .Select(s =>
+                    {
+                        var open = s.GetProperty("openTime").GetString();
+                        var cutoff = s.GetProperty("cutoffTime").GetString();
+                        var delivery = s.GetProperty("deliveryTime").GetString();
+                        return $"{open}:00-{cutoff}:00-{delivery}:00";
+                    })
+                    .ToArray());
             });
 
         if (dates is null)

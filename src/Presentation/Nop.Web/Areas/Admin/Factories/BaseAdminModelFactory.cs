@@ -377,7 +377,11 @@ namespace Nop.Web.Areas.Admin.Factories
             var timezoneInfo = company == null ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer) : TZConvert.GetTimeZoneInfo(company.TimeZone);
             var now = _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
             var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>();
-            var values = orderSettings.ScheduleDate.Split(',').Select(h => h.Split('-')[2]);
+            var raw = orderSettings.ScheduleDate?.Trim() ?? "[]";
+            var slots = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement[]>(raw);
+            var values = slots
+                .Where(s => !s.TryGetProperty("isEnabled", out var e) || e.GetBoolean())
+                .Select(s => s.GetProperty("deliveryTime").GetString());
             var hours = values.Select((value, index) => new { value, index })
                 .Select(i => new SelectListItem(i.value, i.value.Split(":")[0])).ToList();
             foreach (var item in hours)

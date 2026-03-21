@@ -65,18 +65,32 @@
     .global-delivery-picker {
         position: relative;
         display: inline-block;
+        width: auto !important;
     }
 
     .delivery-display {
         display: flex;
         align-items: center;
-        padding: 8px 12px;
+        padding: 6px 12px;
         background: #f8f9fa;
         border: 1px solid #dee2e6;
         border-radius: 4px;
         cursor: pointer;
         transition: background-color 0.2s ease;
         font-size: 14px;
+    }
+
+    @@media all and (max-width: 1000px) {
+        .global-delivery-picker {
+            display: block !important;
+            text-align: center;
+        }
+    }
+
+    @@media all and (min-width: 1001px) {
+        .delivery-display {
+            padding: 0 12px;
+        }
     }
 
     .delivery-display:hover {
@@ -398,7 +412,6 @@
     }
 
     .delivery-display.needs-attention {
-        border-width: 2px;
         animation: borderPulse 2s infinite;
     }
 

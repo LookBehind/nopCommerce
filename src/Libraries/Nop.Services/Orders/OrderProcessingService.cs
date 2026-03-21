@@ -3313,42 +3313,28 @@ namespace Nop.Services.Orders
             // Get the number of days ahead based on company settings
             var daysAhead = company?.OrderAheadDays ?? 14;
 
-            // Parse all schedule dates from settings
-            var scheduleDateValues = _orderSettings.ScheduleDate.Split(',');
+            // Parse delivery slots from JSON setting
             var timeSlots = new List<(TimeSpan lastOrderTime, TimeSpan deliveryTime)>();
+            var raw = _orderSettings.ScheduleDate?.Trim();
 
-            // Process each schedule date entry
-            foreach (var scheduleDate in scheduleDateValues)
+            if (!string.IsNullOrWhiteSpace(raw))
             {
-                // Each schedule date format is expected to be like "label-lastOrderTime-deliveryTime"
-                var parts = scheduleDate.Split('-');
-                if (parts.Length < 3)
-                {
-                    await _logger.ErrorAsync($"Delivery schedule is of invalid format, {scheduleDate}");
-                    continue;
-                }
-
-                var lastOrderHourParts = parts[1].Split(':');
-                var deliveryHourParts = parts[2].Split(':');
-
                 try
                 {
-                    // Create TimeSpan objects for last order time and delivery time
-                    var lastOrderTime = new TimeSpan(
-                        Convert.ToInt32(lastOrderHourParts[0]),
-                        Convert.ToInt32(lastOrderHourParts[1]),
-                        Convert.ToInt32(lastOrderHourParts[2]));
+                    var slots = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement[]>(raw);
+                    foreach (var slot in slots)
+                    {
+                        if (slot.TryGetProperty("isEnabled", out var enabled) && !enabled.GetBoolean())
+                            continue;
 
-                    var deliveryTime = new TimeSpan(
-                        Convert.ToInt32(deliveryHourParts[0]),
-                        Convert.ToInt32(deliveryHourParts[1]),
-                        Convert.ToInt32(deliveryHourParts[2]));
-
-                    timeSlots.Add((lastOrderTime, deliveryTime));
+                        var cutoff = TimeSpan.Parse(slot.GetProperty("cutoffTime").GetString());
+                        var delivery = TimeSpan.Parse(slot.GetProperty("deliveryTime").GetString());
+                        timeSlots.Add((cutoff, delivery));
+                    }
                 }
                 catch (Exception ex)
                 {
-                    await _logger.ErrorAsync($"Error parsing delivery schedule: {scheduleDate}", ex);
+                    await _logger.ErrorAsync($"Error parsing delivery schedule JSON: {raw}", ex);
                 }
             }
 

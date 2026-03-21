@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Nop.Core.Http.Extensions;
 using Nop.Core;
 using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Customers;
@@ -117,5 +118,24 @@ public class CheckoutController_Overriden: CheckoutController
         }
         
         return await base.OpcSaveShipping(model, form);
+    }
+
+    public override async Task<IActionResult> OpcConfirmOrder()
+    {
+        var currentCustomer = await _workContext.GetCurrentCustomerAsync();
+        var currentStore = await _storeContext.GetCurrentStoreAsync();
+        var deliveryTime = await _deliveryTimeStorageService.GetSelectedDeliveryTimeAsync(
+            currentCustomer,
+            currentStore.Id);
+
+        if (deliveryTime.HasValue)
+        {
+            var processPaymentRequest = HttpContext.Session.Get<ProcessPaymentRequest>("OrderPaymentInfo")
+                                        ?? new ProcessPaymentRequest();
+            processPaymentRequest.ScheduleDate = deliveryTime.Value;
+            HttpContext.Session.Set("OrderPaymentInfo", processPaymentRequest);
+        }
+
+        return await base.OpcConfirmOrder();
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -123,10 +124,16 @@ namespace Nop.Plugin.Company.Company.Controllers
                     stateClass = "no-selection";
                 }
 
+                var possibleTimes = await deliveryTimeService.GetAvailableDeliveryTimesAsync();
+                var orderCounts = await deliveryTimeService.GetOrderCountsByDeliveryTimesAsync(possibleTimes);
+
                 return Json(new {
                     success = true,
                     selectedDeliveryTime = selectedTime,
-                    possibleDeliveryTimes = await deliveryTimeService.GetAvailableDeliveryTimesAsync(),
+                    possibleDeliveryTimes = possibleTimes,
+                    orderCountsByTime = orderCounts.ToDictionary(
+                        kvp => kvp.Key.ToString("yyyy-MM-ddTHH:mm:ss"),
+                        kvp => kvp.Value),
                     isValid = isValid,
                     shouldPrompt = shouldPrompt,
                     promptType = promptType,

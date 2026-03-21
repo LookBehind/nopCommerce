@@ -450,18 +450,11 @@ namespace Nop.Web.Controllers.Api.Order
             var companyTimezone = TZConvert.GetTimeZoneInfo(company.TimeZone);
             
             // try to fix up timezone issues
-            var deliveryTripletString = _orderSettings.ScheduleDate.Split(',');
-            var validDeliveryTimes = deliveryTripletString
-                .Select(x => x.Trim().Split('-'))
-                .Where(x => x.Length == 3)
-                .Select(x =>
-                {
-                    var timeString = x[2].Trim().Split(':');
-                    var hour = int.Parse(timeString[0]);
-                    var minute = int.Parse(timeString[1]);
-                    var second = int.Parse(timeString[2]);
-                    return new TimeSpan(hour, minute, second);
-                })
+            var raw = _orderSettings.ScheduleDate?.Trim() ?? "[]";
+            var slots = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement[]>(raw);
+            var validDeliveryTimes = slots
+                .Where(s => !s.TryGetProperty("isEnabled", out var e) || e.GetBoolean())
+                .Select(s => TimeSpan.Parse(s.GetProperty("deliveryTime").GetString()))
                 .ToArray();
 
             if (!validDeliveryTimes.Contains(date.TimeOfDay))
@@ -496,6 +489,8 @@ namespace Nop.Web.Controllers.Api.Order
             DateTime customerPreferredScheduleDate)
         {
             var firstAvailableDeliveryTimes = await _orderProcessingService.GetAvailableDeliverTimesAsync();
+            if (!firstAvailableDeliveryTimes.Any())
+                return false;
 
             var firstAvailableDeliveryTime = firstAvailableDeliveryTimes.First();
             var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
