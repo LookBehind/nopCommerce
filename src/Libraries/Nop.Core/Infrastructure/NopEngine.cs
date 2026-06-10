@@ -170,10 +170,18 @@ namespace Nop.Core.Infrastructure
         {
             ServiceProvider = application.ApplicationServices;
 
-            application.UseForwardedHeaders(new ForwardedHeadersOptions
+            var forwardedHeadersOptions = new ForwardedHeadersOptions
             {
-                ForwardedHeaders = ForwardedHeaders.XForwardedProto
-            });
+                ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor,
+                //multiple in-cluster proxy hops (Traefik DaemonSet + CNI) — don't cap the chain
+                ForwardLimit = null
+            };
+            //trust forwarded headers from in-cluster proxies (e.g. Traefik pods on 10.x);
+            //only our reverse proxy can reach the app, so clearing the loopback-only
+            //defaults is safe and lets ASP.NET honor X-Forwarded-Proto behind k8s ingress
+            forwardedHeadersOptions.KnownNetworks.Clear();
+            forwardedHeadersOptions.KnownProxies.Clear();
+            application.UseForwardedHeaders(forwardedHeadersOptions);
 
             //find startup configurations provided by other assemblies
             var typeFinder = Resolve<ITypeFinder>();
