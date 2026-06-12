@@ -141,6 +141,7 @@
                         <ul class="info">
                             <li>@T("Account.CustomerOrders.OrderStatus"): <span class="order-status @order.OrderStatusEnum.ToString().ToLowerInvariant()">@order.OrderStatus</span></li>
                             <li>@T("Account.CustomerOrders.OrderDate"): <span class="order-date">@order.CreatedOn.ToString()</span></li>
+                            <li>@T("Order.Shipments.DeliveryDate"): <span class="delivery-date">@order.ScheduleDate.ToString("g")</span></li>
                             <li>@T("Account.CustomerOrders.OrderTotal"): <span class="order-total">@order.OrderTotal</span></li>
                         </ul>
                         <div class="buttons">

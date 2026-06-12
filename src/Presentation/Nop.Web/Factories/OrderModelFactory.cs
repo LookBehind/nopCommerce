@@ -154,6 +154,8 @@ namespace Nop.Web.Factories
                 {
                     Id = order.Id,
                     CreatedOn = await _dateTimeHelper.ConvertToUserTimeAsync(order.CreatedOnUtc, DateTimeKind.Utc),
+                    //chosen delivery date/time; stored as local wall-clock (not UTC), so display as-is
+                    ScheduleDate = order.ScheduleDate,
                     OrderStatusEnum = order.OrderStatus,
                     OrderStatus = await _localizationService.GetLocalizedEnumAsync(order.OrderStatus),
                     PaymentStatus = await _localizationService.GetLocalizedEnumAsync(order.PaymentStatus),
