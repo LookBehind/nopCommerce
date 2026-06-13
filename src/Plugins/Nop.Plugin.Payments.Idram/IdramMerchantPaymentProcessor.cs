@@ -34,6 +34,8 @@ namespace Nop.Plugin.Payments.Idram
     {
         // keep in sync with CheckMoneyOrderPaymentProcessor.CompanyBenefitExemptionRole
         private const string CompanyBenefitExemptionRole = "Allowance Excempt";
+        // keep in sync with Nop.Plugin.Company.Company DeliveryTimeStorageService.SELECTED_DELIVERY_TIME_KEY
+        private const string SelectedDeliveryTimeAttributeName = "SELECTED_DELIVERY_TIME_KEY";
         
         private readonly IWebHelper _webHelper;
         private readonly IPaymentService _paymentService;
@@ -194,10 +196,12 @@ namespace Nop.Plugin.Payments.Idram
             if (shoppingCartTotal.shoppingCartTotal > todayCustomerLimit)
                 return false;
 
-            var orderDayDate = await _genericAttribute.GetAttributeAsync(await _workContext.GetCurrentCustomerAsync(),
-                OrderProcessingService.DeliveryTimeAttributeName,
-                (await _storeContext.GetCurrentStoreAsync()).Id,
-                DateTime.UtcNow.Date);
+            // Resolve the delivery date from the active picker's attribute (the same source
+            // OpcConfirmOrder uses for the order's ScheduleDate). The legacy "deliveryTime"
+            // attribute is no longer written, so reading it computes the allowance for a stale day.
+            var orderDayDate = await _genericAttribute.GetAttributeAsync<DateTime?>(await _workContext.GetCurrentCustomerAsync(),
+                SelectedDeliveryTimeAttributeName,
+                (await _storeContext.GetCurrentStoreAsync()).Id) ?? DateTime.UtcNow.Date;
             
             var totalOrderTotal = await GetOrderDayTotal(orderDayDate);
             
