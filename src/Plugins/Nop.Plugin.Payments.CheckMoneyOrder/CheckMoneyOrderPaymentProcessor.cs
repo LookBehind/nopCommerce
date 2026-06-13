@@ -40,6 +40,8 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         private const string CompanyBenefitExemptionRole = "Allowance Excempt";
         private const string UnlimitedAccountRoleSystemName = "UnlimitedAccount";
         private const string VoidedAllowancesSettingsKey = "VoidedAllowancesSettings";
+        // keep in sync with Nop.Plugin.Company.Company DeliveryTimeStorageService.SELECTED_DELIVERY_TIME_KEY
+        private const string SelectedDeliveryTimeAttributeName = "SELECTED_DELIVERY_TIME_KEY";
         
         #region Fields
 
@@ -223,11 +225,13 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             var shoppingCartTotal = 
                 await _orderTotalCalculationService.GetShoppingCartTotalAsync(cart);
 
-            var orderDayDate = await _genericAttribute.GetAttributeAsync(
+            // Resolve the delivery date from the active picker's attribute (the same source
+            // OpcConfirmOrder uses for the order's ScheduleDate). The legacy "deliveryTime"
+            // attribute is no longer written, so reading it computes the allowance for a stale day.
+            var orderDayDate = await _genericAttribute.GetAttributeAsync<DateTime?>(
                 customer,
-                OrderProcessingService.DeliveryTimeAttributeName,
-                store.Id,
-                DateTime.UtcNow.Date);
+                SelectedDeliveryTimeAttributeName,
+                store.Id) ?? DateTime.UtcNow.Date;
             
             var customerBalance = 
                 await GetCustomerRemainingAllowance(new CustomerBalanceRequest()

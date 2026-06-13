@@ -25,6 +25,7 @@ using Nop.Web.Controllers;
 using Nop.Web.Factories;
 using Nop.Web.Framework.Controllers;
 using Nop.Web.Models.Checkout;
+using TimeZoneConverter;
 
 namespace Nop.Plugin.Company.Company.Controllers;
 
@@ -34,7 +35,9 @@ public class CheckoutController_Overriden: CheckoutController
     private readonly IStoreContext _storeContext;
     private readonly IWorkContext _workContext;
     private readonly IDeliveryTimeService _deliveryTimeService;
-    
+    private readonly IDateTimeHelper _dateTimeHelper;
+    private readonly ICompanyService _companyService;
+
     public CheckoutController_Overriden(
         IDeliveryTimeStorageService deliveryTimeStorageService,
         IDeliveryTimeService deliveryTimeService,
@@ -96,6 +99,8 @@ public class CheckoutController_Overriden: CheckoutController
         _storeContext = storeContext;
         _workContext = workContext;
         _deliveryTimeService = deliveryTimeService;
+        _dateTimeHelper = dateTimeHelper;
+        _companyService = companyService;
     }
 
     public override async Task<IActionResult> OpcSaveShipping(CheckoutShippingAddressModel model, 
@@ -130,9 +135,19 @@ public class CheckoutController_Overriden: CheckoutController
 
         if (deliveryTime.HasValue)
         {
+            // The picker stores the delivery time as company-local wall-clock time (slots are
+            // generated in the company timezone, see DeliveryTimeService). Order.ScheduleDate is
+            // stored in UTC everywhere else (mobile API reads it as UTC, admin edits convert
+            // local->UTC), so convert here before persisting to avoid an off-by-offset schedule.
+            var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
+            var timeZoneInfo = company == null
+                ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
+                : TZConvert.GetTimeZoneInfo(company.TimeZone);
+            var scheduleDateUtc = _dateTimeHelper.ConvertToUtcTime(deliveryTime.Value, timeZoneInfo);
+
             var processPaymentRequest = HttpContext.Session.Get<ProcessPaymentRequest>("OrderPaymentInfo")
                                         ?? new ProcessPaymentRequest();
-            processPaymentRequest.ScheduleDate = deliveryTime.Value;
+            processPaymentRequest.ScheduleDate = scheduleDateUtc;
             HttpContext.Session.Set("OrderPaymentInfo", processPaymentRequest);
         }
 
