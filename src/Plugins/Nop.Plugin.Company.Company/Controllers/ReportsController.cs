@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Domain.Customers;
@@ -16,7 +15,6 @@ namespace Nop.Plugin.Company.Company.Controllers
     /// (admins see admin-only widgets too). Per-tenant isolation is structural — the
     /// service only ever reads this instance's own DB.
     /// </summary>
-    [Authorize]
     public class ReportsController(
         IWorkContext workContext,
         ICustomerService customerService,
@@ -26,6 +24,12 @@ namespace Nop.Plugin.Company.Company.Controllers
         public async Task<IActionResult> Index(DateTime? from, DateTime? to)
         {
             var customer = await workContext.GetCurrentCustomerAsync();
+
+            // nopCommerce storefront auth is cookie-based, but the default auth scheme
+            // is JWT (mobile API) — so [Authorize] would reject cookie sessions. Gate
+            // manually like the built-in CustomerController does.
+            if (!await customerService.IsRegisteredAsync(customer))
+                return RedirectToRoute("Login", new { returnUrl = Url.RouteUrl("Plugin.Company.Company.Reports") });
 
             var isAdmin = await customerService.IsInCustomerRoleAsync(customer, NopCustomerDefaults.AdministratorsRoleName);
             var canView = isAdmin || await customerService.IsInCustomerRoleAsync(
