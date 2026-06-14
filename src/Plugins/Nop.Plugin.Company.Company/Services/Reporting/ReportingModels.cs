@@ -23,6 +23,7 @@ namespace Nop.Plugin.Company.Company.Services.Reporting
     {
         public string Id { get; set; }
         public string Title { get; set; }
+        public string Description { get; set; }
         public WidgetViz Viz { get; set; }
         public WidgetParams Params { get; set; }
         public bool AdminOnly { get; set; }
@@ -36,6 +37,7 @@ namespace Nop.Plugin.Company.Company.Services.Reporting
     {
         public string WidgetId { get; set; }
         public string Title { get; set; }
+        public string Description { get; set; }
         public WidgetViz Viz { get; set; }
         public IList<string> Columns { get; set; } = new List<string>();
         public IList<object[]> Rows { get; set; } = new List<object[]>();

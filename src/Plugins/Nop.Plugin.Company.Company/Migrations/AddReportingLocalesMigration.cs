@@ -28,7 +28,8 @@ namespace Nop.Plugin.Company.Company.Migrations
             var resources = new Dictionary<string, string>
             {
                 ["Company.Reports.HeaderLink"] = "Reports",
-                ["Company.Reports.Title"] = "Reports"
+                ["Company.Reports.Title"] = "Reports",
+                ["Company.Reports.DownloadExcel"] = "Download as Excel"
             };
 
             var languages = _dataProvider.GetTable<Language>().ToList();

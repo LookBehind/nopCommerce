@@ -23,6 +23,10 @@ namespace Nop.Plugin.Company.Company.Infrastructure
             endpointRouteBuilder.MapControllerRoute("Plugin.Company.Company.Reports",
                 "reports",
                 new { controller = "Reports", action = "Index" });
+
+            endpointRouteBuilder.MapControllerRoute("Plugin.Company.Company.ReportsExport",
+                "reports/export",
+                new { controller = "Reports", action = "Export" });
         }
 
         /// <summary>

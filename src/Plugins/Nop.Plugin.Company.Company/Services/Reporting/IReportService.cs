@@ -14,6 +14,9 @@ namespace Nop.Plugin.Company.Company.Services.Reporting
         /// <summary>Widgets available to the caller (admin sees admin-only ones too).</summary>
         IList<WidgetDefinition> ListWidgets(bool includeAdmin);
 
+        /// <summary>UTC offset (minutes) for the current customer's company timezone.</summary>
+        Task<int> GetUtcOffsetMinutesAsync();
+
         /// <summary>Run a widget by id. from/to are LOCAL (UTC+4) dates for DateRange widgets.</summary>
         Task<ReportResult> RunWidgetAsync(string widgetId, DateTime? from, DateTime? to, bool isAdmin);
     }

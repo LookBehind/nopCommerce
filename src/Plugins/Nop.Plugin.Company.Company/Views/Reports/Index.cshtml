@@ -4,15 +4,40 @@
     Layout = "_ColumnsOne";   // public layout (overrides the plugin's admin _ViewStart)
 }
 
+<style>
+    .reports-page .report-toolbar { display:flex; gap:18px; align-items:flex-end; flex-wrap:wrap; margin:10px 0 24px; }
+    .reports-page .report-range { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .reports-page .report-range label { display:flex; flex-direction:column; font-size:12px; color:#666; gap:3px; }
+    .reports-page .report-range input[type=date] { padding:5px 8px; }
+    .reports-page .btn { padding:7px 14px; border:1px solid #ccc; background:#f5f5f5; border-radius:4px; cursor:pointer; text-decoration:none; color:#333; font-size:13px; }
+    .reports-page .btn-excel { background:#1d6f42; border-color:#1d6f42; color:#fff; }
+    .reports-page .report-widget { margin:0 0 34px; }
+    .reports-page .report-widget h2 { font-size:18px; margin:0 0 2px; }
+    .reports-page .report-widget .desc { color:#777; font-size:13px; margin:0 0 12px; }
+    .reports-page .report-table { border-collapse:collapse; width:100%; font-size:13px; }
+    .reports-page .report-table th, .reports-page .report-table td { border:1px solid #e0e0e0; padding:6px 10px; text-align:left; }
+    .reports-page .report-table th { background:#f3f3f3; font-weight:600; }
+    .reports-page .report-table tr:nth-child(even) td { background:#fafafa; }
+    .reports-page .report-table td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .reports-page .chart-wrap { max-width:760px; margin:0 0 14px; }
+    .reports-page .no-data { color:#999; font-style:italic; }
+</style>
+
 <div class="page reports-page">
     <div class="page-title"><h1>@T("Company.Reports.Title")</h1></div>
     <div class="page-body">
 
-        <form method="get" action="@Url.RouteUrl("Plugin.Company.Company.Reports")" class="report-range">
-            <label>From <input type="date" name="from" value="@Model.From.ToString("yyyy-MM-dd")" /></label>
-            <label>To <input type="date" name="to" value="@Model.To.ToString("yyyy-MM-dd")" /></label>
-            <button type="submit">Apply</button>
-        </form>
+        <div class="report-toolbar">
+            <form method="get" action="@Url.RouteUrl("Plugin.Company.Company.Reports")" class="report-range">
+                <label>From<input type="date" name="from" value="@Model.From.ToString("yyyy-MM-dd")" /></label>
+                <label>To<input type="date" name="to" value="@Model.To.ToString("yyyy-MM-dd")" /></label>
+                <button type="submit" class="btn">Apply</button>
+            </form>
+            <a class="btn btn-excel"
+               href="@Url.RouteUrl("Plugin.Company.Company.ReportsExport", new { from = Model.From.ToString("yyyy-MM-dd"), to = Model.To.ToString("yyyy-MM-dd") })">
+                @T("Company.Reports.DownloadExcel")
+            </a>
+        </div>
 
         @for (var i = 0; i < Model.Widgets.Count; i++)
         {
@@ -20,15 +45,20 @@
             var canvasId = "chart_" + i;
             <div class="report-widget">
                 <h2>@w.Title</h2>
+                @if (!string.IsNullOrEmpty(w.Description))
+                {
+                    <p class="desc">@w.Description</p>
+                }
 
                 @if (IsChartable(w))
                 {
-                    <canvas id="@canvasId" height="120"></canvas>
+                    <div class="chart-wrap"><canvas id="@canvasId" height="120"></canvas></div>
                     <script>
                         window.__reportCharts = window.__reportCharts || [];
                         window.__reportCharts.push({
                             id: '@canvasId',
                             type: '@(w.Viz == WidgetViz.Line ? "line" : "bar")',
+                            title: @Html.Raw(ToJson(w.Title)),
                             label: @Html.Raw(ToJson(w.Columns[1])),
                             labels: @Html.Raw(ToJson(w.Rows.Select(r => Cell(r[0])))),
                             data: @Html.Raw(ToJson(w.Rows.Select(r => r[1] == null ? 0m : System.Convert.ToDecimal(r[1]))))
@@ -49,7 +79,7 @@
                         <tbody>
                             @foreach (var row in w.Rows)
                             {
-                                <tr>@foreach (var v in row){<td>@Cell(v)</td>}</tr>
+                                <tr>@foreach (var v in row){<td class="@(IsNum(v) ? "num" : "")">@Cell(v)</td>}</tr>
                             }
                         </tbody>
                     </table>
@@ -68,17 +98,26 @@
             new Chart(el, {
                 type: c.type,
                 data: { labels: c.labels, datasets: [{ label: c.label, data: c.data, borderWidth: 1 }] },
-                options: { responsive: true, plugins: { legend: { display: true } } }
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: true },
+                        title: { display: true, text: c.title }
+                    }
+                }
             });
         });
     })();
 </script>
 
 @functions {
+    private static bool IsNum(object v) => v is decimal or int or long or double or float or short;
+
     private static string Cell(object v) => v switch
     {
         null => "",
         System.DateTime d => d.ToString("yyyy-MM-dd"),
+        decimal m => m.ToString("#,0.##", System.Globalization.CultureInfo.InvariantCulture),
         System.IFormattable f => f.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
         _ => v.ToString()
     };

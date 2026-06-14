@@ -3,13 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using LinqToDB.Data;
+using Nop.Core;
 using Nop.Data;
+using Nop.Services.Companies;
+using Nop.Services.Helpers;
+using TimeZoneConverter;
 
 namespace Nop.Plugin.Company.Company.Services.Reporting
 {
     /// <summary>
     /// Reporting widgets. Canonical rules (see docs/plans/2026-06-14-redash-query-audit.md):
-    ///  - delivery time = ScheduleDate (nvarchar, UTC); local = +4h (Armenia UTC+4).
+    ///  - delivery time = ScheduleDate (nvarchar, UTC); local = +tenant offset. The offset
+    ///    is NOT hardcoded — it comes from the viewing customer's Company.TimeZone (same
+    ///    source DeliveryTimeService uses), passed to SQL as @tzoffset minutes.
     ///    NEVER ScheduleDateTime (that's a copy of CreatedOnUtc). TRY_CONVERT guards the string.
     ///  - "real order" filter: o.Deleted = 0 AND o.OrderStatusId &lt;&gt; 40.
     ///  - vendors: v.Deleted = 0 only (no Active check, no test-vendor name exclusion).
@@ -18,26 +24,40 @@ namespace Nop.Plugin.Company.Company.Services.Reporting
     public class ReportService : IReportService
     {
         private readonly INopDataProvider _dataProvider;
+        private readonly IWorkContext _workContext;
+        private readonly ICompanyService _companyService;
+        private readonly IDateTimeHelper _dateTimeHelper;
 
-        public ReportService(INopDataProvider dataProvider)
+        public ReportService(
+            INopDataProvider dataProvider,
+            IWorkContext workContext,
+            ICompanyService companyService,
+            IDateTimeHelper dateTimeHelper)
         {
             _dataProvider = dataProvider;
+            _workContext = workContext;
+            _companyService = companyService;
+            _dateTimeHelper = dateTimeHelper;
         }
 
-        // Local (UTC+4) delivery datetime expression, reused across widgets.
-        private const string LOCAL_DT = "DATEADD(HOUR, 4, TRY_CONVERT(datetime2, o.ScheduleDate))";
+        // Local delivery datetime = ScheduleDate (UTC) shifted by the tenant offset (minutes).
+        private const string LOCAL_DT = "DATEADD(MINUTE, @tzoffset, TRY_CONVERT(datetime2, o.ScheduleDate))";
         private const string ORDER_FILTER =
             "v.Deleted = 0 AND o.Deleted = 0 AND o.OrderStatusId <> 40 " +
             "AND TRY_CONVERT(datetime2, o.ScheduleDate) IS NOT NULL";
 
         private static readonly List<WidgetDefinition> Catalog = new()
         {
-            new() { Id = "order-total-per-vendor-this-week", Title = "Order total per vendor (this week)", Viz = WidgetViz.Table, Params = WidgetParams.None },
-            new() { Id = "order-total-per-vendor",           Title = "Order total per vendor",            Viz = WidgetViz.Table, Params = WidgetParams.DateRange },
-            new() { Id = "order-total-per-vendor-per-day",   Title = "Order total per vendor per day",    Viz = WidgetViz.Bar,   Params = WidgetParams.DateRange },
-            new() { Id = "average-cheque",                   Title = "Average cheque",                    Viz = WidgetViz.Line,  Params = WidgetParams.DateRange },
-            new() { Id = "active-persons",                   Title = "Active persons",                    Viz = WidgetViz.Bar,   Params = WidgetParams.DateRange },
-            new() { Id = "order-list",                       Title = "Order list",                        Viz = WidgetViz.Table, Params = WidgetParams.DateRange }
+            new() { Id = "order-total-per-vendor",           Title = "Order total per vendor",            Viz = WidgetViz.Table, Params = WidgetParams.DateRange,
+                Description = "Total amount and item quantity per vendor over the selected delivery-date range." },
+            new() { Id = "order-total-per-vendor-per-day",   Title = "Order total per vendor per day",    Viz = WidgetViz.Bar,   Params = WidgetParams.DateRange,
+                Description = "Daily order total per vendor over the selected range (one row per vendor per delivery day)." },
+            new() { Id = "average-cheque",                   Title = "Average cheque",                    Viz = WidgetViz.Line,  Params = WidgetParams.DateRange,
+                Description = "Average order value per delivery day over the selected range." },
+            new() { Id = "active-persons",                   Title = "Active persons",                    Viz = WidgetViz.Bar,   Params = WidgetParams.DateRange,
+                Description = "Distribution of customers by number of orders placed in the selected range." },
+            new() { Id = "order-list",                       Title = "Order list",                        Viz = WidgetViz.Table, Params = WidgetParams.DateRange,
+                Description = "Every order in the selected delivery-date range: employee, date, delivery time, email, total." }
         };
 
         public IList<WidgetDefinition> ListWidgets(bool includeAdmin)
@@ -45,65 +65,49 @@ namespace Nop.Plugin.Company.Company.Services.Reporting
             return Catalog.Where(w => includeAdmin || !w.AdminOnly).ToList();
         }
 
+        /// <summary>UTC offset (minutes) for the current customer's company timezone.</summary>
+        public async Task<int> GetUtcOffsetMinutesAsync()
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = customer == null ? null : await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+
+            TimeZoneInfo tz;
+            if (company != null && !string.IsNullOrEmpty(company.TimeZone))
+                tz = TZConvert.GetTimeZoneInfo(company.TimeZone);
+            else
+                tz = await _dateTimeHelper.GetCustomerTimeZoneAsync(customer);
+
+            return (int)tz.GetUtcOffset(DateTime.UtcNow).TotalMinutes;
+        }
+
         public async Task<ReportResult> RunWidgetAsync(string widgetId, DateTime? from, DateTime? to, bool isAdmin)
         {
-            var def = Catalog.FirstOrDefault(w => w.Id == widgetId
-                && (isAdmin || !w.AdminOnly))
+            var def = Catalog.FirstOrDefault(w => w.Id == widgetId && (isAdmin || !w.AdminOnly))
                 ?? throw new ArgumentException($"Unknown widget '{widgetId}'");
 
-            // Default range = last 30 local days for DateRange widgets.
+            var tz = await GetUtcOffsetMinutesAsync();
+
             if (def.Params == WidgetParams.DateRange)
             {
-                var localToday = DateTime.UtcNow.AddHours(4).Date;
+                var localToday = DateTime.UtcNow.AddMinutes(tz).Date;
                 to ??= localToday;
-                from ??= localToday.AddDays(-30);
+                from ??= localToday.AddDays(-7);
             }
 
             return def.Id switch
             {
-                "order-total-per-vendor-this-week" => ToResult(def, await ThisWeekAsync()),
-                "order-total-per-vendor"           => ToResult(def, await PerVendorAsync(from.Value, to.Value)),
-                "order-total-per-vendor-per-day"   => ToResult(def, await PerVendorPerDayAsync(from.Value, to.Value)),
-                "average-cheque"                   => ToResult(def, await AverageChequeAsync(from.Value, to.Value)),
-                "active-persons"                   => ToResult(def, await ActivePersonsAsync(from.Value, to.Value)),
-                "order-list"                       => ToResult(def, await OrderListAsync(from.Value, to.Value)),
+                "order-total-per-vendor"         => ToResult(def, await PerVendorAsync(tz, from.Value, to.Value)),
+                "order-total-per-vendor-per-day" => ToResult(def, await PerVendorPerDayAsync(tz, from.Value, to.Value)),
+                "average-cheque"                 => ToResult(def, await AverageChequeAsync(tz, from.Value, to.Value)),
+                "active-persons"                 => ToResult(def, await ActivePersonsAsync(tz, from.Value, to.Value)),
+                "order-list"                     => ToResult(def, await OrderListAsync(tz, from.Value, to.Value)),
                 _ => throw new ArgumentException($"Widget '{widgetId}' not implemented")
             };
         }
 
         #region Widget queries
 
-        private Task<IList<VendorWeekRow>> ThisWeekAsync()
-        {
-            var sql = $@"
-SET DATEFIRST 1;
-DECLARE @ws date = CAST(DATEADD(DAY, 1 - DATEPART(WEEKDAY, DATEADD(HOUR,4,GETUTCDATE())), DATEADD(HOUR,4,GETUTCDATE())) AS date);
-SELECT Vendor,
-  SUM(CASE WHEN ld = @ws                   THEN price ELSE 0 END) AS Monday,
-  SUM(CASE WHEN ld = DATEADD(day,1,@ws)    THEN price ELSE 0 END) AS Tuesday,
-  SUM(CASE WHEN ld = DATEADD(day,2,@ws)    THEN price ELSE 0 END) AS Wednesday,
-  SUM(CASE WHEN ld = DATEADD(day,3,@ws)    THEN price ELSE 0 END) AS Thursday,
-  SUM(CASE WHEN ld = DATEADD(day,4,@ws)    THEN price ELSE 0 END) AS Friday,
-  SUM(CASE WHEN ld = DATEADD(day,5,@ws)    THEN price ELSE 0 END) AS Saturday,
-  SUM(CASE WHEN ld = DATEADD(day,6,@ws)    THEN price ELSE 0 END) AS Sunday,
-  SUM(price) AS Total
-FROM (
-  SELECT v.Name AS Vendor, v.Id AS VendorId, oi.PriceInclTax AS price,
-         CAST({LOCAL_DT} AS date) AS ld
-  FROM dbo.OrderItem oi
-  JOIN dbo.[Order] o ON o.Id = oi.OrderId
-  JOIN dbo.Product p ON p.Id = oi.ProductId
-  JOIN dbo.Vendor v ON v.Id = p.VendorId
-  WHERE {ORDER_FILTER}
-    AND CAST({LOCAL_DT} AS date) >= @ws
-    AND CAST({LOCAL_DT} AS date) <  DATEADD(day,7,@ws)
-) t
-GROUP BY Vendor, VendorId
-ORDER BY VendorId;";
-            return _dataProvider.QueryAsync<VendorWeekRow>(sql);
-        }
-
-        private Task<IList<VendorTotalRow>> PerVendorAsync(DateTime from, DateTime to)
+        private Task<IList<VendorTotalRow>> PerVendorAsync(int tz, DateTime from, DateTime to)
         {
             var sql = $@"
 SELECT v.Name AS Vendor, SUM(oi.Quantity) AS Quantity, SUM(oi.PriceInclTax) AS Total
@@ -115,10 +119,10 @@ WHERE {ORDER_FILTER}
   AND CAST({LOCAL_DT} AS date) BETWEEN @from AND @to
 GROUP BY v.Name
 ORDER BY Total DESC;";
-            return _dataProvider.QueryAsync<VendorTotalRow>(sql, P(from, to));
+            return _dataProvider.QueryAsync<VendorTotalRow>(sql, P(tz, from, to));
         }
 
-        private Task<IList<VendorDayRow>> PerVendorPerDayAsync(DateTime from, DateTime to)
+        private Task<IList<VendorDayRow>> PerVendorPerDayAsync(int tz, DateTime from, DateTime to)
         {
             // long-form (Vendor, Day, Total); pivot client-side — avoids the dynamic
             // SQL + global temp table (##) concurrency bug in the old Redash query.
@@ -132,10 +136,10 @@ WHERE {ORDER_FILTER}
   AND CAST({LOCAL_DT} AS date) BETWEEN @from AND @to
 GROUP BY v.Name, CAST({LOCAL_DT} AS date)
 ORDER BY Day, Vendor;";
-            return _dataProvider.QueryAsync<VendorDayRow>(sql, P(from, to));
+            return _dataProvider.QueryAsync<VendorDayRow>(sql, P(tz, from, to));
         }
 
-        private Task<IList<AvgChequeRow>> AverageChequeAsync(DateTime from, DateTime to)
+        private Task<IList<AvgChequeRow>> AverageChequeAsync(int tz, DateTime from, DateTime to)
         {
             var sql = $@"
 SELECT CAST({LOCAL_DT} AS date) AS Day, AVG(o.OrderTotal) AS AvgCheque
@@ -145,10 +149,10 @@ WHERE o.Deleted = 0 AND o.OrderStatusId <> 40
   AND CAST({LOCAL_DT} AS date) BETWEEN @from AND @to
 GROUP BY CAST({LOCAL_DT} AS date)
 ORDER BY Day;";
-            return _dataProvider.QueryAsync<AvgChequeRow>(sql, P(from, to));
+            return _dataProvider.QueryAsync<AvgChequeRow>(sql, P(tz, from, to));
         }
 
-        private Task<IList<ActivePersonsRow>> ActivePersonsAsync(DateTime from, DateTime to)
+        private Task<IList<ActivePersonsRow>> ActivePersonsAsync(int tz, DateTime from, DateTime to)
         {
             var sql = $@"
 ;WITH oc AS (
@@ -161,10 +165,10 @@ ORDER BY Day;";
 )
 SELECT c AS OrderCount, COUNT(DISTINCT CustomerId) AS UniqueCustomers
 FROM oc GROUP BY c ORDER BY c;";
-            return _dataProvider.QueryAsync<ActivePersonsRow>(sql, P(from, to));
+            return _dataProvider.QueryAsync<ActivePersonsRow>(sql, P(tz, from, to));
         }
 
-        private Task<IList<OrderListRow>> OrderListAsync(DateTime from, DateTime to)
+        private Task<IList<OrderListRow>> OrderListAsync(int tz, DateTime from, DateTime to)
         {
             var sql = $@"
 SELECT
@@ -183,15 +187,16 @@ WHERE o.Deleted = 0 AND o.OrderStatusId <> 40
   AND TRY_CONVERT(datetime2, o.ScheduleDate) IS NOT NULL
   AND CAST({LOCAL_DT} AS date) BETWEEN @from AND @to
 ORDER BY OrderDate DESC, Email;";
-            return _dataProvider.QueryAsync<OrderListRow>(sql, P(from, to));
+            return _dataProvider.QueryAsync<OrderListRow>(sql, P(tz, from, to));
         }
 
         #endregion
 
         #region Helpers
 
-        private static DataParameter[] P(DateTime from, DateTime to) => new[]
+        private static DataParameter[] P(int tz, DateTime from, DateTime to) => new[]
         {
+            new DataParameter("tzoffset", tz),
             new DataParameter("from", from.Date),
             new DataParameter("to", to.Date)
         };
@@ -199,7 +204,7 @@ ORDER BY OrderDate DESC, Email;";
         private static ReportResult ToResult<T>(WidgetDefinition def, IList<T> rows)
         {
             var props = typeof(T).GetProperties();
-            var result = new ReportResult { WidgetId = def.Id, Title = def.Title, Viz = def.Viz };
+            var result = new ReportResult { WidgetId = def.Id, Title = def.Title, Description = def.Description, Viz = def.Viz };
             foreach (var p in props)
                 result.Columns.Add(p.Name);
             foreach (var row in rows)
