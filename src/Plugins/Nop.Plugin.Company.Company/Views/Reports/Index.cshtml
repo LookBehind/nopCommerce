@@ -1,0 +1,90 @@
+@model Nop.Plugin.Company.Company.Models.Reporting.ReportsDashboardModel
+@using Nop.Plugin.Company.Company.Services.Reporting
+@{
+    Layout = "_ColumnsOne";   // public layout (overrides the plugin's admin _ViewStart)
+}
+
+<div class="page reports-page">
+    <div class="page-title"><h1>@T("Company.Reports.Title")</h1></div>
+    <div class="page-body">
+
+        <form method="get" action="@Url.RouteUrl("Plugin.Company.Company.Reports")" class="report-range">
+            <label>From <input type="date" name="from" value="@Model.From.ToString("yyyy-MM-dd")" /></label>
+            <label>To <input type="date" name="to" value="@Model.To.ToString("yyyy-MM-dd")" /></label>
+            <button type="submit">Apply</button>
+        </form>
+
+        @for (var i = 0; i < Model.Widgets.Count; i++)
+        {
+            var w = Model.Widgets[i];
+            var canvasId = "chart_" + i;
+            <div class="report-widget">
+                <h2>@w.Title</h2>
+
+                @if (IsChartable(w))
+                {
+                    <canvas id="@canvasId" height="120"></canvas>
+                    <script>
+                        window.__reportCharts = window.__reportCharts || [];
+                        window.__reportCharts.push({
+                            id: '@canvasId',
+                            type: '@(w.Viz == WidgetViz.Line ? "line" : "bar")',
+                            label: @Html.Raw(Json(w.Columns[1])),
+                            labels: @Html.Raw(Json(w.Rows.Select(r => Cell(r[0])))),
+                            data: @Html.Raw(Json(w.Rows.Select(r => r[1] == null ? 0m : System.Convert.ToDecimal(r[1]))))
+                        });
+                    </script>
+                }
+
+                @if (w.Rows.Count == 0)
+                {
+                    <p class="no-data">No data for this range.</p>
+                }
+                else
+                {
+                    <table class="report-table">
+                        <thead>
+                            <tr>@foreach (var c in w.Columns){<th>@c</th>}</tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in w.Rows)
+                            {
+                                <tr>@foreach (var v in row){<td>@Cell(v)</td>}</tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+    (function () {
+        (window.__reportCharts || []).forEach(function (c) {
+            var el = document.getElementById(c.id);
+            if (!el) return;
+            new Chart(el, {
+                type: c.type,
+                data: { labels: c.labels, datasets: [{ label: c.label, data: c.data, borderWidth: 1 }] },
+                options: { responsive: true, plugins: { legend: { display: true } } }
+            });
+        });
+    })();
+</script>
+
+@functions {
+    private static string Cell(object v) => v switch
+    {
+        null => "",
+        System.DateTime d => d.ToString("yyyy-MM-dd"),
+        System.IFormattable f => f.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+        _ => v.ToString()
+    };
+
+    private static bool IsChartable(ReportResult w) =>
+        (w.Viz == WidgetViz.Line || w.Viz == WidgetViz.Bar) && w.Columns.Count == 2 && w.Rows.Count > 0;
+
+    private static string Json(object o) => System.Text.Json.JsonSerializer.Serialize(o);
+}

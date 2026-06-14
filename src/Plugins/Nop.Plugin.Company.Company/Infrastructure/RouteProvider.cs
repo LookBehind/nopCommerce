@@ -18,6 +18,11 @@ namespace Nop.Plugin.Company.Company.Infrastructure
             endpointRouteBuilder.MapControllerRoute("Plugin.Company.Company.Configure",
                 "Admin/Company/{action=Configure}/{id?}",
                 new { controller = "Company", area = "Admin" });
+
+            // Storefront company-reporting dashboard.
+            endpointRouteBuilder.MapControllerRoute("Plugin.Company.Company.Reports",
+                "reports",
+                new { controller = "Reports", action = "Index" });
         }
 
         /// <summary>
