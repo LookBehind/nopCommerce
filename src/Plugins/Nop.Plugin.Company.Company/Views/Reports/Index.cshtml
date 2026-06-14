@@ -14,7 +14,7 @@
     .reports-page .report-widget { margin:0 0 22px; border:1px solid #e2e2e2; border-radius:8px; padding:18px 20px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.06); }
     .reports-page .report-widget h2 { font-size:18px; margin:0 0 2px; }
     .reports-page .pie-row { display:flex; gap:24px; flex-wrap:wrap; margin:0 0 14px; }
-    .reports-page .pie-row .chart-wrap { flex:1 1 300px; max-width:380px; }
+    .reports-page .pie-row .chart-wrap { flex:1 1 300px; max-width:420px; height:300px; }
     .reports-page .report-widget .desc { color:#777; font-size:13px; margin:0 0 12px; }
     .reports-page .report-filter { margin:0 0 8px; padding:5px 9px; width:240px; max-width:100%; border:1px solid #ccc; border-radius:4px; font-size:13px; }
     .reports-page .report-table-wrap { max-height:200px; overflow:auto; border:1px solid #e0e0e0; }
@@ -50,6 +50,8 @@
         {
             var w = Model.Widgets[i];
             var canvasId = "chart_" + i;
+            var amtId = canvasId + "_amt";
+            var cntId = canvasId + "_cnt";
             <div class="report-widget">
                 <h2>@w.Title</h2>
                 @if (!string.IsNullOrEmpty(w.Description))
@@ -60,13 +62,13 @@
                 @if (w.Rows.Count > 0 && IsVendorPie(w))
                 {
                     <div class="pie-row">
-                        <div class="chart-wrap"><canvas id="@(canvasId)_amt" height="200"></canvas></div>
-                        <div class="chart-wrap"><canvas id="@(canvasId)_cnt" height="200"></canvas></div>
+                        <div class="chart-wrap"><canvas id="@amtId"></canvas></div>
+                        <div class="chart-wrap"><canvas id="@cntId"></canvas></div>
                     </div>
                     <script>
                         window.__reportCharts = window.__reportCharts || [];
                         window.__reportCharts.push({
-                            kind: 'pies', amtId: '@(canvasId)_amt', cntId: '@(canvasId)_cnt',
+                            kind: 'pies', amtId: '@amtId', cntId: '@cntId',
                             titleAmount: 'By amount', titleCount: 'By order count',
                             labels: @Html.Raw(ToJson(w.Rows.Select(r => r[0]?.ToString()))),
                             amounts: @Html.Raw(ToJson(w.Rows.Select(r => r[2] == null ? 0m : System.Convert.ToDecimal(r[2])))),
@@ -140,7 +142,7 @@
                     var pe = document.getElementById(id);
                     if (!pe) return;
                     new Chart(pe, { type: 'pie', data: { labels: c.labels, datasets: [{ data: data, backgroundColor: colors }] },
-                        options: { responsive: true, plugins: { title: { display: true, text: title }, legend: { position: 'right' } } } });
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: title }, legend: { position: 'right' } } } });
                 };
                 mkPie(c.amtId, c.amounts, c.titleAmount);
                 mkPie(c.cntId, c.counts, c.titleCount);
