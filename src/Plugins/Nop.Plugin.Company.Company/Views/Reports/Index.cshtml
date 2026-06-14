@@ -11,15 +11,22 @@
     .reports-page .report-range input[type=date] { padding:5px 8px; }
     .reports-page .btn { padding:7px 14px; border:1px solid #ccc; background:#f5f5f5; border-radius:4px; cursor:pointer; text-decoration:none; color:#333; font-size:13px; }
     .reports-page .btn-excel { background:#1d6f42; border-color:#1d6f42; color:#fff; }
-    .reports-page .report-widget { margin:0 0 34px; }
+    .reports-page .report-widget { margin:0 0 22px; border:1px solid #e2e2e2; border-radius:8px; padding:18px 20px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.06); }
     .reports-page .report-widget h2 { font-size:18px; margin:0 0 2px; }
+    .reports-page .pie-row { display:flex; gap:24px; flex-wrap:wrap; margin:0 0 14px; }
+    .reports-page .pie-row .chart-wrap { flex:1 1 300px; max-width:380px; }
     .reports-page .report-widget .desc { color:#777; font-size:13px; margin:0 0 12px; }
+    .reports-page .report-filter { margin:0 0 8px; padding:5px 9px; width:240px; max-width:100%; border:1px solid #ccc; border-radius:4px; font-size:13px; }
+    .reports-page .report-table-wrap { max-height:200px; overflow:auto; border:1px solid #e0e0e0; }
     .reports-page .report-table { border-collapse:collapse; width:100%; font-size:13px; }
-    .reports-page .report-table th, .reports-page .report-table td { border:1px solid #e0e0e0; padding:6px 10px; text-align:left; }
-    .reports-page .report-table th { background:#f3f3f3; font-weight:600; }
+    .reports-page .report-table th, .reports-page .report-table td { border-bottom:1px solid #eee; border-right:1px solid #eee; padding:6px 10px; text-align:left; white-space:nowrap; }
+    .reports-page .report-table thead th { position:sticky; top:0; background:#f3f3f3; font-weight:600; cursor:pointer; z-index:1; user-select:none; }
+    .reports-page .report-table thead th:after { content:' \2195'; color:#bbb; font-size:11px; }
+    .reports-page .report-table thead th.sort-asc:after { content:' \2191'; color:#333; }
+    .reports-page .report-table thead th.sort-desc:after { content:' \2193'; color:#333; }
     .reports-page .report-table tr:nth-child(even) td { background:#fafafa; }
     .reports-page .report-table td.num { text-align:right; font-variant-numeric:tabular-nums; }
-    .reports-page .chart-wrap { max-width:760px; margin:0 0 14px; }
+    .reports-page .chart-wrap { max-width:820px; margin:0 0 14px; }
     .reports-page .no-data { color:#999; font-style:italic; }
 </style>
 
@@ -50,16 +57,42 @@
                     <p class="desc">@w.Description</p>
                 }
 
-                @if (IsChartable(w))
+                @if (w.Rows.Count > 0 && IsVendorPie(w))
+                {
+                    <div class="pie-row">
+                        <div class="chart-wrap"><canvas id="@(canvasId)_amt" height="200"></canvas></div>
+                        <div class="chart-wrap"><canvas id="@(canvasId)_cnt" height="200"></canvas></div>
+                    </div>
+                    <script>
+                        window.__reportCharts = window.__reportCharts || [];
+                        window.__reportCharts.push({
+                            kind: 'pies', amtId: '@(canvasId)_amt', cntId: '@(canvasId)_cnt',
+                            titleAmount: 'By amount', titleCount: 'By order count',
+                            labels: @Html.Raw(ToJson(w.Rows.Select(r => r[0]?.ToString()))),
+                            amounts: @Html.Raw(ToJson(w.Rows.Select(r => r[2] == null ? 0m : System.Convert.ToDecimal(r[2])))),
+                            counts: @Html.Raw(ToJson(w.Rows.Select(r => r[1] == null ? 0m : System.Convert.ToDecimal(r[1]))))
+                        });
+                    </script>
+                }
+                else if (w.Rows.Count > 0 && IsPivotBar(w))
+                {
+                    <div class="chart-wrap"><canvas id="@canvasId" height="130"></canvas></div>
+                    <script>
+                        window.__reportCharts = window.__reportCharts || [];
+                        window.__reportCharts.push({
+                            id: '@canvasId', kind: 'stacked', title: @Html.Raw(ToJson(w.Title)),
+                            rows: @Html.Raw(ToJson(w.Rows.Select(r => new object[] { r[0]?.ToString(), Cell(r[1]), r[2] == null ? 0m : System.Convert.ToDecimal(r[2]) })))
+                        });
+                    </script>
+                }
+                else if (IsChartable(w))
                 {
                     <div class="chart-wrap"><canvas id="@canvasId" height="120"></canvas></div>
                     <script>
                         window.__reportCharts = window.__reportCharts || [];
                         window.__reportCharts.push({
-                            id: '@canvasId',
-                            type: '@(w.Viz == WidgetViz.Line ? "line" : "bar")',
-                            title: @Html.Raw(ToJson(w.Title)),
-                            label: @Html.Raw(ToJson(w.Columns[1])),
+                            id: '@canvasId', kind: 'simple', type: '@(w.Viz == WidgetViz.Line ? "line" : "bar")',
+                            title: @Html.Raw(ToJson(w.Title)), label: @Html.Raw(ToJson(w.Columns[1])),
                             labels: @Html.Raw(ToJson(w.Rows.Select(r => Cell(r[0])))),
                             data: @Html.Raw(ToJson(w.Rows.Select(r => r[1] == null ? 0m : System.Convert.ToDecimal(r[1]))))
                         });
@@ -72,17 +105,19 @@
                 }
                 else
                 {
-                    <table class="report-table">
-                        <thead>
-                            <tr>@foreach (var c in w.Columns){<th>@c</th>}</tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var row in w.Rows)
-                            {
-                                <tr>@foreach (var v in row){<td class="@(IsNum(v) ? "num" : "")">@Cell(v)</td>}</tr>
-                            }
-                        </tbody>
-                    </table>
+                    <div class="report-table-wrap">
+                        <table class="report-table">
+                            <thead>
+                                <tr>@foreach (var c in w.Columns){<th>@c</th>}</tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in w.Rows)
+                                {
+                                    <tr>@foreach (var v in row){<td class="@(IsNum(v) ? "num" : "")">@Cell(v)</td>}</tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 }
             </div>
         }
@@ -92,19 +127,71 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
     (function () {
+        var palette = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac'];
+
+        // ---- charts ----
         (window.__reportCharts || []).forEach(function (c) {
             var el = document.getElementById(c.id);
-            if (!el) return;
-            new Chart(el, {
-                type: c.type,
-                data: { labels: c.labels, datasets: [{ label: c.label, data: c.data, borderWidth: 1 }] },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: { display: true },
-                        title: { display: true, text: c.title }
-                    }
-                }
+            if (!el || typeof Chart === 'undefined') return;
+
+            if (c.kind === 'pies') {
+                var colors = c.labels.map(function (_, i) { return palette[i % palette.length]; });
+                var mkPie = function (id, data, title) {
+                    var pe = document.getElementById(id);
+                    if (!pe) return;
+                    new Chart(pe, { type: 'pie', data: { labels: c.labels, datasets: [{ data: data, backgroundColor: colors }] },
+                        options: { responsive: true, plugins: { title: { display: true, text: title }, legend: { position: 'right' } } } });
+                };
+                mkPie(c.amtId, c.amounts, c.titleAmount);
+                mkPie(c.cntId, c.counts, c.titleCount);
+            } else if (c.kind === 'stacked') {
+                // rows: [vendor, day, total] -> x=days, one dataset per vendor (stacked)
+                var days = [...new Set(c.rows.map(function (r) { return r[1]; }))].sort();
+                var vendors = [...new Set(c.rows.map(function (r) { return r[0]; }))];
+                var map = {};
+                c.rows.forEach(function (r) { map[r[0] + '|' + r[1]] = r[2]; });
+                var datasets = vendors.map(function (v, i) {
+                    return { label: v, backgroundColor: palette[i % palette.length],
+                        data: days.map(function (d) { return map[v + '|' + d] || 0; }) };
+                });
+                new Chart(el, { type: 'bar', data: { labels: days, datasets: datasets },
+                    options: { responsive: true, plugins: { title: { display: true, text: c.title } },
+                        scales: { x: { stacked: true }, y: { stacked: true } } } });
+            } else {
+                new Chart(el, { type: c.type, data: { labels: c.labels, datasets: [{ label: c.label, data: c.data, borderWidth: 1 }] },
+                    options: { responsive: true, plugins: { legend: { display: true }, title: { display: true, text: c.title } } } });
+            }
+        });
+
+        // ---- per-table client-side filter + sort ----
+        function num(s) { var n = parseFloat(String(s).replace(/[,\s]/g, '')); return isNaN(n) ? null : n; }
+        document.querySelectorAll('.reports-page table.report-table').forEach(function (table) {
+            var wrap = table.closest('.report-table-wrap');
+            var filter = document.createElement('input');
+            filter.type = 'search'; filter.placeholder = 'Filter rows…'; filter.className = 'report-filter';
+            wrap.parentNode.insertBefore(filter, wrap);
+            var body = table.tBodies[0];
+            filter.addEventListener('input', function () {
+                var q = this.value.toLowerCase();
+                body.querySelectorAll('tr').forEach(function (tr) {
+                    tr.style.display = tr.textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
+                });
+            });
+            table.tHead.querySelectorAll('th').forEach(function (th, idx) {
+                var dir = 0;
+                th.addEventListener('click', function () {
+                    dir = dir === 1 ? -1 : 1;
+                    table.tHead.querySelectorAll('th').forEach(function (o) { o.classList.remove('sort-asc', 'sort-desc'); });
+                    th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
+                    var rows = [...body.querySelectorAll('tr')];
+                    rows.sort(function (a, b) {
+                        var x = a.children[idx].textContent.trim(), y = b.children[idx].textContent.trim();
+                        var nx = num(x), ny = num(y);
+                        if (nx !== null && ny !== null) return (nx - ny) * dir;
+                        return x.localeCompare(y) * dir;
+                    });
+                    rows.forEach(function (r) { body.appendChild(r); });
+                });
             });
         });
     })();
@@ -121,6 +208,12 @@
         System.IFormattable f => f.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
         _ => v.ToString()
     };
+
+    // order-total-per-vendor (Vendor, Orders, Total) -> two pies (by amount, by order count).
+    private static bool IsVendorPie(ReportResult w) => w.WidgetId == "order-total-per-vendor" && w.Columns.Count == 3;
+
+    // The per-day widget is long-form (Vendor, Day, Total) -> stacked bar (day split by vendor).
+    private static bool IsPivotBar(ReportResult w) => w.WidgetId == "order-total-per-vendor-per-day" && w.Columns.Count == 3;
 
     private static bool IsChartable(ReportResult w) =>
         (w.Viz == WidgetViz.Line || w.Viz == WidgetViz.Bar) && w.Columns.Count == 2 && w.Rows.Count > 0;

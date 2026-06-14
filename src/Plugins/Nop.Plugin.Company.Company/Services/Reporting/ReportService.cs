@@ -49,7 +49,7 @@ namespace Nop.Plugin.Company.Company.Services.Reporting
         private static readonly List<WidgetDefinition> Catalog = new()
         {
             new() { Id = "order-total-per-vendor",           Title = "Order total per vendor",            Viz = WidgetViz.Table, Params = WidgetParams.DateRange,
-                Description = "Total amount and item quantity per vendor over the selected delivery-date range." },
+                Description = "Total amount and number of orders per vendor over the selected delivery-date range." },
             new() { Id = "order-total-per-vendor-per-day",   Title = "Order total per vendor per day",    Viz = WidgetViz.Bar,   Params = WidgetParams.DateRange,
                 Description = "Daily order total per vendor over the selected range (one row per vendor per delivery day)." },
             new() { Id = "average-cheque",                   Title = "Average cheque",                    Viz = WidgetViz.Line,  Params = WidgetParams.DateRange,
@@ -110,7 +110,7 @@ namespace Nop.Plugin.Company.Company.Services.Reporting
         private Task<IList<VendorTotalRow>> PerVendorAsync(int tz, DateTime from, DateTime to)
         {
             var sql = $@"
-SELECT v.Name AS Vendor, SUM(oi.Quantity) AS Quantity, SUM(oi.PriceInclTax) AS Total
+SELECT v.Name AS Vendor, COUNT(DISTINCT o.Id) AS Orders, SUM(oi.PriceInclTax) AS Total
 FROM dbo.OrderItem oi
 JOIN dbo.[Order] o ON o.Id = oi.OrderId
 JOIN dbo.Product p ON p.Id = oi.ProductId

@@ -8,7 +8,7 @@ namespace Nop.Plugin.Company.Company.Services.Reporting
     internal class VendorTotalRow
     {
         public string Vendor { get; set; }
-        public int Quantity { get; set; }
+        public int Orders { get; set; }
         public decimal Total { get; set; }
     }
 
