@@ -774,21 +774,41 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Controllers
 
         /// <summary>
         /// Human-readable one-line summary of an address for display in the validation results table.
+        /// Includes EVERY field that participates in the match key (GetAddressKey) — name, company,
+        /// full location, country/state, email, phone, fax, custom-attributes marker — so that a
+        /// flagged difference is never invisible (e.g. a phone-number-only mismatch).
         /// </summary>
         private static string GetAddressSummary(Nop.Core.Domain.Common.Address a)
         {
             var parts = new List<string>();
+
             var name = $"{a.FirstName} {a.LastName}".Trim();
             if (!string.IsNullOrWhiteSpace(name))
                 parts.Add(name);
-            if (!string.IsNullOrWhiteSpace(a.Address1))
-                parts.Add(a.Address1);
-            var cityZip = $"{a.City} {a.ZipPostalCode}".Trim();
-            if (!string.IsNullOrWhiteSpace(cityZip))
-                parts.Add(cityZip);
+
+            var location = new List<string>();
+            if (!string.IsNullOrWhiteSpace(a.Address1)) location.Add(a.Address1.Trim());
+            if (!string.IsNullOrWhiteSpace(a.Address2)) location.Add(a.Address2.Trim());
+            if (!string.IsNullOrWhiteSpace(a.City)) location.Add(a.City.Trim());
+            if (!string.IsNullOrWhiteSpace(a.County)) location.Add(a.County.Trim());
+            if (!string.IsNullOrWhiteSpace(a.ZipPostalCode)) location.Add(a.ZipPostalCode.Trim());
+            if (location.Any())
+                parts.Add(string.Join(", ", location));
+
+            if (a.CountryId.HasValue || a.StateProvinceId.HasValue)
+                parts.Add($"country/state {(a.CountryId?.ToString() ?? "-")}/{(a.StateProvinceId?.ToString() ?? "-")}");
+            if (!string.IsNullOrWhiteSpace(a.Company))
+                parts.Add($"company: {a.Company.Trim()}");
             if (!string.IsNullOrWhiteSpace(a.Email))
-                parts.Add(a.Email);
-            var summary = string.Join(", ", parts);
+                parts.Add($"email: {a.Email.Trim()}");
+            if (!string.IsNullOrWhiteSpace(a.PhoneNumber))
+                parts.Add($"phone: {a.PhoneNumber.Trim()}");
+            if (!string.IsNullOrWhiteSpace(a.FaxNumber))
+                parts.Add($"fax: {a.FaxNumber.Trim()}");
+            if (!string.IsNullOrWhiteSpace(a.CustomAttributes))
+                parts.Add("custom attributes set");
+
+            var summary = string.Join(" · ", parts);
             return string.IsNullOrWhiteSpace(summary) ? $"(empty address #{a.Id})" : summary;
         }
 
