@@ -5,11 +5,19 @@
 }
 
 <style>
-    .reports-page .report-toolbar { display:flex; gap:18px; align-items:flex-end; flex-wrap:wrap; margin:10px 0 24px; }
-    .reports-page .report-range { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .reports-page .report-range label { display:flex; flex-direction:column; font-size:12px; color:#666; gap:3px; }
-    .reports-page .report-range input[type=date] { padding:5px 8px; }
-    .reports-page .btn { padding:7px 14px; border:1px solid #ccc; background:#f5f5f5; border-radius:4px; cursor:pointer; text-decoration:none; color:#333; font-size:13px; }
+    .reports-page .report-toolbar { display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin:10px 0 24px; }
+    .reports-page .btn { padding:7px 14px; border:1px solid #ccc; background:#f5f5f5; border-radius:4px; cursor:pointer; text-decoration:none; color:#333; font-size:13px; display:inline-block; }
+    .reports-page .timeframe { position:relative; display:inline-block; }
+    .reports-page .tf-btn { font-weight:600; }
+    .reports-page .tf-menu { position:absolute; top:100%; left:0; z-index:20; background:#fff; border:1px solid #ccc; border-radius:6px; box-shadow:0 4px 16px rgba(0,0,0,.14); padding:8px; min-width:230px; margin-top:4px; }
+    .reports-page .tf-presets { display:flex; flex-direction:column; }
+    .reports-page .tf-preset { padding:7px 10px; border-radius:4px; text-decoration:none; color:#333; font-size:13px; }
+    .reports-page .tf-preset:hover { background:#f0f0f0; }
+    .reports-page .tf-preset.active { background:#1d6f42; color:#fff; }
+    .reports-page .tf-custom { border-top:1px solid #eee; margin-top:8px; padding-top:10px; }
+    .reports-page .tf-custom-title { font-size:11px; color:#999; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
+    .reports-page .tf-custom label { display:inline-flex; flex-direction:column; font-size:12px; color:#666; gap:3px; margin-right:8px; }
+    .reports-page .tf-custom input[type=date] { padding:4px 6px; }
     .reports-page .btn-excel { background:#1d6f42; border-color:#1d6f42; color:#fff; }
     .reports-page .report-widget { margin:0 0 22px; border:1px solid #e2e2e2; border-radius:8px; padding:18px 20px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.06); }
     .reports-page .report-widget h2 { font-size:18px; margin:0 0 2px; }
@@ -34,12 +42,33 @@
     <div class="page-title"><h1>@T("Company.Reports.Title")</h1></div>
     <div class="page-body">
 
+        @{
+            var activePreset = Model.Presets.FirstOrDefault(p => p.Key == Model.ActivePreset);
+            var tfLabel = activePreset != null
+                ? activePreset.Label
+                : $"{Model.From:yyyy-MM-dd} → {Model.To:yyyy-MM-dd}";
+        }
         <div class="report-toolbar">
-            <form method="get" action="@Url.RouteUrl("Plugin.Company.Company.Reports")" class="report-range">
-                <label>From<input type="date" name="from" value="@Model.From.ToString("yyyy-MM-dd")" /></label>
-                <label>To<input type="date" name="to" value="@Model.To.ToString("yyyy-MM-dd")" /></label>
-                <button type="submit" class="btn">Apply</button>
-            </form>
+            <div class="timeframe" id="tf">
+                <button type="button" class="btn tf-btn" id="tfBtn">🕒 <span>@tfLabel</span> ▾</button>
+                <div class="tf-menu" id="tfMenu" hidden>
+                    <div class="tf-presets">
+                        @foreach (var p in Model.Presets)
+                        {
+                            <a class="tf-preset @(Model.ActivePreset == p.Key ? "active" : "")"
+                               href="@Url.RouteUrl("Plugin.Company.Company.Reports", new { from = p.From.ToString("yyyy-MM-dd"), to = p.To.ToString("yyyy-MM-dd") })">@p.Label</a>
+                        }
+                    </div>
+                    <div class="tf-custom">
+                        <div class="tf-custom-title">Custom range</div>
+                        <form method="get" action="@Url.RouteUrl("Plugin.Company.Company.Reports")">
+                            <label>From<input type="date" name="from" value="@Model.From.ToString("yyyy-MM-dd")" /></label>
+                            <label>To<input type="date" name="to" value="@Model.To.ToString("yyyy-MM-dd")" /></label>
+                            <button type="submit" class="btn">Apply</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
             <a class="btn btn-excel"
                href="@Url.RouteUrl("Plugin.Company.Company.ReportsExport", new { from = Model.From.ToString("yyyy-MM-dd"), to = Model.To.ToString("yyyy-MM-dd") })">
                 @T("Company.Reports.DownloadExcel")
@@ -131,20 +160,42 @@
     (function () {
         var palette = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac'];
 
+        // ---- timeframe dropdown (presets adjust the window; custom range has Apply) ----
+        (function () {
+            var tf = document.getElementById('tf'), btn = document.getElementById('tfBtn'), menu = document.getElementById('tfMenu');
+            if (!btn || !menu) return;
+            btn.addEventListener('click', function (e) { e.stopPropagation(); menu.hidden = !menu.hidden; });
+            document.addEventListener('click', function (e) { if (tf && !tf.contains(e.target)) menu.hidden = true; });
+        })();
+
         // ---- charts ----
         (window.__reportCharts || []).forEach(function (c) {
             if (typeof Chart === 'undefined') return;
 
             if (c.kind === 'pies') {
-                var colors = c.labels.map(function (_, i) { return palette[i % palette.length]; });
-                var mkPie = function (id, data, title) {
+                // top 5 vendors + accumulate the rest into "Others"
+                var topN = function (labels, data, n) {
+                    var pairs = labels.map(function (l, i) { return { l: l, v: data[i] || 0 }; })
+                        .sort(function (a, b) { return b.v - a.v; });
+                    if (pairs.length <= n + 1)
+                        return { labels: pairs.map(function (p) { return p.l; }), data: pairs.map(function (p) { return p.v; }) };
+                    var top = pairs.slice(0, n);
+                    var other = pairs.slice(n).reduce(function (s, p) { return s + p.v; }, 0);
+                    return {
+                        labels: top.map(function (p) { return p.l; }).concat(['Others']),
+                        data: top.map(function (p) { return p.v; }).concat([other])
+                    };
+                };
+                var mkPie = function (id, labels, data, title) {
                     var pe = document.getElementById(id);
                     if (!pe) return;
-                    new Chart(pe, { type: 'pie', data: { labels: c.labels, datasets: [{ data: data, backgroundColor: colors }] },
+                    var r = topN(labels, data, 5);
+                    var colors = r.labels.map(function (_, i) { return palette[i % palette.length]; });
+                    new Chart(pe, { type: 'pie', data: { labels: r.labels, datasets: [{ data: r.data, backgroundColor: colors }] },
                         options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: title }, legend: { position: 'right' } } } });
                 };
-                mkPie(c.amtId, c.amounts, c.titleAmount);
-                mkPie(c.cntId, c.counts, c.titleCount);
+                mkPie(c.amtId, c.labels, c.amounts, c.titleAmount);
+                mkPie(c.cntId, c.labels, c.counts, c.titleCount);
                 return;
             }
 

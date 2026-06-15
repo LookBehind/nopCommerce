@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -31,9 +32,18 @@ namespace Nop.Plugin.Company.Company.Controllers
             if (!ok)
                 return redirect;
 
-            var (f, t) = await NormalizeAsync(from, to);
+            var (f, t, localToday) = await ResolveRangeAsync(from, to);
+            var presets = BuildPresets(localToday);
 
-            var model = new ReportsDashboardModel { From = f, To = t, IsAdmin = isAdmin };
+            var model = new ReportsDashboardModel
+            {
+                From = f,
+                To = t,
+                IsAdmin = isAdmin,
+                Presets = presets,
+                ActivePreset = presets.FirstOrDefault(p => p.From == f && p.To == t)?.Key ?? "custom"
+            };
+
             foreach (var def in reportService.ListWidgets(isAdmin))
                 model.Widgets.Add(await reportService.RunWidgetAsync(def.Id, f, t, isAdmin));
 
@@ -46,7 +56,7 @@ namespace Nop.Plugin.Company.Company.Controllers
             if (!ok)
                 return redirect;
 
-            var (f, t) = await NormalizeAsync(from, to);
+            var (f, t, _) = await ResolveRangeAsync(from, to);
 
             using var package = new ExcelPackage();
             var used = new HashSet<string>();
@@ -103,14 +113,27 @@ namespace Nop.Plugin.Company.Company.Controllers
             return (true, null, isAdmin);
         }
 
-        // Default window: this week so far — Monday → today, in the tenant's local time
-        // (offset from the customer's Company.TimeZone, not hardcoded).
-        private async Task<(DateTime from, DateTime to)> NormalizeAsync(DateTime? from, DateTime? to)
+        // Resolve the date range in the tenant's local time (offset from Company.TimeZone).
+        // Default (no from/to) = this week so far (Monday → today).
+        private async Task<(DateTime from, DateTime to, DateTime localToday)> ResolveRangeAsync(DateTime? from, DateTime? to)
         {
             var tz = await reportService.GetUtcOffsetMinutesAsync();
             var localToday = DateTime.UtcNow.AddMinutes(tz).Date;
-            var daysSinceMonday = ((int)localToday.DayOfWeek + 6) % 7; // Mon=0 … Sun=6
-            return (from ?? localToday.AddDays(-daysSinceMonday), to ?? localToday);
+            var weekStart = localToday.AddDays(-(((int)localToday.DayOfWeek + 6) % 7)); // Mon=0 … Sun=6
+            return (from?.Date ?? weekStart, to?.Date ?? localToday, localToday);
+        }
+
+        private static List<TimePreset> BuildPresets(DateTime localToday)
+        {
+            var weekStart = localToday.AddDays(-(((int)localToday.DayOfWeek + 6) % 7));
+            var monthStart = new DateTime(localToday.Year, localToday.Month, 1);
+            return new List<TimePreset>
+            {
+                new("this-week",     "This week",      weekStart,                  localToday),
+                new("this-month",    "This month",     monthStart,                 localToday),
+                new("last-3-months", "Last 3 months",  localToday.AddMonths(-3),   localToday),
+                new("last-year",     "Last year",      localToday.AddYears(-1),    localToday)
+            };
         }
 
         private static string UniqueSheetName(string title, HashSet<string> used)
