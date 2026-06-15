@@ -752,5 +752,226 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Controllers
         }
 
         #endregion
+
+        #region Address validation / fix
+
+        /// <summary>
+        /// Builds a content-based comparison key for an address so customer addresses can be matched
+        /// against the company's canonical addresses regardless of their Id. Mirrors the fields copied
+        /// by IAddressService.CloneAddress (the same fields used when company addresses are cloned to a
+        /// customer at registration), so a correctly cloned address yields an identical key.
+        /// </summary>
+        private static string GetAddressKey(Nop.Core.Domain.Common.Address a)
+        {
+            string s(string v) => (v ?? string.Empty).Trim().ToLowerInvariant();
+            return string.Join("|",
+                s(a.FirstName), s(a.LastName), s(a.Email), s(a.Company),
+                a.CountryId ?? 0, a.StateProvinceId ?? 0,
+                s(a.County), s(a.City), s(a.Address1), s(a.Address2),
+                s(a.ZipPostalCode), s(a.PhoneNumber), s(a.FaxNumber),
+                s(a.CustomAttributes));
+        }
+
+        /// <summary>
+        /// Human-readable one-line summary of an address for display in the validation results table.
+        /// </summary>
+        private static string GetAddressSummary(Nop.Core.Domain.Common.Address a)
+        {
+            var parts = new List<string>();
+            var name = $"{a.FirstName} {a.LastName}".Trim();
+            if (!string.IsNullOrWhiteSpace(name))
+                parts.Add(name);
+            if (!string.IsNullOrWhiteSpace(a.Address1))
+                parts.Add(a.Address1);
+            var cityZip = $"{a.City} {a.ZipPostalCode}".Trim();
+            if (!string.IsNullOrWhiteSpace(cityZip))
+                parts.Add(cityZip);
+            if (!string.IsNullOrWhiteSpace(a.Email))
+                parts.Add(a.Email);
+            var summary = string.Join(", ", parts);
+            return string.IsNullOrWhiteSpace(summary) ? $"(empty address #{a.Id})" : summary;
+        }
+
+        /// <summary>
+        /// Builds the company's canonical set of addresses keyed by content (one entry per unique
+        /// address). Used both to detect mismatches and as the source for cloning missing addresses
+        /// back onto a customer.
+        /// </summary>
+        private async Task<Dictionary<string, Nop.Core.Domain.Common.Address>> GetCompanyCanonicalAddressesAsync(int companyId)
+        {
+            var companyAddresses = await _companyAddressService.GetCompanyAddressesByCompanyIdAsync(companyId);
+            var canonical = new Dictionary<string, Nop.Core.Domain.Common.Address>();
+            foreach (var ca in companyAddresses)
+            {
+                var addr = await _addressService.GetAddressByIdAsync(ca.AddressId);
+                if (addr == null)
+                    continue;
+                var key = GetAddressKey(addr);
+                if (!canonical.ContainsKey(key))
+                    canonical[key] = addr;
+            }
+
+            return canonical;
+        }
+
+        /// <summary>
+        /// Scans every company-associated customer and reports those whose address list contains one or
+        /// more addresses that are NOT among the company's addresses (i.e. they don't have exactly the
+        /// same set of addresses as the company). Read-only — makes no changes.
+        /// </summary>
+        [HttpPost]
+        public virtual async Task<IActionResult> ValidateAddresses(int companyId)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
+                return Json(new { success = false, message = "Access denied." });
+
+            var company = await _companyService.GetCompanyByIdAsync(companyId);
+            if (company == null)
+                return Json(new { success = false, message = "Company not found." });
+
+            var canonical = await GetCompanyCanonicalAddressesAsync(company.Id);
+            if (canonical.Count == 0)
+                return Json(new { success = false, message = "This company has no addresses defined. Add at least one company address before validating — otherwise every customer address would be treated as invalid." });
+
+            var companyCustomers = await _companyService.GetCompanyCustomersByCompanyIdAsync(company.Id, showHidden: true);
+            var flagged = new List<object>();
+            var totalCustomers = 0;
+
+            foreach (var cc in companyCustomers)
+            {
+                var customer = await _customerService.GetCustomerByIdAsync(cc.CustomerId);
+                if (customer == null)
+                    continue;
+                totalCustomers++;
+
+                var addresses = await _customerService.GetAddressesByCustomerIdAsync(customer.Id);
+                var presentKeys = new HashSet<string>(addresses.Select(GetAddressKey));
+
+                var extras = addresses.Where(a => !canonical.ContainsKey(GetAddressKey(a))).ToList();
+                var missing = canonical.Where(kv => !presentKeys.Contains(kv.Key)).Select(kv => kv.Value).ToList();
+
+                if (extras.Any() || missing.Any())
+                {
+                    flagged.Add(new
+                    {
+                        customerId = customer.Id,
+                        name = await _customerService.GetCustomerFullNameAsync(customer),
+                        email = customer.Email,
+                        extras = extras.Select(a => new { id = a.Id, summary = GetAddressSummary(a) }).ToList(),
+                        missing = missing.Select(a => new { summary = GetAddressSummary(a) }).ToList()
+                    });
+                }
+            }
+
+            return Json(new
+            {
+                success = true,
+                companyAddressCount = canonical.Count,
+                totalCustomers,
+                flaggedCount = flagged.Count,
+                flagged
+            });
+        }
+
+        /// <summary>
+        /// Brings the supplied (already-validated and displayed) customers into exact agreement with the
+        /// company's addresses: it unlinks every customer-address mapping whose address is NOT one of the
+        /// company's addresses, and clones any missing company addresses onto the customer (the same way
+        /// they are copied at registration). Both sets are recomputed server-side (the client list is not
+        /// trusted). Billing/shipping pointers that ended up cleared are repointed to a company address.
+        /// Extra address rows themselves are left intact — only their CustomerAddressMapping links are removed.
+        /// </summary>
+        [HttpPost]
+        public virtual async Task<IActionResult> FixAddresses(int companyId, string customerIds)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
+                return Json(new { success = false, message = "Access denied." });
+
+            var company = await _companyService.GetCompanyByIdAsync(companyId);
+            if (company == null)
+                return Json(new { success = false, message = "Company not found." });
+
+            //customerIds arrives as a single comma-separated field (one form value) to avoid the
+            //default form value-count / model-binding collection limits (1024) on large companies
+            var requestedIds = (customerIds ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => int.TryParse(x, out var n) ? n : 0)
+                .Where(n => n > 0)
+                .Distinct()
+                .ToList();
+            if (requestedIds.Count == 0)
+                return Json(new { success = false, message = "No customers were selected to fix." });
+
+            var canonical = await GetCompanyCanonicalAddressesAsync(company.Id);
+            if (canonical.Count == 0)
+                return Json(new { success = false, message = "This company has no addresses defined. Nothing to validate against." });
+
+            //only ever touch customers that actually belong to this company
+            var validCustomerIds = (await _companyService.GetCompanyCustomersByCompanyIdAsync(company.Id, showHidden: true))
+                .Select(cc => cc.CustomerId).ToHashSet();
+
+            var fixedCustomers = 0;
+            var removedMappings = 0;
+            var addedAddresses = 0;
+
+            foreach (var customerId in requestedIds)
+            {
+                if (!validCustomerIds.Contains(customerId))
+                    continue;
+
+                var customer = await _customerService.GetCustomerByIdAsync(customerId);
+                if (customer == null)
+                    continue;
+
+                var addresses = await _customerService.GetAddressesByCustomerIdAsync(customer.Id);
+                var presentKeys = new HashSet<string>(addresses.Select(GetAddressKey));
+
+                var extras = addresses.Where(a => !canonical.ContainsKey(GetAddressKey(a))).ToList();
+                var missing = canonical.Where(kv => !presentKeys.Contains(kv.Key)).Select(kv => kv.Value).ToList();
+
+                if (!extras.Any() && !missing.Any())
+                    continue;
+
+                //remove extras (RemoveCustomerAddressAsync also nulls Billing/ShippingAddressId in memory if matched)
+                foreach (var extra in extras)
+                {
+                    await _customerService.RemoveCustomerAddressAsync(customer, extra);
+                    removedMappings++;
+                }
+
+                //backfill missing company addresses by cloning them onto the customer (same as registration)
+                foreach (var companyAddress in missing)
+                {
+                    var clone = _addressService.CloneAddress(companyAddress);
+                    clone.CreatedOnUtc = DateTime.UtcNow;
+                    await _addressService.InsertAddressAsync(clone);
+                    await _customerService.InsertCustomerAddressAsync(customer, clone);
+                    addedAddresses++;
+                }
+
+                //ensure billing/shipping point at one of the company addresses now mapped to the customer
+                var companyMapped = (await _customerService.GetAddressesByCustomerIdAsync(customer.Id))
+                    .Where(a => canonical.ContainsKey(GetAddressKey(a))).ToList();
+                var fallbackId = companyMapped.Select(a => (int?)a.Id).FirstOrDefault();
+                if ((customer.BillingAddressId == null || customer.BillingAddressId == 0) && fallbackId.HasValue)
+                    customer.BillingAddressId = fallbackId;
+                if ((customer.ShippingAddressId == null || customer.ShippingAddressId == 0) && fallbackId.HasValue)
+                    customer.ShippingAddressId = fallbackId;
+
+                await _customerService.UpdateCustomerAsync(customer);
+                fixedCustomers++;
+            }
+
+            return Json(new
+            {
+                success = true,
+                message = $"Fixed {fixedCustomers} customer(s); removed {removedMappings} extra link(s), added {addedAddresses} missing address(es).",
+                fixedCustomers,
+                removedMappings,
+                addedAddresses
+            });
+        }
+
+        #endregion
     }
 }
