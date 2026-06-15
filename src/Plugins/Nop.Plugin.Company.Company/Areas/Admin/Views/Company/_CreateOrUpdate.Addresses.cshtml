@@ -60,6 +60,162 @@
                 }
     </script>
 </div>
+
+<div class="card-body" id="company-address-validation-block">
+    <div class="form-text-row" style="margin-bottom: 10px;">
+        <strong>Address consistency check.</strong>
+        Every customer associated with this company should have exactly the same addresses as the
+        company (they are copied to each customer at registration). Use <em>Validate</em> to find
+        customers whose addresses don't match the company's — either extra addresses that aren't the
+        company's, or company addresses they're missing. Use <em>Fix</em> to unlink the extra addresses
+        and add (clone) the missing company addresses to the listed customers, so they end up with
+        exactly the company's set.
+    </div>
+
+    <button type="button" class="btn btn-warning" id="validate-company-addresses-btn"
+            title="Scans every customer linked to this company and lists those whose addresses don't exactly match the company's — extra addresses that aren't the company's and/or company addresses they're missing. Read-only — makes no changes.">
+        <i class="fas fa-clipboard-check"></i>
+        Validate
+    </button>
+    <button type="button" class="btn btn-danger" id="fix-company-addresses-btn" style="display: none;"
+            title="For the customers shown in the table below: unlinks every address that is not one of the company's addresses, and clones any missing company addresses onto the customer. Extra address records are kept (only the customer-to-address links are removed); missing ones are added as new copies. Billing/shipping is repointed to a company address when needed.">
+        <i class="fas fa-wrench"></i>
+        Fix shown customers
+    </button>
+
+    <div id="validate-company-addresses-status" style="margin-top: 10px;"></div>
+
+    <div id="validate-company-addresses-results" style="display: none; margin-top: 10px;">
+        <table class="table table-bordered table-hover" id="validate-company-addresses-table">
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Email</th>
+                    <th>Extra addresses to remove</th>
+                    <th>Missing addresses to add</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    $(document).ready(function () {
+        var companyId = @Model.Id;
+        var $validateBtn = $('#validate-company-addresses-btn');
+        var $fixBtn = $('#fix-company-addresses-btn');
+        var $status = $('#validate-company-addresses-status');
+        var $results = $('#validate-company-addresses-results');
+        var $tbody = $('#validate-company-addresses-table tbody');
+        var flaggedCustomerIds = [];
+
+        function antiForgeryToken() {
+            return $('input[name="__RequestVerificationToken"]').first().val();
+        }
+
+        $validateBtn.on('click', function () {
+            $validateBtn.prop('disabled', true);
+            $fixBtn.hide();
+            $results.hide();
+            $tbody.empty();
+            flaggedCustomerIds = [];
+            $status.html('<span class="text-muted">Validating…</span>');
+
+            $.ajax({
+                cache: false,
+                type: 'POST',
+                url: '@Url.Action("ValidateAddresses", "Company")',
+                data: { companyId: companyId, __RequestVerificationToken: antiForgeryToken() },
+                dataType: 'json',
+                success: function (response) {
+                    if (!response.success) {
+                        $status.html('<span class="text-danger">' + response.message + '</span>');
+                        return;
+                    }
+
+                    if (response.flaggedCount === 0) {
+                        $status.html('<span class="text-success">All ' + response.totalCustomers +
+                            ' company customer(s) have exactly the company\'s ' + response.companyAddressCount +
+                            ' address(es). Nothing to fix.</span>');
+                        return;
+                    }
+
+                    function addressListCell(items) {
+                        if (!items || items.length === 0)
+                            return $('<td class="text-center"></td>').text('—');
+                        var list = $('<ul style="margin:0;padding-left:18px;"></ul>');
+                        $.each(items, function (j, addr) {
+                            list.append($('<li></li>').text(addr.summary));
+                        });
+                        return $('<td></td>').append(list);
+                    }
+
+                    $.each(response.flagged, function (i, c) {
+                        flaggedCustomerIds.push(c.customerId);
+                        var $row = $('<tr></tr>');
+                        $row.append($('<td></td>').text(c.name || '(no name)'));
+                        $row.append($('<td></td>').text(c.email || ''));
+                        $row.append(addressListCell(c.extras));
+                        $row.append(addressListCell(c.missing));
+                        $tbody.append($row);
+                    });
+
+                    $status.html('<span class="text-danger">' + response.flaggedCount + ' of ' +
+                        response.totalCustomers + ' company customer(s) don\'t match the company\'s ' +
+                        response.companyAddressCount + ' address(es).</span>');
+                    $results.show();
+                    $fixBtn.show().prop('disabled', false);
+                },
+                error: function () {
+                    $status.html('<span class="text-danger">Validation failed. Please try again.</span>');
+                },
+                complete: function () {
+                    $validateBtn.prop('disabled', false);
+                }
+            });
+        });
+
+        $fixBtn.on('click', function () {
+            if (flaggedCustomerIds.length === 0)
+                return;
+            if (!confirm('Update ' + flaggedCustomerIds.length +
+                ' customer(s) to exactly match the company\'s addresses (remove extras, add missing)? This cannot be undone.'))
+                return;
+
+            $fixBtn.prop('disabled', true);
+            $status.html('<span class="text-muted">Fixing…</span>');
+
+            $.ajax({
+                cache: false,
+                type: 'POST',
+                traditional: true,
+                url: '@Url.Action("FixAddresses", "Company")',
+                data: { companyId: companyId, customerIds: flaggedCustomerIds, __RequestVerificationToken: antiForgeryToken() },
+                dataType: 'json',
+                success: function (response) {
+                    if (!response.success) {
+                        $status.html('<span class="text-danger">' + response.message + '</span>');
+                        $fixBtn.prop('disabled', false);
+                        return;
+                    }
+                    $status.html('<span class="text-success">' + response.message + ' Re-validating…</span>');
+                    $tbody.empty();
+                    $results.hide();
+                    $fixBtn.hide();
+                    flaggedCustomerIds = [];
+                    //re-run validation to confirm the result
+                    $validateBtn.trigger('click');
+                },
+                error: function () {
+                    $status.html('<span class="text-danger">Fix failed. Please try again.</span>');
+                    $fixBtn.prop('disabled', false);
+                }
+            });
+        });
+    });
+</script>
+
  <div class="card-body">
         <button type="button" class="btn btn-primary" onclick="location.href = '@Url.Action("AddressCreate", new { customerId = Model.Id })'">
             @T("Admin.Customers.Customers.Addresses.AddButton")
