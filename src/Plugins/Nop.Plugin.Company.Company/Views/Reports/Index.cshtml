@@ -133,8 +133,7 @@
 
         // ---- charts ----
         (window.__reportCharts || []).forEach(function (c) {
-            var el = document.getElementById(c.id);
-            if (!el || typeof Chart === 'undefined') return;
+            if (typeof Chart === 'undefined') return;
 
             if (c.kind === 'pies') {
                 var colors = c.labels.map(function (_, i) { return palette[i % palette.length]; });
@@ -146,7 +145,13 @@
                 };
                 mkPie(c.amtId, c.amounts, c.titleAmount);
                 mkPie(c.cntId, c.counts, c.titleCount);
-            } else if (c.kind === 'stacked') {
+                return;
+            }
+
+            var el = document.getElementById(c.id);
+            if (!el) return;
+
+            if (c.kind === 'stacked') {
                 // rows: [vendor, day, total] -> x=days, one dataset per vendor (stacked)
                 var days = [...new Set(c.rows.map(function (r) { return r[1]; }))].sort();
                 var vendors = [...new Set(c.rows.map(function (r) { return r[0]; }))];
