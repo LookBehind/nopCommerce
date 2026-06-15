@@ -18,11 +18,18 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
+      - name: Compute image tag
+        id: meta
+        run: |
+          BRANCH="${GITHUB_REF_NAME//\//-}"
+          SHORT_SHA="${GITHUB_SHA:0:6}"
+          echo "tag=${BRANCH}-${SHORT_SHA}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push container image to registry
         uses: docker/build-push-action@v2
         with:
           push: true
-          tags: eisajanyan/nopcommerce:${{ github.run_number }}-${{ github.sha }}
+          tags: eisajanyan/nopcommerce:${{ steps.meta.outputs.tag }}
           file: Dockerfile
           context: .
     
