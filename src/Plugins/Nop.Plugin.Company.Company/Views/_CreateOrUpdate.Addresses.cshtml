@@ -189,9 +189,8 @@
             $.ajax({
                 cache: false,
                 type: 'POST',
-                traditional: true,
                 url: '@Url.Action("FixAddresses", "Company")',
-                data: { companyId: companyId, customerIds: flaggedCustomerIds, __RequestVerificationToken: antiForgeryToken() },
+                data: { companyId: companyId, customerIds: flaggedCustomerIds.join(','), __RequestVerificationToken: antiForgeryToken() },
                 dataType: 'json',
                 success: function (response) {
                     if (!response.success) {

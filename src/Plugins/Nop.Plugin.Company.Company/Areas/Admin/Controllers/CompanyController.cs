@@ -882,7 +882,7 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Controllers
         /// Extra address rows themselves are left intact — only their CustomerAddressMapping links are removed.
         /// </summary>
         [HttpPost]
-        public virtual async Task<IActionResult> FixAddresses(int companyId, int[] customerIds)
+        public virtual async Task<IActionResult> FixAddresses(int companyId, string customerIds)
         {
             if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCustomers))
                 return Json(new { success = false, message = "Access denied." });
@@ -891,7 +891,15 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Controllers
             if (company == null)
                 return Json(new { success = false, message = "Company not found." });
 
-            if (customerIds == null || customerIds.Length == 0)
+            //customerIds arrives as a single comma-separated field (one form value) to avoid the
+            //default form value-count / model-binding collection limits (1024) on large companies
+            var requestedIds = (customerIds ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => int.TryParse(x, out var n) ? n : 0)
+                .Where(n => n > 0)
+                .Distinct()
+                .ToList();
+            if (requestedIds.Count == 0)
                 return Json(new { success = false, message = "No customers were selected to fix." });
 
             var canonical = await GetCompanyCanonicalAddressesAsync(company.Id);
@@ -906,7 +914,7 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Controllers
             var removedMappings = 0;
             var addedAddresses = 0;
 
-            foreach (var customerId in customerIds.Distinct())
+            foreach (var customerId in requestedIds)
             {
                 if (!validCustomerIds.Contains(customerId))
                     continue;
