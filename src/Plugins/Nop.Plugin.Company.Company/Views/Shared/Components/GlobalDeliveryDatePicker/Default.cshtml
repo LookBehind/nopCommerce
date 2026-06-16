@@ -993,6 +993,14 @@
                 // highlighted in the calendar (user taps the day to pick a time)
                 showDateView();
 
+                // Reflect the freshly-fetched selection: if the server says we have a valid
+                // delivery time, the modal must be closable — even when it was auto-opened
+                // after a transient "no selection" check (e.g. right after checkout).
+                hasValidSelection = !!(response && response.success && response.selectedDeliveryTime);
+                if (window.DeliveryTimeValidator) {
+                    window.DeliveryTimeValidator.state.hasValidSelection = hasValidSelection;
+                }
+
                 // Show/hide close button based on whether there's a valid selection
                 if (hasValidSelection) {
                     $('#delivery-modal-close').show();
