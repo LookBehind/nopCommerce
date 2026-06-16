@@ -58,9 +58,11 @@ namespace Nop.Plugin.Company.Company.Services
         Task<List<DeliverySlot>> GetDeliverySlotsAsync();
 
         /// <summary>
-        /// Gets the count of non-cancelled orders for each delivery time
+        /// Gets the count of the current customer's non-cancelled orders for each delivery time,
+        /// so the picker can show how many orders the customer has pre-placed per slot (and flag
+        /// days that already have orders).
         /// </summary>
-        /// <param name="deliveryTimes">List of delivery times to count orders for</param>
+        /// <param name="deliveryTimes">List of delivery times (in the display time zone) to count orders for</param>
         /// <returns>
         /// A task that represents the asynchronous operation
         /// The task result contains a dictionary mapping delivery time to order count
