@@ -742,7 +742,21 @@
         var selectedDateTime = null; // Track the full selected datetime
         var availableTimesData = [];
         var availableTimesByDate = {};
-        var orderedDates = []; // dates ("yyyy-MM-dd") the customer has already pre-ordered
+        var orderCountsByTime = {}; // "yyyy-MM-ddTHH:mm:ss" -> count of the customer's orders in that slot
+        var orderCountsByDate = {}; // "yyyy-MM-dd" -> total of the customer's orders that day
+
+        // Build the per-time and per-day order-count maps from a GetDeliveryTime response
+        function setOrderCounts(response) {
+            orderCountsByTime = response.orderCountsByTime || {};
+            orderCountsByDate = {};
+            Object.keys(orderCountsByTime).forEach(function(key) {
+                var c = orderCountsByTime[key] || 0;
+                if (c > 0) {
+                    var datePart = key.split('T')[0];
+                    orderCountsByDate[datePart] = (orderCountsByDate[datePart] || 0) + c;
+                }
+            });
+        }
 
         // Load available times from AJAX
         function loadAvailableTimesFromAjax() {
@@ -782,8 +796,8 @@
                         availableTimesByDate[item.date].push(item);
                     });
 
-                    // Days the customer has already pre-ordered
-                    orderedDates = response.orderedDates || [];
+                    // Per-slot / per-day counts of the customer's existing orders
+                    setOrderCounts(response);
 
                     // Update display classes based on response
                     if (window.DeliveryTimeValidator && window.DeliveryTimeValidator.updateDisplayClasses) {
@@ -876,7 +890,7 @@
                 var isCurrentMonth = date.getMonth() === currentMonth;
                 var isToday = date.toDateString() === new Date().toDateString();
                 var hasAvailableTimes = availableTimesByDate[dateStr] && availableTimesByDate[dateStr].length > 0;
-                var hasOrder = orderedDates.indexOf(dateStr) !== -1;
+                var hasOrder = (orderCountsByDate[dateStr] || 0) > 0;
 
                 if (!isCurrentMonth) {
                     dayClass += ' other-month';
@@ -952,8 +966,8 @@
                         availableTimesByDate[item.date].push(item);
                     });
 
-                    // Days the customer has already pre-ordered
-                    orderedDates = response.orderedDates || [];
+                    // Per-slot / per-day counts of the customer's existing orders
+                    setOrderCounts(response);
 
                     // Update selected date/time if exists
                     if (response.selectedDeliveryTime) {
@@ -1071,9 +1085,12 @@
             times.forEach(function(timeSlot) {
                 var isSelected = selectedDateTime && timeSlot.datetime === selectedDateTime;
                 var selectedClass = isSelected ? ' selected' : '';
+                // Slots with no orders are omitted from orderCountsByTime — default to 0
+                var orderCount = orderCountsByTime[timeSlot.datetime] || 0;
+                var ordersLabel = orderCount + (orderCount === 1 ? ' order' : ' orders');
                 timeSlotsHtml += '<div class="time-slot-item' + selectedClass + '" data-datetime="' + timeSlot.datetime + '" data-display="' + timeSlot.display + '">' +
                     '<div class="time-slot-time">' + timeSlot.time + '</div>' +
-                    '<div class="time-slot-orders">0 orders</div>' +
+                    '<div class="time-slot-orders">' + ordersLabel + '</div>' +
                     '</div>';
             });
 

@@ -303,63 +303,48 @@ namespace Nop.Plugin.Company.Company.Services
             if (deliveryTimes == null || deliveryTimes.Count == 0)
                 return new Dictionary<DateTime, int>();
 
-            // Get unique dates to query
-            var dates = deliveryTimes.Select(dt => dt.Date).Distinct().ToList();
-
-            // Query all non-cancelled, non-deleted orders for those dates
-            var orders = await _orderRepository.Table
-                .Where(o => !o.Deleted &&
-                            (OrderStatus)o.OrderStatusId != OrderStatus.Cancelled &&
-                            dates.Contains(o.ScheduleDate.Date))
-                .Select(o => o.ScheduleDate)
-                .ToListAsync();
-
-            // Count orders per delivery time (matching both date and time of day)
-            var result = new Dictionary<DateTime, int>();
-            foreach (var deliveryTime in deliveryTimes)
-            {
-                var count = orders.Count(o => o.Date == deliveryTime.Date &&
-                                              o.TimeOfDay.Hours == deliveryTime.TimeOfDay.Hours &&
-                                              o.TimeOfDay.Minutes == deliveryTime.TimeOfDay.Minutes);
-                result[deliveryTime] = count;
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// Gets the distinct delivery dates the current customer has already placed (non-cancelled)
-        /// orders for, in the customer's/company's display time zone.
-        /// </summary>
-        public virtual async Task<List<string>> GetCurrentCustomerOrderDatesAsync()
-        {
             var currentCustomer = await _workContext.GetCurrentCustomerAsync();
             if (currentCustomer == null)
-                return new List<string>();
+                return deliveryTimes.ToDictionary(dt => dt, _ => 0);
 
             var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
             var timezoneInfo = company == null
                 ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
                 : TZConvert.GetTimeZoneInfo(company.TimeZone);
 
-            // ScheduleDate is stored in UTC. Only look at recent/upcoming orders — the calendar
-            // never shows days far in the past, so there's no point flagging them.
-            var lowerBoundUtc = DateTime.UtcNow.Date.AddDays(-1);
+            // The incoming deliveryTimes are wall-clock times in the display (company/customer)
+            // time zone, but Order.ScheduleDate is stored in UTC. Comparing them directly is the
+            // bug that made every count come back 0. Bracket the query by a generous UTC range
+            // around the requested local dates, then convert each order's ScheduleDate from UTC
+            // to the display zone before matching on date + time of day.
+            var lowerBoundUtc = deliveryTimes.Min(dt => dt.Date).AddDays(-1);
+            var upperBoundUtc = deliveryTimes.Max(dt => dt.Date).AddDays(1);
 
             var scheduleDatesUtc = await _orderRepository.Table
                 .Where(o => o.CustomerId == currentCustomer.Id &&
                             !o.Deleted &&
                             (OrderStatus)o.OrderStatusId != OrderStatus.Cancelled &&
-                            o.ScheduleDate >= lowerBoundUtc)
+                            o.ScheduleDate >= lowerBoundUtc &&
+                            o.ScheduleDate <= upperBoundUtc)
                 .Select(o => o.ScheduleDate)
                 .ToListAsync();
 
-            return scheduleDatesUtc
-                .Select(utc => _dateTimeHelper
-                    .ConvertToUserTime(utc, TimeZoneInfo.Utc, timezoneInfo)
-                    .ToString("yyyy-MM-dd"))
-                .Distinct()
+            // Convert UTC -> display time zone so it lines up with deliveryTimes
+            var ordersLocal = scheduleDatesUtc
+                .Select(utc => _dateTimeHelper.ConvertToUserTime(utc, TimeZoneInfo.Utc, timezoneInfo))
                 .ToList();
+
+            // Count orders per delivery time (matching both date and time of day)
+            var result = new Dictionary<DateTime, int>();
+            foreach (var deliveryTime in deliveryTimes)
+            {
+                var count = ordersLocal.Count(o => o.Date == deliveryTime.Date &&
+                                                   o.TimeOfDay.Hours == deliveryTime.TimeOfDay.Hours &&
+                                                   o.TimeOfDay.Minutes == deliveryTime.TimeOfDay.Minutes);
+                result[deliveryTime] = count;
+            }
+
+            return result;
         }
 
         #endregion

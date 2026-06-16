@@ -126,16 +126,17 @@ namespace Nop.Plugin.Company.Company.Controllers
 
                 var possibleTimes = await deliveryTimeService.GetAvailableDeliveryTimesAsync();
                 var orderCounts = await deliveryTimeService.GetOrderCountsByDeliveryTimesAsync(possibleTimes);
-                var orderedDates = await deliveryTimeService.GetCurrentCustomerOrderDatesAsync();
 
                 return Json(new {
                     success = true,
                     selectedDeliveryTime = selectedTime,
                     possibleDeliveryTimes = possibleTimes,
-                    orderedDates = orderedDates,
-                    orderCountsByTime = orderCounts.ToDictionary(
-                        kvp => kvp.Key.ToString("yyyy-MM-ddTHH:mm:ss"),
-                        kvp => kvp.Value),
+                    // Only slots that actually have orders are sent; the client defaults the rest to 0
+                    orderCountsByTime = orderCounts
+                        .Where(kvp => kvp.Value > 0)
+                        .ToDictionary(
+                            kvp => kvp.Key.ToString("yyyy-MM-ddTHH:mm:ss"),
+                            kvp => kvp.Value),
                     isValid = isValid,
                     shouldPrompt = shouldPrompt,
                     promptType = promptType,
