@@ -260,22 +260,24 @@
         background: #0056b3;
     }
 
-    /* Days the customer has already pre-ordered get a "checked" badge */
+    /* Days the customer has already pre-ordered get a small green check badge tucked
+       inside the circle's bottom-right edge — contained, so it never clips, overlaps a
+       neighbour, or interferes with the day number. */
     .calendar-day.has-order::after {
         content: '✓';
         position: absolute;
-        top: -1px;
-        right: -1px;
-        width: 15px;
-        height: 15px;
+        right: 1px;
+        bottom: 1px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
         background: #28a745;
         color: #fff;
-        border: 2px solid #fff;
-        border-radius: 50%;
-        font-size: 9px;
+        font-size: 10px;
         font-weight: 700;
-        line-height: 15px;
+        line-height: 16px;
         text-align: center;
+        box-shadow: 0 0 0 2px #fff;
     }
 
     .calendar-day.other-month {
