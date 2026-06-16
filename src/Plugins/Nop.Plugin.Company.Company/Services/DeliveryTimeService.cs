@@ -327,6 +327,41 @@ namespace Nop.Plugin.Company.Company.Services
             return result;
         }
 
+        /// <summary>
+        /// Gets the distinct delivery dates the current customer has already placed (non-cancelled)
+        /// orders for, in the customer's/company's display time zone.
+        /// </summary>
+        public virtual async Task<List<string>> GetCurrentCustomerOrderDatesAsync()
+        {
+            var currentCustomer = await _workContext.GetCurrentCustomerAsync();
+            if (currentCustomer == null)
+                return new List<string>();
+
+            var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
+            var timezoneInfo = company == null
+                ? await _dateTimeHelper.GetCustomerTimeZoneAsync(currentCustomer)
+                : TZConvert.GetTimeZoneInfo(company.TimeZone);
+
+            // ScheduleDate is stored in UTC. Only look at recent/upcoming orders — the calendar
+            // never shows days far in the past, so there's no point flagging them.
+            var lowerBoundUtc = DateTime.UtcNow.Date.AddDays(-1);
+
+            var scheduleDatesUtc = await _orderRepository.Table
+                .Where(o => o.CustomerId == currentCustomer.Id &&
+                            !o.Deleted &&
+                            (OrderStatus)o.OrderStatusId != OrderStatus.Cancelled &&
+                            o.ScheduleDate >= lowerBoundUtc)
+                .Select(o => o.ScheduleDate)
+                .ToListAsync();
+
+            return scheduleDatesUtc
+                .Select(utc => _dateTimeHelper
+                    .ConvertToUserTime(utc, TimeZoneInfo.Utc, timezoneInfo)
+                    .ToString("yyyy-MM-dd"))
+                .Distinct()
+                .ToList();
+        }
+
         #endregion
     }
 }

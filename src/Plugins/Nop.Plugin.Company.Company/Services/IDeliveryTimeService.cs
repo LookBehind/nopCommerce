@@ -66,6 +66,17 @@ namespace Nop.Plugin.Company.Company.Services
         /// The task result contains a dictionary mapping delivery time to order count
         /// </returns>
         Task<Dictionary<DateTime, int>> GetOrderCountsByDeliveryTimesAsync(List<DateTime> deliveryTimes);
+
+        /// <summary>
+        /// Gets the distinct delivery dates the current customer has already placed (non-cancelled)
+        /// orders for, so the calendar can flag days the customer has pre-ordered.
+        /// </summary>
+        /// <returns>
+        /// A task that represents the asynchronous operation.
+        /// The task result contains the dates as "yyyy-MM-dd" strings in the customer's/company's
+        /// display time zone (matching how the calendar groups available delivery times).
+        /// </returns>
+        Task<List<string>> GetCurrentCustomerOrderDatesAsync();
     }
 
     /// <summary>

@@ -260,9 +260,22 @@
         background: #0056b3;
     }
 
-    .calendar-day.selected {
-        background: #28a745 !important;
-        color: white;
+    /* Days the customer has already pre-ordered get a "checked" badge */
+    .calendar-day.has-order::after {
+        content: '✓';
+        position: absolute;
+        top: -1px;
+        right: -1px;
+        width: 15px;
+        height: 15px;
+        background: #28a745;
+        color: #fff;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        font-size: 9px;
+        font-weight: 700;
+        line-height: 15px;
+        text-align: center;
     }
 
     .calendar-day.other-month {
@@ -729,6 +742,7 @@
         var selectedDateTime = null; // Track the full selected datetime
         var availableTimesData = [];
         var availableTimesByDate = {};
+        var orderedDates = []; // dates ("yyyy-MM-dd") the customer has already pre-ordered
 
         // Load available times from AJAX
         function loadAvailableTimesFromAjax() {
@@ -767,6 +781,9 @@
                         }
                         availableTimesByDate[item.date].push(item);
                     });
+
+                    // Days the customer has already pre-ordered
+                    orderedDates = response.orderedDates || [];
 
                     // Update display classes based on response
                     if (window.DeliveryTimeValidator && window.DeliveryTimeValidator.updateDisplayClasses) {
@@ -859,7 +876,7 @@
                 var isCurrentMonth = date.getMonth() === currentMonth;
                 var isToday = date.toDateString() === new Date().toDateString();
                 var hasAvailableTimes = availableTimesByDate[dateStr] && availableTimesByDate[dateStr].length > 0;
-                var isSelected = selectedDate === dateStr;
+                var hasOrder = orderedDates.indexOf(dateStr) !== -1;
 
                 if (!isCurrentMonth) {
                     dayClass += ' other-month';
@@ -870,8 +887,9 @@
                 if (hasAvailableTimes && isCurrentMonth) {
                     dayClass += ' available';
                 }
-                if (isSelected) {
-                    dayClass += ' selected';
+                // Flag days the customer has already pre-ordered (a "checked" badge)
+                if (hasOrder && isCurrentMonth) {
+                    dayClass += ' has-order';
                 }
 
                 calendarHtml += '<div class="' + dayClass + '" data-date="' + dateStr + '">' + date.getDate() + '</div>';
@@ -933,6 +951,9 @@
                         }
                         availableTimesByDate[item.date].push(item);
                     });
+
+                    // Days the customer has already pre-ordered
+                    orderedDates = response.orderedDates || [];
 
                     // Update selected date/time if exists
                     if (response.selectedDeliveryTime) {
@@ -1021,11 +1042,7 @@
             var clickedDate = $(this).data('date');
             selectedDate = clickedDate;
 
-            // Update visual selection
-            $('.calendar-day').removeClass('selected');
-            $(this).addClass('selected');
-
-            // Show time slots for selected date
+            // Navigate to the time slots for the chosen day
             showTimeSlots(clickedDate);
         });
 
