@@ -531,7 +531,7 @@ namespace Nop.Web.Controllers.Api.Order
                 return Ok(new
                 {
                     success = false,
-                    code = 1000,
+                    code = (int)OrderResultCode.ScheduleNotAllowed,
                     message =
                         "We're sorry, but looks like your scheduled delivery date had passed (or invalid), please refresh the app, check you schedule date again and confirm the order. " +
                         "If the issue still persist please notify MySnacks team."
@@ -589,13 +589,11 @@ namespace Nop.Web.Controllers.Api.Order
             {
                 var errors = placeOrderResult.Errors ?? new List<string>();
 
-                // Result codes (keep in sync with the mobile app's orderErrorCodes.js):
-                //   1000 = schedule not allowed (returned above)
-                //   1001 = no valid billing/shipping (delivery) address
-                // Core PlaceOrder throws these exact hard-coded strings
-                // (OrderProcessingService) for a missing/unavailable billing or
-                // shipping address. Surfacing a stable code lets the app route to the
-                // address picker without string-matching the (free-form) message.
+                // Codes are defined in OrderResultCode (keep in sync with the mobile
+                // app's orderErrorCodes.js). Core PlaceOrder throws these exact
+                // hard-coded strings (OrderProcessingService) for a missing/unavailable
+                // billing or shipping address. Surfacing a stable code lets the app
+                // route to the address picker without string-matching the message.
                 var isAddressError = errors.Any(error => !string.IsNullOrEmpty(error)
                     && (error.Contains("Billing address", StringComparison.OrdinalIgnoreCase)
                         || error.Contains("Shipping address", StringComparison.OrdinalIgnoreCase)));
@@ -603,7 +601,9 @@ namespace Nop.Web.Controllers.Api.Order
                 return Ok(new
                 {
                     success = false,
-                    code = isAddressError ? 1001 : 0,
+                    code = (int)(isAddressError
+                        ? OrderResultCode.InvalidDeliveryAddress
+                        : OrderResultCode.None),
                     message = string.Join(", ", errors)
                 });
             }
