@@ -585,12 +585,33 @@ namespace Nop.Web.Controllers.Api.Order
             processPaymentRequest.PaymentMethodSystemName = "Payments.CheckMoneyOrder";
             var placeOrderResult = await _orderProcessingService.PlaceOrderAsync(processPaymentRequest);
 
+            if (!placeOrderResult.Success)
+            {
+                var errors = placeOrderResult.Errors ?? new List<string>();
+
+                // Result codes (keep in sync with the mobile app's orderErrorCodes.js):
+                //   1000 = schedule not allowed (returned above)
+                //   1001 = no valid billing/shipping (delivery) address
+                // Core PlaceOrder throws these exact hard-coded strings
+                // (OrderProcessingService) for a missing/unavailable billing or
+                // shipping address. Surfacing a stable code lets the app route to the
+                // address picker without string-matching the (free-form) message.
+                var isAddressError = errors.Any(error => !string.IsNullOrEmpty(error)
+                    && (error.Contains("Billing address", StringComparison.OrdinalIgnoreCase)
+                        || error.Contains("Shipping address", StringComparison.OrdinalIgnoreCase)));
+
+                return Ok(new
+                {
+                    success = false,
+                    code = isAddressError ? 1001 : 0,
+                    message = string.Join(", ", errors)
+                });
+            }
+
             return Ok(new
             {
-                success = placeOrderResult.Success,
-                message = placeOrderResult.Success ?
-                    await _localizationService.GetResourceAsync("Order.Placed.Successfully") :
-                    string.Join(", ", placeOrderResult.Errors)
+                success = true,
+                message = await _localizationService.GetResourceAsync("Order.Placed.Successfully")
             });
         }
         
