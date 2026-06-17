@@ -23,6 +23,7 @@ namespace Nop.Web.Framework.TagHelpers.Admin
         private const string RENDER_FORM_CONTROL_CLASS_ATTRIBUTE_NAME = "asp-render-form-control-class";
         private const string TEMPLATE_ATTRIBUTE_NAME = "asp-template";
         private const string POSTFIX_ATTRIBUTE_NAME = "asp-postfix";
+        private const string DECIMALS_ATTRIBUTE_NAME = "asp-decimals";
         private const string VALUE_ATTRIBUTE_NAME = "asp-value";
         private const string PLACEHOLDER_ATTRIBUTE_NAME = "placeholder";
         private const string AUTOCOMPLETE_ATTRIBUTE_NAME = "autocomplete";
@@ -79,6 +80,12 @@ namespace Nop.Web.Framework.TagHelpers.Admin
         /// </summary>
         [HtmlAttributeName(POSTFIX_ATTRIBUTE_NAME)]
         public string Postfix { set; get; }
+
+        /// <summary>
+        /// Number of decimal places (used by the Decimal editor template; defaults to 4 when not set)
+        /// </summary>
+        [HtmlAttributeName(DECIMALS_ATTRIBUTE_NAME)]
+        public string Decimals { set; get; }
 
         /// <summary>
         /// The value of the element
@@ -169,7 +176,7 @@ namespace Nop.Web.Framework.TagHelpers.Admin
             if (!_htmlHelper.ViewData.ContainsKey(For.Name) && Regex.IsMatch(For.Name, pattern))
                 _htmlHelper.ViewData.Add(For.Name, For.Model);
 
-            var htmlOutput = _htmlHelper.Editor(For.Name, Template, new { htmlAttributes, postfix = Postfix });
+            var htmlOutput = _htmlHelper.Editor(For.Name, Template, new { htmlAttributes, postfix = Postfix, decimals = Decimals });
             output.Content.SetHtmlContent(htmlOutput);
 
             return Task.CompletedTask;

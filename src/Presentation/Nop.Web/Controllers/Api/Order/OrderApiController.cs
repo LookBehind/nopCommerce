@@ -531,7 +531,7 @@ namespace Nop.Web.Controllers.Api.Order
                 return Ok(new
                 {
                     success = false,
-                    code = 1000,
+                    code = (int)OrderResultCode.ScheduleNotAllowed,
                     message =
                         "We're sorry, but looks like your scheduled delivery date had passed (or invalid), please refresh the app, check you schedule date again and confirm the order. " +
                         "If the issue still persist please notify MySnacks team."
@@ -585,12 +585,33 @@ namespace Nop.Web.Controllers.Api.Order
             processPaymentRequest.PaymentMethodSystemName = "Payments.CheckMoneyOrder";
             var placeOrderResult = await _orderProcessingService.PlaceOrderAsync(processPaymentRequest);
 
+            if (!placeOrderResult.Success)
+            {
+                var errors = placeOrderResult.Errors ?? new List<string>();
+
+                // Codes are defined in OrderResultCode (keep in sync with the mobile
+                // app's orderErrorCodes.js). Core PlaceOrder throws these exact
+                // hard-coded strings (OrderProcessingService) for a missing/unavailable
+                // billing or shipping address. Surfacing a stable code lets the app
+                // route to the address picker without string-matching the message.
+                var isAddressError = errors.Any(error => !string.IsNullOrEmpty(error)
+                    && (error.Contains("Billing address", StringComparison.OrdinalIgnoreCase)
+                        || error.Contains("Shipping address", StringComparison.OrdinalIgnoreCase)));
+
+                return Ok(new
+                {
+                    success = false,
+                    code = (int)(isAddressError
+                        ? OrderResultCode.InvalidDeliveryAddress
+                        : OrderResultCode.None),
+                    message = string.Join(", ", errors)
+                });
+            }
+
             return Ok(new
             {
-                success = placeOrderResult.Success,
-                message = placeOrderResult.Success ?
-                    await _localizationService.GetResourceAsync("Order.Placed.Successfully") :
-                    string.Join(", ", placeOrderResult.Errors)
+                success = true,
+                message = await _localizationService.GetResourceAsync("Order.Placed.Successfully")
             });
         }
         

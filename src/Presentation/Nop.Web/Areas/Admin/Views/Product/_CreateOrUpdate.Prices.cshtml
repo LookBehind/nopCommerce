@@ -65,7 +65,7 @@
             <nop-label asp-for="Price" />
         </div>
         <div class="col-md-9">
-            <nop-editor asp-for="Price" asp-postfix="@Model.PrimaryStoreCurrencyCode" />
+            <nop-editor asp-for="Price" asp-postfix="@Model.PrimaryStoreCurrencyCode" asp-decimals="0" />
             <span asp-validation-for="Price"></span>
         </div>
     </div>
@@ -74,7 +74,7 @@
             <nop-label asp-for="OldPrice" />
         </div>
         <div class="col-md-9">
-            <nop-editor asp-for="OldPrice" asp-postfix="@Model.PrimaryStoreCurrencyCode" />
+            <nop-editor asp-for="OldPrice" asp-postfix="@Model.PrimaryStoreCurrencyCode" asp-decimals="0" />
             <span asp-validation-for="OldPrice"></span>
         </div>
     </div>
@@ -83,7 +83,7 @@
             <nop-label asp-for="ProductCost" />
         </div>
         <div class="col-md-9">
-            <nop-editor asp-for="ProductCost" asp-postfix="@Model.PrimaryStoreCurrencyCode" />
+            <nop-editor asp-for="ProductCost" asp-postfix="@Model.PrimaryStoreCurrencyCode" asp-decimals="0" />
             <span asp-validation-for="ProductCost"></span>
         </div>
     </div>
