@@ -2,9 +2,12 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "master", "products", "2-hours-orders", "hotfix/*" ]
+    branches: [ "master", "hotfix/*" ]
   pull_request:
-    branches: [ "master", "products", "2-hours-orders", "hotfix/*" ]
+
+permissions:
+  contents: read
+  packages: write   # push to ghcr.io/lookbehind
 
 jobs:
   build:
@@ -12,11 +15,18 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Log in to container registry
+      - name: Log in to Docker Hub
         uses: docker/login-action@v1
         with:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compute image tag
         id: meta
@@ -25,11 +35,14 @@ jobs:
           SHORT_SHA="${GITHUB_SHA:0:6}"
           echo "tag=${BRANCH}-${SHORT_SHA}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push container image to registry
+      # Dual-push during the Docker Hub -> ghcr migration: prod still references
+      # Docker Hub, dev pulls ghcr. Drop the Docker Hub tag once prod is migrated.
+      - name: Build and push container image
         uses: docker/build-push-action@v2
         with:
           push: true
-          tags: eisajanyan/nopcommerce:${{ steps.meta.outputs.tag }}
+          tags: |
+            eisajanyan/nopcommerce:${{ steps.meta.outputs.tag }}
+            ghcr.io/lookbehind/nopcommerce:${{ steps.meta.outputs.tag }}
           file: Dockerfile
           context: .
-    
