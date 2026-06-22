@@ -82,9 +82,11 @@ namespace Nop.Web.Framework.Infrastructure
         }
 
         /// <summary>
-        /// After AuthenticationStartup (500) so the customer is resolved from the
-        /// auth cookie / JWT bearer before we read it.
+        /// After AuthenticationStartup (500) / AuthorizationStartup (600) so the
+        /// customer is resolved, but BEFORE NopMvcStartup (1000) — which registers
+        /// the terminal endpoint middleware; anything at/after 1000 would be added
+        /// past UseEndpoints and never run for matched routes.
         /// </summary>
-        public int Order => 1000;
+        public int Order => 700;
     }
 }
