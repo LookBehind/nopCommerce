@@ -71,7 +71,8 @@ namespace Nop.Services.Orders
             string billingEmail = null, 
             string billingLastName = "",
             string orderNotes = null,
-            int customerId = 0);
+            int customerId = 0,
+            List<int> srcIds = null);
 
         /// <summary>
         /// Get order average report
@@ -250,6 +251,7 @@ namespace Nop.Services.Orders
             int warehouseId = 0, int billingCountryId = 0, int orderId = 0, string paymentMethodSystemName = null,
             List<int> osIds = null, List<int> psIds = null, List<int> ssIds = null,
             DateTime? startTimeUtc = null, DateTime? endTimeUtc = null,
-            string billingPhone = null, string billingEmail = null, string billingLastName = "", string orderNotes = null);
+            string billingPhone = null, string billingEmail = null, string billingLastName = "", string orderNotes = null,
+            List<int> srcIds = null);
     }
 }

@@ -43,7 +43,12 @@ namespace Nop.Services.Payments
         public decimal OrderTotal { get; set; }
 
         public DateTime ScheduleDate { get; set; }
-        
+
+        /// <summary>
+        /// Gets or sets the source channel the order is placed through (web, mobile, Kerpak, ...)
+        /// </summary>
+        public OrderSource OrderSource { get; set; }
+
         public bool IgnoreNotPublishedWarning { get; set; }
 
         /// <summary>

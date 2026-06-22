@@ -838,7 +838,8 @@ namespace Nop.Services.Orders
                 CreatedOnUtc = DateTime.UtcNow,
                 CustomOrderNumber = string.Empty,
                 ScheduleDate = processPaymentRequest.ScheduleDate,
-                ScheduleDateTime = processPaymentRequest.ScheduleDate
+                ScheduleDateTime = processPaymentRequest.ScheduleDate,
+                OrderSourceId = (int)processPaymentRequest.OrderSource
             };
 
             if (details.BillingAddress is null)

@@ -18,6 +18,7 @@ namespace Nop.Web.Areas.Admin.Models.Orders
         {
             AvailableDeliveryHours = new List<SelectListItem>();
             AvailableOrderStatuses = new List<SelectListItem>();
+            AvailableOrderSources = new List<SelectListItem>();
             AvailablePaymentStatuses = new List<SelectListItem>();
             AvailableShippingStatuses = new List<SelectListItem>();
             AvailableStores = new List<SelectListItem>();
@@ -26,6 +27,7 @@ namespace Nop.Web.Areas.Admin.Models.Orders
             AvailablePaymentMethods = new List<SelectListItem>();
             AvailableCountries = new List<SelectListItem>();
             OrderStatusIds = new List<int>();
+            OrderSourceIds = new List<int>();
             PaymentStatusIds = new List<int>();
             ShippingStatusIds = new List<int>();
         }
@@ -52,6 +54,9 @@ namespace Nop.Web.Areas.Admin.Models.Orders
 
         [NopResourceDisplayName("Admin.Orders.List.OrderStatus")]
         public IList<int> OrderStatusIds { get; set; }
+
+        [NopResourceDisplayName("Order source")]
+        public IList<int> OrderSourceIds { get; set; }
 
         [NopResourceDisplayName("Admin.Orders.List.PaymentStatus")]
         public IList<int> PaymentStatusIds { get; set; }
@@ -103,6 +108,8 @@ namespace Nop.Web.Areas.Admin.Models.Orders
         public bool IsLoggedInAsVendor { get; set; }
 
         public IList<SelectListItem> AvailableOrderStatuses { get; set; }
+
+        public IList<SelectListItem> AvailableOrderSources { get; set; }
 
         public IList<SelectListItem> AvailablePaymentStatuses { get; set; }
 

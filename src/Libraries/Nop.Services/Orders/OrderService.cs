@@ -357,7 +357,7 @@ namespace Nop.Services.Orders
             string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue,
             bool getOnlyTotalCount = false, bool sendRateNotification = false,
             bool sortByDeliveryDate = false, DateTime? schedulDate = null, DateTime? scheduleDateTime = null,
-            string companyName = null, int deliveryHour = 0)
+            string companyName = null, int deliveryHour = 0, List<int> srcIds = null)
         {
             var query = _orderRepository.Table;
 
@@ -438,6 +438,9 @@ namespace Nop.Services.Orders
 
             if (ssIds != null && ssIds.Any())
                 query = query.Where(o => ssIds.Contains(o.ShippingStatusId));
+
+            if (srcIds != null && srcIds.Any())
+                query = query.Where(o => srcIds.Contains(o.OrderSourceId));
 
             if (!string.IsNullOrEmpty(orderNotes))
                 query = query.Where(o => _orderNoteRepository.Table.Any(oNote => oNote.OrderId == o.Id && oNote.Note.Contains(orderNotes)));

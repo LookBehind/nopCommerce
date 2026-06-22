@@ -42,6 +42,9 @@ namespace Nop.Web.Areas.Admin.Models.Orders
         [NopResourceDisplayName("Admin.Orders.Fields.CustomOrderNumber")]
         public string CustomOrderNumber { get; set; }
         public string Company { get; set; }
+
+        //channel the order was placed through (emoji + label), e.g. "📱 Mobile"
+        public string OrderSource { get; set; }
         
         //store
         [NopResourceDisplayName("Admin.Orders.Fields.Store")]

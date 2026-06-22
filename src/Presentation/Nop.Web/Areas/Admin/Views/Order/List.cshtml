@@ -195,6 +195,14 @@
                                                 <nop-select asp-for="ShippingStatusIds" asp-items="Model.AvailableShippingStatuses" asp-multiple="true" />
                                             </div>
                                         </div>
+                                        <div class="form-group row" @(Model.IsLoggedInAsVendor ? Html.Raw("style='display: none;'") : null)>
+                                            <div class="col-md-4">
+                                                <nop-label asp-for="OrderSourceIds" />
+                                            </div>
+                                            <div class="col-md-8">
+                                                <nop-select asp-for="OrderSourceIds" asp-items="Model.AvailableOrderSources" asp-multiple="true" />
+                                            </div>
+                                        </div>
                                         <div class="form-group row">
                                             <div class="col-md-4">
                                                 <nop-label asp-for="DeliveryDate" />
@@ -350,6 +358,7 @@
                                                     new FilterParameter(nameof(Model.EndDate), typeof(DateTime?)),
                                                     new FilterParameter(nameof(Model.OrderStatusIds)),
                                                     new FilterParameter(nameof(Model.ShippingStatusIds)),
+                                                    new FilterParameter(nameof(Model.OrderSourceIds)),
                                                     new FilterParameter(nameof(Model.StoreId)),
                                                     new FilterParameter(nameof(Model.VendorId)),
                                                     //new FilterParameter(nameof(Model.WarehouseId)),
@@ -409,6 +418,12 @@
                                 {
                                     Title = "Company",
                                     Width = "80"
+                                });
+                                gridModel.ColumnCollection.Add(new ColumnProperty(nameof(OrderModel.OrderSource))
+                                {
+                                    Title = "Source",
+                                    Width = "80",
+                                    ClassName = NopColumnClassDefaults.CenterAll
                                 });
                                 gridModel.ColumnCollection.Add(new ColumnProperty(nameof(OrderModel.StoreName))
                                 {
@@ -504,6 +519,7 @@
                                     OrderStatusIds: $('#@Html.IdFor(model => model.OrderStatusIds)').val(),
                                     PaymentStatusIds: $('#@Html.IdFor(model => model.PaymentStatusIds)').val(),
                                     ShippingStatusIds: $('#@Html.IdFor(model => model.ShippingStatusIds)').val(),
+                                    OrderSourceIds: $('#@Html.IdFor(model => model.OrderSourceIds)').val(),
                                     StoreId: $('#@Html.IdFor(model => model.StoreId)').val(),
                                     VendorId: $('#@Html.IdFor(model => model.VendorId)').val(),
                                     WarehouseId: $('#@Html.IdFor(model => model.WarehouseId)').val(),
@@ -658,6 +674,7 @@
                 searchModel.GoDirectlyToCustomOrderNumber = $('#GoDirectlyToCustomOrderNumber').val();
                 searchModel.OrderStatusIds = $('#OrderStatusIds').val();
                 searchModel.ShippingStatusIds = $('#ShippingStatusIds').val();
+                searchModel.OrderSourceIds = $('#OrderSourceIds').val();
                 $('#export-excel-selected-form #excelSearchModel').val(JSON.stringify(searchModel));
                 $('#export-excel-selected-form').submit();
                 updateTable('#orders-grid');
@@ -702,6 +719,7 @@
                 searchModel.GoDirectlyToCustomOrderNumber = $('#GoDirectlyToCustomOrderNumber').val();
                 searchModel.OrderStatusIds = $('#OrderStatusIds').val();
                 searchModel.ShippingStatusIds = $('#ShippingStatusIds').val();
+                searchModel.OrderSourceIds = $('#OrderSourceIds').val();
                 $('#pdf-invoice-selected-form #pdfSearchModel').val(JSON.stringify(searchModel));
                 $('#pdf-invoice-selected-form').submit();
                 updateTable('#orders-grid');
