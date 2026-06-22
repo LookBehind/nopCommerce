@@ -581,6 +581,7 @@ namespace Nop.Web.Controllers.Api.Order
             processPaymentRequest.StoreId = store.Id;
             processPaymentRequest.CustomerId = customer.Id;
             processPaymentRequest.ScheduleDate = scheduleDateUtc;
+            processPaymentRequest.OrderSource = OrderSource.Mobile;
 
             processPaymentRequest.PaymentMethodSystemName = "Payments.CheckMoneyOrder";
             var placeOrderResult = await _orderProcessingService.PlaceOrderAsync(processPaymentRequest);

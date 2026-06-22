@@ -907,6 +907,17 @@ namespace Nop.Web.Areas.Admin.Factories
                     searchModel.AvailableOrderStatuses.FirstOrDefault().Selected = true;
             }
 
+            //prepare available order sources (channels); empty selection means "all"
+            foreach (OrderSource source in Enum.GetValues(typeof(OrderSource)))
+            {
+                searchModel.AvailableOrderSources.Add(new SelectListItem
+                {
+                    Text = FormatOrderSource(source),
+                    Value = ((int)source).ToString(),
+                    Selected = searchModel.OrderSourceIds?.Contains((int)source) ?? false
+                });
+            }
+
             await _baseAdminModelFactory.PreparePaymentStatusesAsync(searchModel.AvailablePaymentStatuses);
             if (searchModel.AvailablePaymentStatuses.Any())
             {
@@ -968,6 +979,20 @@ namespace Nop.Web.Areas.Admin.Factories
         /// A task that represents the asynchronous operation
         /// The task result contains the order list model
         /// </returns>
+        /// <summary>
+        /// Format the order source channel for display (emoji + label)
+        /// </summary>
+        protected static string FormatOrderSource(OrderSource source)
+        {
+            return source switch
+            {
+                OrderSource.Web => "🌐 Web",
+                OrderSource.Mobile => "📱 Mobile",
+                OrderSource.Kerpak => "🧊 Kerpak",
+                _ => "❓ Unknown"
+            };
+        }
+
         public virtual async Task<OrderListModel> PrepareOrderListModelAsync(OrderSearchModel searchModel)
         {
             if (searchModel == null)
@@ -977,6 +1002,8 @@ namespace Nop.Web.Areas.Admin.Factories
             var orderStatusIds = (searchModel.OrderStatusIds?.Contains(0) ?? true) ? null : searchModel.OrderStatusIds.ToList();
             var paymentStatusIds = (searchModel.PaymentStatusIds?.Contains(0) ?? true) ? null : searchModel.PaymentStatusIds.ToList();
             var shippingStatusIds = (searchModel.ShippingStatusIds?.Contains(0) ?? true) ? null : searchModel.ShippingStatusIds.ToList();
+            //OrderSource.Unknown is 0, a real selectable value, so empty selection (not a 0 sentinel) means "all"
+            var orderSourceIds = (searchModel.OrderSourceIds?.Any() ?? false) ? searchModel.OrderSourceIds.ToList() : null;
             var isLoggedAsVendor = await _workContext.GetCurrentVendorAsync() != null;
             if (isLoggedAsVendor)
                 searchModel.VendorId = (await _workContext.GetCurrentVendorAsync()).Id;
@@ -1013,9 +1040,10 @@ namespace Nop.Web.Areas.Admin.Factories
                 pageIndex: searchModel.Page - 1, 
                 pageSize: searchModel.PageSize, 
                 sortByDeliveryDate: searchModel.SortByDeliveryDate,
-                companyName: searchModel.Company, 
+                companyName: searchModel.Company,
                 deliveryHour: searchModel.DeliveryHourId,
-                schedulDate: searchModel.DeliveryDate);
+                schedulDate: searchModel.DeliveryDate,
+                srcIds: orderSourceIds);
 
             //prepare list model
             var model = await new OrderListModel().PrepareToGridAsync(searchModel, orders, () =>
@@ -1050,6 +1078,7 @@ namespace Nop.Web.Areas.Admin.Factories
                     //fill in additional values (not existing in the entity)
                     orderModel.StoreName = (await _storeService.GetStoreByIdAsync(order.StoreId))?.Name ?? "Deleted";
                     orderModel.OrderStatus = await _localizationService.GetLocalizedEnumAsync(order.OrderStatus);
+                    orderModel.OrderSource = FormatOrderSource(order.OrderSource);
                     orderModel.PaymentStatus = await _localizationService.GetLocalizedEnumAsync(order.PaymentStatus);
                     orderModel.ShippingStatus = await _localizationService.GetLocalizedEnumAsync(order.ShippingStatus);
                     orderModel.OrderTotal = await _priceFormatter.FormatPriceAsync(order.OrderTotal, true, false);
@@ -1078,6 +1107,8 @@ namespace Nop.Web.Areas.Admin.Factories
             var orderStatusIds = (searchModel.OrderStatusIds?.Contains(0) ?? true) ? null : searchModel.OrderStatusIds.ToList();
             var paymentStatusIds = (searchModel.PaymentStatusIds?.Contains(0) ?? true) ? null : searchModel.PaymentStatusIds.ToList();
             var shippingStatusIds = (searchModel.ShippingStatusIds?.Contains(0) ?? true) ? null : searchModel.ShippingStatusIds.ToList();
+            //OrderSource.Unknown is 0, a real selectable value, so empty selection (not a 0 sentinel) means "all"
+            var orderSourceIds = (searchModel.OrderSourceIds?.Any() ?? false) ? searchModel.OrderSourceIds.ToList() : null;
             if (await _workContext.GetCurrentVendorAsync() != null)
                 searchModel.VendorId = (await _workContext.GetCurrentVendorAsync()).Id;
             var startDateValue = !searchModel.StartDate.HasValue ? null
@@ -1103,7 +1134,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 //billingEmail: searchModel.BillingEmail,
                 //billingLastName: searchModel.BillingLastName,
                 //billingCountryId: searchModel.BillingCountryId,
-                orderNotes: searchModel.OrderNotes);
+                orderNotes: searchModel.OrderNotes,
+                srcIds: orderSourceIds);
 
             var profit = await _orderReportService.ProfitReportAsync(storeId: searchModel.StoreId,
                 vendorId: searchModel.VendorId,
@@ -1119,7 +1151,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 //billingEmail: searchModel.BillingEmail,
                 //billingLastName: searchModel.BillingLastName,
                 //billingCountryId: searchModel.BillingCountryId,
-                orderNotes: searchModel.OrderNotes);
+                orderNotes: searchModel.OrderNotes,
+                srcIds: orderSourceIds);
 
             var primaryStoreCurrency = await _currencyService.GetCurrencyByIdAsync(_currencySettings.PrimaryStoreCurrencyId);
             var shippingSum = await _priceFormatter
@@ -1172,6 +1205,7 @@ namespace Nop.Web.Areas.Admin.Factories
                 model.Rating = order.Rating;
                 model.RatingText = order.RatingText;
                 model.OrderStatus = await _localizationService.GetLocalizedEnumAsync(order.OrderStatus);
+                model.OrderSource = FormatOrderSource(order.OrderSource);
                 model.StoreName = (await _storeService.GetStoreByIdAsync(order.StoreId))?.Name ?? "Deleted";
                 model.CustomerInfo = await _customerService.IsRegisteredAsync(customer) ? customer.Email : await _localizationService.GetResourceAsync("Admin.Customers.Guest");
                 model.CreatedOn = await _dateTimeHelper.ConvertToUserTimeAsync(order.CreatedOnUtc, DateTimeKind.Utc);
@@ -2060,6 +2094,17 @@ namespace Nop.Web.Areas.Admin.Factories
                         }
                     }
                     searchModel.ShippingStatusIds = shippingStatusIds;
+                }
+                if (jObject["OrderSourceIds"] != null)
+                {
+                    //0 (Unknown) is a real value for sources, so keep it
+                    List<int> orderSourceIds = new List<int>();
+                    var jArray = jObject["OrderSourceIds"];
+                    foreach (var item in jArray)
+                    {
+                        orderSourceIds.Add(int.Parse(item.ToString()));
+                    }
+                    searchModel.OrderSourceIds = orderSourceIds;
                 }
             }
             catch (Exception e)

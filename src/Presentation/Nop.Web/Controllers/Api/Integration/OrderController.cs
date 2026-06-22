@@ -233,6 +233,7 @@ namespace Nop.Web.Controllers.Integration
             processPaymentRequest.CustomerId = customer.Id;
             processPaymentRequest.ScheduleDate = DateTime.UtcNow;
             processPaymentRequest.IgnoreNotPublishedWarning = true;
+            processPaymentRequest.OrderSource = OrderSource.Kerpak;
 
             processPaymentRequest.PaymentMethodSystemName = "Payments.CheckMoneyOrder";
             var placeOrderResult = await _orderProcessingService.PlaceOrderAsync(processPaymentRequest);

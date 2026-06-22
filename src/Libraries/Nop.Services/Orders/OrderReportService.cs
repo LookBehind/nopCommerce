@@ -270,8 +270,9 @@ namespace Nop.Services.Orders
             string billingPhone = null, 
             string billingEmail = null, 
             string billingLastName = "",
-            string orderNotes = null, 
-            int customerId = 0)
+            string orderNotes = null,
+            int customerId = 0,
+            List<int> srcIds = null)
         {
             var query = _orderRepository.Table;
 
@@ -332,6 +333,9 @@ namespace Nop.Services.Orders
 
             if (ssIds != null && ssIds.Any())
                 query = query.Where(o => ssIds.Contains(o.ShippingStatusId));
+
+            if (srcIds != null && srcIds.Any())
+                query = query.Where(o => srcIds.Contains(o.OrderSourceId));
 
             if (startTimeUtc.HasValue)
                 query = query.Where(o => startTimeUtc.Value <= o.CreatedOnUtc);
@@ -914,7 +918,8 @@ namespace Nop.Services.Orders
             int warehouseId = 0, int billingCountryId = 0, int orderId = 0, string paymentMethodSystemName = null,
             List<int> osIds = null, List<int> psIds = null, List<int> ssIds = null,
             DateTime? startTimeUtc = null, DateTime? endTimeUtc = null,
-            string billingPhone = null, string billingEmail = null, string billingLastName = "", string orderNotes = null)
+            string billingPhone = null, string billingEmail = null, string billingLastName = "", string orderNotes = null,
+            List<int> srcIds = null)
         {
             var dontSearchPhone = string.IsNullOrEmpty(billingPhone);
             var dontSearchEmail = string.IsNullOrEmpty(billingEmail);
@@ -929,6 +934,8 @@ namespace Nop.Services.Orders
                 orders = orders.Where(o => psIds.Contains(o.PaymentStatusId));
             if (ssIds != null && ssIds.Any())
                 orders = orders.Where(o => ssIds.Contains(o.ShippingStatusId));
+            if (srcIds != null && srcIds.Any())
+                orders = orders.Where(o => srcIds.Contains(o.OrderSourceId));
 
             var manageStockInventoryMethodId = (int)ManageInventoryMethod.ManageStock;
 

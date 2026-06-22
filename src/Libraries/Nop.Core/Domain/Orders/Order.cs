@@ -54,6 +54,11 @@ namespace Nop.Core.Domain.Orders
         public int OrderStatusId { get; set; }
 
         /// <summary>
+        /// Gets or sets the order source identifier (channel the order was placed through)
+        /// </summary>
+        public int OrderSourceId { get; set; }
+
+        /// <summary>
         /// Gets or sets the shipping status identifier
         /// </summary>
         public int ShippingStatusId { get; set; }
@@ -324,6 +329,15 @@ namespace Nop.Core.Domain.Orders
         {
             get => (OrderStatus)OrderStatusId;
             set => OrderStatusId = (int)value;
+        }
+
+        /// <summary>
+        /// Gets or sets the order source (channel the order was placed through)
+        /// </summary>
+        public OrderSource OrderSource
+        {
+            get => (OrderSource)OrderSourceId;
+            set => OrderSourceId = (int)value;
         }
 
         /// <summary>
