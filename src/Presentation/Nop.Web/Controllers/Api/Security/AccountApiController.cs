@@ -163,9 +163,14 @@ namespace Nop.Web.Controllers.Api.Security
                         IsApproved = false // Not approved by default, decided by Company plugin
                     };
 
-                    // Add custom claims for additional user info
-                    authParameters.Claims.Add(new ExternalAuthenticationClaim("given_name", deserializedGoogleToken.given_name));
-                    authParameters.Claims.Add(new ExternalAuthenticationClaim("family_name", deserializedGoogleToken.family_name));
+                    // Add custom claims for additional user info.
+                    // First/last name MUST use the fully-namespaced WS-Federation claim types,
+                    // because AuthenticationEventConsumer (ExtendedAuth plugin) only matches those
+                    // when persisting FirstName/LastName generic attributes. Sending raw "given_name"/
+                    // "family_name" silently fails to populate the name (avatar still worked because
+                    // AuthenticationDefaults.AvatarClaimType is the raw string "picture").
+                    authParameters.Claims.Add(new ExternalAuthenticationClaim("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/given_name", deserializedGoogleToken.given_name));
+                    authParameters.Claims.Add(new ExternalAuthenticationClaim("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname", deserializedGoogleToken.family_name));
                     authParameters.Claims.Add(new ExternalAuthenticationClaim("picture", deserializedGoogleToken.picture));
 
                     try
