@@ -279,9 +279,22 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuthentication.Controllers
             //configure login callback action
             var socialMediaList = new SocialMediaList();
 
+            //resolve the callback path for the requested provider. Guard against a missing or
+            //unknown "authentication" value: automated clients scrape the rendered login link and
+            //request the raw href where the "&" separating the query params is the literal HTML
+            //entity "&amp;", so the parameter arrives named "amp;authentication" and this argument
+            //binds to null. Without the guard authentication.ToLower() throws a NullReferenceException.
+            var callbackPath = socialMediaList.SocialMedias
+                .Where(x => string.Equals(x.Name, authentication, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.CallBackPath.ToLower())
+                .FirstOrDefault();
+
+            if (string.IsNullOrEmpty(callbackPath))
+                return RedirectToRoute("Login", new { returnUrl });
+
             var authenticationProperties = new AuthenticationProperties
             {
-                RedirectUri = "/" + socialMediaList.SocialMedias.Where(x => x.Name.ToLower() == authentication.ToLower()).Select(x => x.CallBackPath.ToLower()).FirstOrDefault() + "?returnUrl=" + returnUrl  //Url.Action("LoginCallback", "Authentication", new { returnUrl = returnUrl })
+                RedirectUri = "/" + callbackPath + "?returnUrl=" + returnUrl  //Url.Action("LoginCallback", "Authentication", new { returnUrl = returnUrl })
             };
 
             authenticationProperties.SetString(AuthenticationDefaults.ErrorCallback, Url.RouteUrl("Login", new { returnUrl }));
