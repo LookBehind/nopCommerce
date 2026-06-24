@@ -762,17 +762,24 @@ namespace Nop.Web.Controllers.Api.Security
 
             if (_catalogSettings.ProductReviewPossibleOnlyAfterPurchasing)
             {
-                var hasCompletedOrders = await _orderService.SearchOrdersAsync(customerId: curCus.Id,
+                //allow reviewing a product the customer ordered in any non-cancelled order
+                //(Pending/Processing/Complete), not only Complete ones
+                var eligibleOrders = await _orderService.SearchOrdersAsync(customerId: curCus.Id,
                     productId: model.Id,
-                    osIds: new List<int> { (int)OrderStatus.Complete },
+                    osIds: new List<int>
+                    {
+                        (int)OrderStatus.Pending,
+                        (int)OrderStatus.Processing,
+                        (int)OrderStatus.Complete
+                    },
                     pageSize: 1);
 
-                if (!hasCompletedOrders.Any())
+                if (!eligibleOrders.Any())
                 {
                     return Ok(new
                     {
                         success = false,
-                        message = _localizationService.GetResourceAsync(
+                        message = await _localizationService.GetResourceAsync(
                             "Reviews.ProductReviewPossibleOnlyAfterPurchasing")
                     });
                 }
@@ -829,8 +836,8 @@ namespace Nop.Web.Controllers.Api.Security
                 {
                     success = true,
                     message = isApproved ?
-                        await _localizationService.GetResourceAsync("Reviews.SeeAfterApproving") :
-                        await _localizationService.GetResourceAsync("Reviews.SuccessfullyAdded")
+                        await _localizationService.GetResourceAsync("Reviews.SuccessfullyAdded") :
+                        await _localizationService.GetResourceAsync("Reviews.SeeAfterApproving")
                 });
             }
 
