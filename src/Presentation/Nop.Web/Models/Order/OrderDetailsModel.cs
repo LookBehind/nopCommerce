@@ -97,6 +97,9 @@ namespace Nop.Web.Models.Order
             public string AttributeInfo { get; set; }
             public string RentalInfo { get; set; }
 
+            //current customer's own review rating for this product (null = not yet reviewed)
+            public int? UserRating { get; set; }
+
             public string VendorName { get; set; }
             public VendorBriefInfoModel Vendor { get; set; }
 
