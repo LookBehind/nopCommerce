@@ -362,7 +362,12 @@ public class TelegramNotificationSenderTask : IScheduledTask
                     NotificationType.OrderStatusChange,
                     "Order delivered",
                     $"Your order from vendor {vendorAssociation.Vendor.Name} has been delivered",
-                    new Dictionary<string, string>() { { "order_delivered", "true" } });
+                    new Dictionary<string, string>()
+                    {
+                        { "order_delivered", "true" },
+                        { "orderId", order.Id.ToString() },
+                        { "url", $"Order/{order.Id}" }
+                    });
             }
 
             await _telegramBotClient.SendMessage(chatId: botEvent.Chat,
