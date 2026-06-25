@@ -1060,12 +1060,17 @@ namespace Nop.Web.Controllers.Api.Order
                 customerId: customer.Id,
                 sortByDeliveryDate: true);
 
+            // Order every bucket by the real delivery date (ScheduleDate),
+            // descending, so the continuous Orders list reads as one timeline
+            // (furthest-future at top -> oldest past at bottom). NB: ScheduleDateTime
+            // is a copy of CreatedOnUtc (creation time), NOT the delivery date.
             var upcomingOrders = allOrders
                 .Where(x => x.ScheduleDate.Date > DateTime.Now.Date)
-                .OrderBy(x => x.ScheduleDateTime)
+                .OrderByDescending(x => x.ScheduleDate)
                 .ToList();
             var todayOrders = allOrders
                 .Where(x => x.ScheduleDate.Date == DateTime.Now.Date)
+                .OrderByDescending(x => x.ScheduleDate)
                 .ToList();
             var previousOrders = allOrders
                 .Where(x => x.ScheduleDate.Date < DateTime.Now.Date)
