@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Nop.Core.Domain.Vendors;
 using Nop.Core.Events;
+using Nop.Core.Infrastructure;
 using Nop.Plugin.Company.Company.Services;
 using Nop.Services.Events;
 using Nop.Services.Logging;
@@ -27,15 +28,17 @@ namespace Nop.Plugin.Company.Company.Infrastructure
         #region Fields
 
         private readonly IPictureService _pictureService;
+        private readonly INopFileProvider _fileProvider;
         private readonly ILogger _logger;
 
         #endregion
 
         #region Ctor
 
-        public VendorPictureSquareConsumer(IPictureService pictureService, ILogger logger)
+        public VendorPictureSquareConsumer(IPictureService pictureService, INopFileProvider fileProvider, ILogger logger)
         {
             _pictureService = pictureService;
+            _fileProvider = fileProvider;
             _logger = logger;
         }
 
@@ -76,9 +79,13 @@ namespace Nop.Plugin.Company.Company.Infrastructure
                 if (!changed)
                     return;
 
-                // UpdatePictureAsync clears the cached thumbnails, so square thumbs regenerate on demand.
                 await _pictureService.UpdatePictureAsync(picture.Id, padded, picture.MimeType,
                     picture.SeoFilename, picture.AltAttribute, picture.TitleAttribute, isNew: true);
+
+                // Explicitly drop the cached thumbnails so they regenerate from the square original.
+                // (nopCommerce only regenerates when a thumb file is absent; a stale/0-byte thumb would
+                // otherwise be served indefinitely.)
+                VendorLogoImageHelper.DeleteThumbnails(_fileProvider, picture.Id);
 
                 await _logger.InformationAsync(
                     $"Vendor logo squared (vendorId={vendor.Id}, pictureId={picture.Id}).");

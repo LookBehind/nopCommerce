@@ -1,6 +1,7 @@
 using System.Linq;
 using FluentMigrator;
 using Nop.Core.Domain.Vendors;
+using Nop.Core.Infrastructure;
 using Nop.Data;
 using Nop.Data.Migrations;
 using Nop.Plugin.Company.Company.Services;
@@ -23,15 +24,17 @@ namespace Nop.Plugin.Company.Company.Migrations
 
         private readonly INopDataProvider _dataProvider;
         private readonly IPictureService _pictureService;
+        private readonly INopFileProvider _fileProvider;
 
         #endregion
 
         #region Ctor
 
-        public NormalizeVendorLogosToSquareMigration(INopDataProvider dataProvider, IPictureService pictureService)
+        public NormalizeVendorLogosToSquareMigration(INopDataProvider dataProvider, IPictureService pictureService, INopFileProvider fileProvider)
         {
             _dataProvider = dataProvider;
             _pictureService = pictureService;
+            _fileProvider = fileProvider;
         }
 
         #endregion
@@ -63,6 +66,9 @@ namespace Nop.Plugin.Company.Company.Migrations
                     _pictureService.UpdatePictureAsync(picture.Id, padded, picture.MimeType,
                         picture.SeoFilename, picture.AltAttribute, picture.TitleAttribute, isNew: true)
                         .GetAwaiter().GetResult();
+
+                    // Drop stale cached thumbs so they regenerate square on next render.
+                    VendorLogoImageHelper.DeleteThumbnails(_fileProvider, picture.Id);
                 }
                 catch
                 {
