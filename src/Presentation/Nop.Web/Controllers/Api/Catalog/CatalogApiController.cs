@@ -2,8 +2,10 @@
 using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
+using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Discounts;
 using Nop.Core.Domain.Localization;
+using Nop.Core.Domain.Media;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Events;
 using Nop.Services.Catalog;
@@ -13,6 +15,7 @@ using Nop.Services.Customers;
 using Nop.Services.Helpers;
 using Nop.Services.Localization;
 using Nop.Services.Logging;
+using Nop.Services.Media;
 using Nop.Services.Messages;
 using Nop.Services.Orders;
 using Nop.Services.Seo;
@@ -71,6 +74,9 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly IDiscountService _discountService;
         private readonly IPermissionService _permissionService;
         private readonly IGenericAttributeService _genericAttributeService;
+        private readonly IPictureService _pictureService;
+        private readonly MediaSettings _mediaSettings;
+        private readonly CustomerSettings _customerSettings;
         private readonly ILogger _logger;
         private const string LastUnpublishedProductIdsKey = "LastUnpublishedProductIds"; 
 
@@ -111,8 +117,11 @@ namespace Nop.Web.Controllers.Api.Security
             IProductAvailabilityService productAvailabilityService,
             ICompanyService companyService,
             IDiscountService discountService, 
-            IPermissionService permissionService, 
-            IGenericAttributeService genericAttributeService, 
+            IPermissionService permissionService,
+            IGenericAttributeService genericAttributeService,
+            IPictureService pictureService,
+            MediaSettings mediaSettings,
+            CustomerSettings customerSettings,
             ILogger logger)
         {
             _localizationSettings = localizationSettings;
@@ -142,6 +151,9 @@ namespace Nop.Web.Controllers.Api.Security
             _discountService = discountService;
             _permissionService = permissionService;
             _genericAttributeService = genericAttributeService;
+            _pictureService = pictureService;
+            _mediaSettings = mediaSettings;
+            _customerSettings = customerSettings;
             _logger = logger;
         }
 
@@ -846,6 +858,152 @@ namespace Nop.Web.Controllers.Api.Security
                 success = false,
                 message = "Invalid parameters"
             });
+        }
+
+        /// <summary>
+        /// Returns the reviews for a product (for the mobile reviews drawer): the rating-score
+        /// distribution, aggregate totals, and the list of individual reviews with masked
+        /// reviewer names. The current customer's own review (even if still pending approval)
+        /// is always included and flagged so the client can highlight it.
+        /// </summary>
+        [HttpGet("product-reviews/{productId}")]
+        public virtual async Task<IActionResult> GetProductReviews(int productId, int pageIndex = 0, int pageSize = 50)
+        {
+            var product = await _productService.GetProductByIdAsync(productId);
+            if (product == null || product.Deleted)
+            {
+                return Ok(new ProductReviewsResponseApiModel
+                {
+                    Success = false,
+                    Message = await _localizationService.GetResourceAsync("Product.Not.Found")
+                });
+            }
+
+            var currentCustomer = await _workContext.GetCurrentCustomerAsync();
+
+            //approved reviews are visible to everyone
+            var approvedReviews = (await _productService.GetAllProductReviewsAsync(
+                productId: productId, approved: true)).ToList();
+
+            //the current customer should also see their own (possibly still-pending) review
+            var ownReviews = (await _productService.GetAllProductReviewsAsync(
+                customerId: currentCustomer.Id, productId: productId)).ToList();
+
+            //merge, de-duplicating by review id (an approved own review appears in both lists)
+            var allReviews = approvedReviews
+                .Concat(ownReviews)
+                .GroupBy(r => r.Id)
+                .Select(g => g.First())
+                .ToList();
+
+            //rating distribution + totals are based on the publicly-approved set only
+            var distribution = new Dictionary<int, int>();
+            for (var star = 1; star <= 5; star++)
+                distribution[star] = approvedReviews.Count(r => r.Rating == star);
+
+            var totalReviews = approvedReviews.Count;
+            var averageRating = totalReviews > 0
+                ? Math.Round(approvedReviews.Sum(r => r.Rating) / (double)totalReviews, 1)
+                : 0;
+
+            //the current customer's own (latest) review, for client-side highlighting
+            var currentUserReview = ownReviews
+                .OrderByDescending(r => r.CreatedOnUtc)
+                .FirstOrDefault();
+
+            //batch-load reviewer customers to avoid an N+1 on name/avatar lookups
+            var customers = (await _customerService.GetCustomersByIdsAsync(
+                    allReviews.Select(r => r.CustomerId).Distinct().ToArray()))
+                .ToDictionary(c => c.Id, c => c);
+
+            //current-customer's review(s) first, then newest first; then page
+            var orderedReviews = allReviews
+                .OrderByDescending(r => r.CustomerId == currentCustomer.Id)
+                .ThenByDescending(r => r.CreatedOnUtc)
+                .Skip(pageIndex * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            var reviewModels = new List<ProductReviewItemApiModel>();
+            foreach (var review in orderedReviews)
+            {
+                customers.TryGetValue(review.CustomerId, out var customer);
+                reviewModels.Add(new ProductReviewItemApiModel
+                {
+                    Id = review.Id,
+                    CustomerId = review.CustomerId,
+                    Name = await GetMaskedReviewerNameAsync(customer),
+                    AvatarUrl = await GetReviewerAvatarUrlAsync(customer),
+                    Rating = review.Rating,
+                    Title = review.Title,
+                    ReviewText = review.ReviewText,
+                    CreatedOnUtc = review.CreatedOnUtc,
+                    IsCurrentUser = review.CustomerId == currentCustomer.Id
+                });
+            }
+
+            return Ok(new ProductReviewsResponseApiModel
+            {
+                Success = true,
+                ProductId = productId,
+                AverageRating = averageRating,
+                TotalReviews = totalReviews,
+                Distribution = distribution,
+                CurrentUserReviewId = currentUserReview?.Id,
+                Reviews = reviewModels
+            });
+        }
+
+        /// <summary>
+        /// Builds the masked reviewer display name (first + last name, each with all but the
+        /// first 3 letters replaced by '*'). Masking happens server-side so full names never
+        /// leave the API.
+        /// </summary>
+        [NonAction]
+        private async Task<string> GetMaskedReviewerNameAsync(Nop.Core.Domain.Customers.Customer customer)
+        {
+            if (customer == null)
+                return "Anonymous";
+
+            var firstName = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.FirstNameAttribute);
+            var lastName = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.LastNameAttribute);
+
+            var masked = $"{MaskName(firstName)} {MaskName(lastName)}".Trim();
+            if (!string.IsNullOrEmpty(masked))
+                return masked;
+
+            //fall back to a masked email local-part when no name is on file
+            if (!string.IsNullOrEmpty(customer.Email))
+                return MaskName(customer.Email.Split('@')[0]);
+
+            return "Anonymous";
+        }
+
+        //keep the first 3 characters, replace the rest with '*'
+        private static string MaskName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            value = value.Trim();
+            if (value.Length <= 3)
+                return value;
+
+            return value.Substring(0, 3) + new string('*', value.Length - 3);
+        }
+
+        [NonAction]
+        private async Task<string> GetReviewerAvatarUrlAsync(Nop.Core.Domain.Customers.Customer customer)
+        {
+            if (customer == null)
+                return string.Empty;
+
+            var avatarPictureId = await _genericAttributeService.GetAttributeAsync<int>(customer, NopCustomerDefaults.AvatarPictureIdAttribute);
+            return await _pictureService.GetPictureUrlAsync(
+                avatarPictureId,
+                _mediaSettings.AvatarPictureSize,
+                _customerSettings.DefaultAvatarEnabled,
+                defaultPictureType: PictureType.Avatar);
         }
 
         #endregion
