@@ -1,4 +1,6 @@
 using System;
+using Nop.Core.Infrastructure;
+using Nop.Services.Media;
 using SkiaSharp;
 
 namespace Nop.Plugin.Company.Company.Services
@@ -81,6 +83,27 @@ namespace Nop.Plugin.Company.Company.Services
 
             changed = true;
             return encoded.ToArray();
+        }
+
+        /// <summary>
+        /// Deletes all cached thumbnails for a picture so they are regenerated from the (now square)
+        /// original on the next render. Mirrors PictureService.DeletePictureThumbsAsync (same filter
+        /// and recursive search) because that method is not exposed on IPictureService. Necessary
+        /// because nopCommerce only regenerates a thumb when the file is ABSENT — a stale or 0-byte
+        /// thumb left on disk would otherwise be served forever, and the IsNew flag alone does not
+        /// reliably clear them.
+        /// </summary>
+        public static void DeleteThumbnails(INopFileProvider fileProvider, int pictureId)
+        {
+            if (fileProvider == null)
+                return;
+
+            var filter = $"{pictureId:0000000}*.*";
+            var thumbsPath = fileProvider.GetAbsolutePath(NopMediaDefaults.ImageThumbsPath);
+
+            // topDirectoryOnly: false — matches PictureService and covers MultipleThumbDirectories subfolders.
+            foreach (var file in fileProvider.GetFiles(thumbsPath, filter, false))
+                fileProvider.DeleteFile(file);
         }
 
         private static bool MimeTypeSupportsAlpha(string mimeType)
