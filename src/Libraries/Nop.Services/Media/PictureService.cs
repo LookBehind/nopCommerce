@@ -546,6 +546,28 @@ namespace Nop.Services.Media
         }
 
         /// <summary>
+        /// Builds a short, filename/URL-safe content-version token from a picture's last-content-change time.
+        /// Base36 of the tick count (~12 lowercase alphanumerics). Used to version thumbnail filenames so a
+        /// content change produces a brand-new URL that defeats CDN/browser/mobile caches.
+        /// </summary>
+        protected static string ToVersionToken(DateTime utc)
+        {
+            const string digits = "0123456789abcdefghijklmnopqrstuvwxyz";
+            var value = utc.Ticks;
+            if (value <= 0)
+                return "0";
+
+            var sb = new System.Text.StringBuilder();
+            while (value > 0)
+            {
+                sb.Insert(0, digits[(int)(value % 36)]);
+                value /= 36;
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>
         /// Get a picture URL
         /// </summary>
         /// <param name="picture">Reference instance of Picture</param>
@@ -589,12 +611,20 @@ namespace Nop.Services.Media
             var seoFileName = picture.SeoFilename; // = GetPictureSeName(picture.SeoFilename); //just for sure
 
             var lastPart = await GetFileExtensionFromMimeTypeAsync(picture.MimeType);
+
+            //content-version token: when the picture's binary changes, UpdatedOnUtc is bumped, which yields a
+            //brand-new thumbnail filename so CDN/browser/mobile caches refetch. NULL (legacy rows) => no suffix,
+            //i.e. the exact pre-versioning filename, so existing thumbnails are not invalidated/regenerated.
+            var versionSuffix = picture.UpdatedOnUtc.HasValue
+                ? $"_v{ToVersionToken(picture.UpdatedOnUtc.Value)}"
+                : string.Empty;
+
             string thumbFileName;
             if (targetSize == 0)
             {
                 thumbFileName = !string.IsNullOrEmpty(seoFileName)
-                    ? $"{picture.Id:0000000}_{seoFileName}.{lastPart}"
-                    : $"{picture.Id:0000000}.{lastPart}";
+                    ? $"{picture.Id:0000000}_{seoFileName}{versionSuffix}.{lastPart}"
+                    : $"{picture.Id:0000000}{versionSuffix}.{lastPart}";
 
                 var thumbFilePath = await GetThumbLocalPathAsync(thumbFileName);
                 if (await GeneratedThumbExistsAsync(thumbFilePath, thumbFileName))
@@ -620,8 +650,8 @@ namespace Nop.Services.Media
             else
             {
                 thumbFileName = !string.IsNullOrEmpty(seoFileName)
-                    ? $"{picture.Id:0000000}_{seoFileName}_{targetSize}.{lastPart}"
-                    : $"{picture.Id:0000000}_{targetSize}.{lastPart}";
+                    ? $"{picture.Id:0000000}_{seoFileName}_{targetSize}{versionSuffix}.{lastPart}"
+                    : $"{picture.Id:0000000}_{targetSize}{versionSuffix}.{lastPart}";
 
                 var thumbFilePath = await GetThumbLocalPathAsync(thumbFileName);
                 if (await GeneratedThumbExistsAsync(thumbFilePath, thumbFileName))
@@ -800,7 +830,9 @@ namespace Nop.Services.Media
                 SeoFilename = seoFilename,
                 AltAttribute = altAttribute,
                 TitleAttribute = titleAttribute,
-                IsNew = isNew
+                IsNew = isNew,
+                //stamp the content version so every freshly-uploaded picture has a cache-busting thumbnail URL
+                UpdatedOnUtc = DateTime.UtcNow
             };
             await _pictureRepository.InsertAsync(picture);
             await UpdatePictureBinaryAsync(picture, await IsStoreInDbAsync() ? pictureBinary : Array.Empty<byte>());
@@ -942,6 +974,16 @@ namespace Nop.Services.Media
             picture.AltAttribute = altAttribute;
             picture.TitleAttribute = titleAttribute;
             picture.IsNew = isNew;
+
+            //isNew=true signals a genuine binary replace (admin picture edit, vendor-logo squaring, etc.).
+            //Bump the content version so the thumbnail URL changes (defeats CDN/browser/mobile caches), and clear
+            //prior thumbs (including old versions) so the new one regenerates from the current original. The
+            //GetPictureUrlAsync self-heal path passes isNew=false, so it does not churn the version or thumbs.
+            if (isNew)
+            {
+                picture.UpdatedOnUtc = DateTime.UtcNow;
+                await DeletePictureThumbsAsync(picture);
+            }
 
             await _pictureRepository.UpdateAsync(picture);
             await UpdatePictureBinaryAsync(picture, await IsStoreInDbAsync() ? pictureBinary : Array.Empty<byte>());
