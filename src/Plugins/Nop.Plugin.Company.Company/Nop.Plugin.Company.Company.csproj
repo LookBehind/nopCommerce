@@ -14,6 +14,11 @@
     <ClearPluginAssemblies Include="$(MSBuildProjectDirectory)\..\..\Build\ClearPluginAssemblies.proj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Vendor logo square-padding (VendorLogoImageHelper). Shared with Nop.Services; the duplicate
+         assembly is removed from the plugin output by ClearPluginAssemblies and loaded from Nop.Web at runtime. -->
+    <PackageReference Include="SkiaSharp" Version="2.88.3" />
+  </ItemGroup>
+  <ItemGroup>
     <Folder Include="bin\" />
     <Folder Include="obj\" />
   </ItemGroup>

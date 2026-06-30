@@ -34,5 +34,12 @@
         /// Gets or sets the picture virtual path
         /// </summary>
         public string VirtualPath { get; set; }
+
+        /// <summary>
+        /// Gets or sets the UTC date/time the picture's binary content last changed. Used to version the
+        /// thumbnail URL so CDN/browser/mobile caches refetch when the image changes. NULL for legacy rows
+        /// that predate versioning (they keep their un-versioned thumbnail filenames).
+        /// </summary>
+        public System.DateTime? UpdatedOnUtc { get; set; }
     }
 }
