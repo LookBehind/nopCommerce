@@ -599,12 +599,18 @@ namespace Nop.Tests
                 var seoFileName = picture.SeoFilename; // = GetPictureSeName(picture.SeoFilename); //just for sure
 
                 var lastPart = await GetFileExtensionFromMimeTypeAsync(picture.MimeType);
+
+                //mirror PictureService: content-version suffix (NULL UpdatedOnUtc => legacy filename)
+                var versionSuffix = picture.UpdatedOnUtc.HasValue
+                    ? $"_v{ToVersionToken(picture.UpdatedOnUtc.Value)}"
+                    : string.Empty;
+
                 string thumbFileName;
                 if (targetSize == 0)
                 {
                     thumbFileName = !string.IsNullOrEmpty(seoFileName)
-                        ? $"{picture.Id:0000000}_{seoFileName}.{lastPart}"
-                        : $"{picture.Id:0000000}.{lastPart}";
+                        ? $"{picture.Id:0000000}_{seoFileName}{versionSuffix}.{lastPart}"
+                        : $"{picture.Id:0000000}{versionSuffix}.{lastPart}";
 
                     var thumbFilePath = await GetThumbLocalPathAsync(thumbFileName);
                     if (await GeneratedThumbExistsAsync(thumbFilePath, thumbFileName))
@@ -630,8 +636,8 @@ namespace Nop.Tests
                 else
                 {
                     thumbFileName = !string.IsNullOrEmpty(seoFileName)
-                        ? $"{picture.Id:0000000}_{seoFileName}_{targetSize}.{lastPart}"
-                        : $"{picture.Id:0000000}_{targetSize}.{lastPart}";
+                        ? $"{picture.Id:0000000}_{seoFileName}_{targetSize}{versionSuffix}.{lastPart}"
+                        : $"{picture.Id:0000000}_{targetSize}{versionSuffix}.{lastPart}";
 
                     var thumbFilePath = await GetThumbLocalPathAsync(thumbFileName);
                     if (await GeneratedThumbExistsAsync(thumbFilePath, thumbFileName))
