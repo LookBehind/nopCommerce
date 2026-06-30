@@ -612,10 +612,11 @@ namespace Nop.Web.Controllers.Api.Order
             return Ok(new
             {
                 success = true,
-                message = await _localizationService.GetResourceAsync("Order.Placed.Successfully")
+                message = await _localizationService.GetResourceAsync("Order.Placed.Successfully"),
+                orderId = placeOrderResult.PlacedOrder.Id
             });
         }
-        
+
         [HttpPost("reorder/{orderId}")]
         public virtual async Task<IActionResult> ReOrderAsync(int orderId)
         {
@@ -1004,6 +1005,206 @@ namespace Nop.Web.Controllers.Api.Order
                 return Ok(new { success = true, model });
             }
             return Ok(new { success = false, message = "No upcoming order found" });
+        }
+
+        [HttpGet("list")]
+        public async Task<IActionResult> GetOrdersListAsync(string segment = null, int page = 0, int pageSize = 20, int? orderId = null)
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var languageId = (await _workContext.GetWorkingLanguageAsync()).Id;
+            //the current customer's own review rating per product (latest review wins; null when not reviewed)
+            var customerReviews = (await _productService.GetAllProductReviewsAsync(customerId: customer.Id))
+                .GroupBy(pr => pr.ProductId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(pr => pr.CreatedOnUtc).First().Rating);
+
+            //single-order lookup (deep-link / load-by-id)
+            if (orderId.HasValue)
+            {
+                var order = await _orderService.GetOrderByIdAsync(orderId.Value);
+                if (order == null || order.Deleted || order.CustomerId != customer.Id)
+                    return Ok(new { success = false });
+
+                var orderModel = await MapOrderToDetailsModelAsync(order, customerReviews, languageId);
+                return Ok(new { success = true, order = orderModel });
+            }
+
+            if (pageSize <= 0)
+                pageSize = 20;
+            if (page < 0)
+                page = 0;
+
+            //paginated past segment (infinite scroll)
+            if (string.Equals(segment, "past", StringComparison.OrdinalIgnoreCase))
+            {
+                var orders = await _orderService.SearchOrdersAsync(
+                    customerId: customer.Id,
+                    sortByDeliveryDate: true);
+                var pastOrders = orders
+                    .Where(x => x.ScheduleDate.Date < DateTime.Now.Date)
+                    .OrderByDescending(x => x.ScheduleDate)
+                    .ToList();
+
+                var totalCount = pastOrders.Count;
+                var pageItems = pastOrders.Skip(page * pageSize).Take(pageSize).ToList();
+                var hasMore = (page + 1) * pageSize < totalCount;
+
+                var items = new List<CustomerOrderListModel.OrderDetailsModel>();
+                foreach (var order in pageItems)
+                    items.Add(await MapOrderToDetailsModelAsync(order, customerReviews, languageId));
+
+                return Ok(new { success = true, items, page, pageSize, hasMore, totalCount });
+            }
+
+            //no params (initial combined load): upcoming + today + first page of past
+            var allOrders = await _orderService.SearchOrdersAsync(
+                customerId: customer.Id,
+                sortByDeliveryDate: true);
+
+            // Order every bucket by the real delivery date (ScheduleDate),
+            // descending, so the continuous Orders list reads as one timeline
+            // (furthest-future at top -> oldest past at bottom). NB: ScheduleDateTime
+            // is a copy of CreatedOnUtc (creation time), NOT the delivery date.
+            var upcomingOrders = allOrders
+                .Where(x => x.ScheduleDate.Date > DateTime.Now.Date)
+                .OrderByDescending(x => x.ScheduleDate)
+                .ToList();
+            var todayOrders = allOrders
+                .Where(x => x.ScheduleDate.Date == DateTime.Now.Date)
+                .OrderByDescending(x => x.ScheduleDate)
+                .ToList();
+            var previousOrders = allOrders
+                .Where(x => x.ScheduleDate.Date < DateTime.Now.Date)
+                .OrderByDescending(x => x.ScheduleDate)
+                .ToList();
+
+            var upcoming = new List<CustomerOrderListModel.OrderDetailsModel>();
+            foreach (var order in upcomingOrders)
+                upcoming.Add(await MapOrderToDetailsModelAsync(order, customerReviews, languageId));
+
+            var today = new List<CustomerOrderListModel.OrderDetailsModel>();
+            foreach (var order in todayOrders)
+                today.Add(await MapOrderToDetailsModelAsync(order, customerReviews, languageId));
+
+            var pastTotalCount = previousOrders.Count;
+            var pastPageItems = previousOrders.Take(pageSize).ToList();
+            var pastHasMore = pageSize < pastTotalCount;
+
+            var past = new List<CustomerOrderListModel.OrderDetailsModel>();
+            foreach (var order in pastPageItems)
+                past.Add(await MapOrderToDetailsModelAsync(order, customerReviews, languageId));
+
+            return Ok(new
+            {
+                success = true,
+                upcoming,
+                today,
+                past = new
+                {
+                    items = past,
+                    page = 0,
+                    pageSize,
+                    hasMore = pastHasMore,
+                    totalCount = pastTotalCount
+                }
+            });
+        }
+
+        /// <summary>
+        /// Projects a single order into the OrderDetailsModel shape shared by the
+        /// today/upcoming/previous order endpoints and the unified list endpoint.
+        /// </summary>
+        protected virtual async Task<CustomerOrderListModel.OrderDetailsModel> MapOrderToDetailsModelAsync(
+            Core.Domain.Orders.Order order,
+            IDictionary<int, int> customerReviews,
+            int languageId)
+        {
+            var orderModel = new CustomerOrderListModel.OrderDetailsModel
+            {
+                Id = order.Id,
+                ScheduleDate = await _dateTimeHelper.ConvertToUserTimeAsync(order.ScheduleDate, DateTimeKind.Utc),
+                CreatedOn = await _dateTimeHelper.ConvertToUserTimeAsync(order.CreatedOnUtc, DateTimeKind.Utc),
+                OrderStatusEnum = order.OrderStatus,
+                OrderStatus = await _localizationService.GetLocalizedEnumAsync(order.OrderStatus),
+                PaymentStatus = await _localizationService.GetLocalizedEnumAsync(order.PaymentStatus),
+                ShippingStatus = await _localizationService.GetLocalizedEnumAsync(order.ShippingStatus),
+                IsReturnRequestAllowed = await _orderProcessingService.IsReturnRequestAllowedAsync(order),
+                CustomOrderNumber = order.CustomOrderNumber,
+                Rating = order.Rating,
+                RatingText = order.RatingText
+            };
+            var orderTotalInCustomerCurrency = _currencyService.ConvertCurrency(order.OrderTotal, order.CurrencyRate);
+            orderModel.OrderTotal = await _priceFormatter.FormatPriceAsync(orderTotalInCustomerCurrency, true, order.CustomerCurrencyCode, false, languageId);
+
+            var orderItems = await _orderService.GetOrderItemsAsync(order.Id);
+
+            foreach (var orderItem in orderItems)
+            {
+                var product = await _productService.GetProductByIdAsync(orderItem.ProductId);
+                var productPicture = await _pictureService.GetPicturesByProductIdAsync(orderItem.ProductId);
+                var vendor = await _vendorService.GetVendorByProductIdAsync(product.Id);
+                var vendorBriefModel = new VendorBriefInfoModel
+                {
+                    Id = vendor.Id,
+                    Name = await _localizationService.GetLocalizedAsync(vendor, x => x.Name),
+                    SeName = await _urlRecordService.GetSeNameAsync(vendor),
+                    PictureUrl = await _pictureService.GetPictureUrlAsync(vendor.PictureId)
+                };
+
+                var orderItemModel = new OrderDetailsModel.OrderItemModel
+                {
+                    Id = orderItem.Id,
+                    OrderItemGuid = orderItem.OrderItemGuid,
+                    Sku = await _productService.FormatSkuAsync(product, orderItem.AttributesXml),
+                    VendorName = vendor != null ? vendor.Name : string.Empty,
+                    ProductId = product.Id,
+                    ProductPictureUrl = productPicture.Any() ? await _pictureService.GetPictureUrlAsync(productPicture.FirstOrDefault().Id) : await _pictureService.GetDefaultPictureUrlAsync(),
+                    ProductName = await _localizationService.GetLocalizedAsync(product, x => x.Name),
+                    ProductSeName = await _urlRecordService.GetSeNameAsync(product),
+                    Quantity = orderItem.Quantity,
+                    AttributeInfo = orderItem.AttributeDescription,
+                    UserRating = customerReviews.TryGetValue(product.Id, out var userRating) ? userRating : null,
+                    Vendor = vendorBriefModel
+                };
+                //rental info
+                if (product.IsRental)
+                {
+                    var rentalStartDate = orderItem.RentalStartDateUtc.HasValue
+                        ? _productService.FormatRentalDate(product, orderItem.RentalStartDateUtc.Value) : "";
+                    var rentalEndDate = orderItem.RentalEndDateUtc.HasValue
+                        ? _productService.FormatRentalDate(product, orderItem.RentalEndDateUtc.Value) : "";
+                    orderItemModel.RentalInfo = string.Format(await _localizationService.GetResourceAsync("Order.Rental.FormattedDate"),
+                        rentalStartDate, rentalEndDate);
+                }
+                orderModel.Items.Add(orderItemModel);
+
+                //unit price, subtotal
+                if (order.CustomerTaxDisplayType == TaxDisplayType.IncludingTax)
+                {
+                    //including tax
+                    var unitPriceInclTaxInCustomerCurrency = _currencyService.ConvertCurrency(orderItem.UnitPriceInclTax, order.CurrencyRate);
+                    orderItemModel.UnitPrice = await _priceFormatter.FormatPriceAsync(unitPriceInclTaxInCustomerCurrency, true, order.CustomerCurrencyCode, languageId, true);
+
+                    var priceInclTaxInCustomerCurrency = _currencyService.ConvertCurrency(orderItem.PriceInclTax, order.CurrencyRate);
+                    orderItemModel.SubTotal = await _priceFormatter.FormatPriceAsync(priceInclTaxInCustomerCurrency, true, order.CustomerCurrencyCode, languageId, true);
+                }
+                else
+                {
+                    //excluding tax
+                    var unitPriceExclTaxInCustomerCurrency = _currencyService.ConvertCurrency(orderItem.UnitPriceExclTax, order.CurrencyRate);
+                    orderItemModel.UnitPrice = await _priceFormatter.FormatPriceAsync(unitPriceExclTaxInCustomerCurrency, true, order.CustomerCurrencyCode, languageId, false);
+
+                    var priceExclTaxInCustomerCurrency = _currencyService.ConvertCurrency(orderItem.PriceExclTax, order.CurrencyRate);
+                    orderItemModel.SubTotal = await _priceFormatter.FormatPriceAsync(priceExclTaxInCustomerCurrency, true, order.CustomerCurrencyCode, languageId, false);
+                }
+
+                //downloadable products
+                if (await _orderService.IsDownloadAllowedAsync(orderItem))
+                    orderItemModel.DownloadId = product.DownloadId;
+                if (await _orderService.IsLicenseDownloadAllowedAsync(orderItem))
+                    orderItemModel.LicenseId = orderItem.LicenseDownloadId ?? 0;
+            }
+
+            return orderModel;
         }
 
         #endregion
