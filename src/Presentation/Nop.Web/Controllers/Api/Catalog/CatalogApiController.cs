@@ -315,13 +315,17 @@ namespace Nop.Web.Controllers.Api.Security
                             Name = pa.Name,
                             IsRequired = pam.IsRequired,
                             AttributeControlType = pam.AttributeControlType,
-                            AttributeValues = pavs.Select(pav => new ProductAttributeValueApiModel()
+                            DisplayOrder = pam.DisplayOrder,
+                            //explicitly order values by DisplayOrder so clients don't depend on implicit query order
+                            AttributeValues = pavs.OrderBy(pav => pav.DisplayOrder).ThenBy(pav => pav.Id)
+                                .Select(pav => new ProductAttributeValueApiModel()
                             {
                                 Id = pav.Id,
                                 IsPreSelected = pav.IsPreSelected,
                                 PriceAdjustment = pav.PriceAdjustment,
                                 PriceAdjustmentUsePercentage = pav.PriceAdjustmentUsePercentage,
-                                Name = pav.Name
+                                Name = pav.Name,
+                                DisplayOrder = pav.DisplayOrder
                             }).ToArray()
                         };
                     });
@@ -332,7 +336,8 @@ namespace Nop.Web.Controllers.Api.Security
 
             return new ProductAttributesApiModel
             {
-                ProductAttributes = result
+                //explicitly order attributes by DisplayOrder so clients don't depend on implicit query order
+                ProductAttributes = result.OrderBy(pa => pa.DisplayOrder).ThenBy(pa => pa.Id).ToArray()
             };
         }
 
