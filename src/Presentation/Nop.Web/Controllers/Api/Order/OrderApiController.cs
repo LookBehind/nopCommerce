@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Expo.Server.Client;
@@ -517,6 +518,19 @@ namespace Nop.Web.Controllers.Api.Order
             [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)]
             OrderConfirmationApiModel? orderConfirmationApiModel = null)
         {
+            // Tag the active server span so checkout failures that still return HTTP 200
+            // (e.g. an invalid/passed delivery time) are observable in SigNoz. Without this
+            // the span looks like a success (200, no error) and the only failure signal is
+            // the mobile app's checkout.outcome. Keep reasons in sync with OrderResultCode.
+            static void TagCheckout(bool success, string reason)
+            {
+                var activity = Activity.Current;
+                if (activity == null)
+                    return;
+                activity.SetTag("checkout.success", success);
+                activity.SetTag("checkout.reason", reason);
+            }
+
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
 
@@ -528,6 +542,7 @@ namespace Nop.Web.Controllers.Api.Order
             if (!scheduleAllowed)
             {
                 await _logger.ErrorAsync($"Order schedule was not allowed: {scheduleDate}", customer: customer);
+                TagCheckout(false, "schedule_not_allowed");
                 return Ok(new
                 {
                     success = false,
@@ -599,6 +614,7 @@ namespace Nop.Web.Controllers.Api.Order
                     && (error.Contains("Billing address", StringComparison.OrdinalIgnoreCase)
                         || error.Contains("Shipping address", StringComparison.OrdinalIgnoreCase)));
 
+                TagCheckout(false, isAddressError ? "invalid_address" : "place_order_failed");
                 return Ok(new
                 {
                     success = false,
@@ -609,6 +625,7 @@ namespace Nop.Web.Controllers.Api.Order
                 });
             }
 
+            TagCheckout(true, "ok");
             return Ok(new
             {
                 success = true,
