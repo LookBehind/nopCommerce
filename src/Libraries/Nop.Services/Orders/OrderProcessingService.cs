@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Nop.Core;
+using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Customers;
@@ -65,6 +66,7 @@ namespace Nop.Services.Orders
         private readonly IGiftCardService _giftCardService;
         private readonly ILanguageService _languageService;
         private readonly ILocalizationService _localizationService;
+        private readonly ILocker _locker;
         private readonly ILogger _logger;
         private readonly IOrderService _orderService;
         private readonly IOrderTotalCalculationService _orderTotalCalculationService;
@@ -116,6 +118,7 @@ namespace Nop.Services.Orders
             IGiftCardService giftCardService,
             ILanguageService languageService,
             ILocalizationService localizationService,
+            ILocker locker,
             ILogger logger,
             IOrderService orderService,
             IOrderTotalCalculationService orderTotalCalculationService,
@@ -163,6 +166,7 @@ namespace Nop.Services.Orders
             _giftCardService = giftCardService;
             _languageService = languageService;
             _localizationService = localizationService;
+            _locker = locker;
             _logger = logger;
             _orderService = orderService;
             _orderTotalCalculationService = orderTotalCalculationService;
@@ -1581,6 +1585,30 @@ namespace Nop.Services.Orders
         }
 
         /// <summary>
+        /// Validates that the customer hasn't placed an order within the minimum order
+        /// placement interval (prevents 2 orders being placed within an X second time frame)
+        /// </summary>
+        /// <param name="customerId">Customer identifier</param>
+        /// <param name="storeId">Store identifier</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains true if placing a new order is allowed; otherwise false
+        /// </returns>
+        public virtual async Task<bool> IsMinimumOrderPlacementIntervalValidAsync(int customerId, int storeId)
+        {
+            if (_orderSettings.MinimumOrderPlacementInterval == 0)
+                return true;
+
+            var lastOrder = (await _orderService.SearchOrdersAsync(storeId: storeId, customerId: customerId, pageSize: 1))
+                .FirstOrDefault();
+            if (lastOrder == null)
+                return true;
+
+            var interval = DateTime.UtcNow - lastOrder.CreatedOnUtc;
+            return interval.TotalSeconds > _orderSettings.MinimumOrderPlacementInterval;
+        }
+
+        /// <summary>
         /// Places an order
         /// </summary>
         /// <param name="processPaymentRequest">Process payment request</param>
@@ -1602,14 +1630,33 @@ namespace Nop.Services.Orders
                 //prepare order details
                 var details = await PreparePlaceOrderDetailsAsync(processPaymentRequest);
 
-                var processPaymentResult = await GetProcessPaymentResultAsync(processPaymentRequest, details);
+                //serialize per customer: a payment processor's "amount already spent today/this
+                //period" check and the resulting order insert must be atomic with respect to
+                //other concurrent PlaceOrderAsync calls for the same customer, otherwise
+                //simultaneous requests (e.g. duplicate taps/retries) can each read the allowance
+                //before any sibling order is inserted and all pass the same spending cap
+                Order order = null;
+                ProcessPaymentResult processPaymentResult = null;
+                var lockAcquired = _locker.PerformActionWithLock(
+                    string.Format(NopOrderDefaults.OrderPlacementLockKey, processPaymentRequest.CustomerId),
+                    TimeSpan.FromSeconds(30),
+                    () =>
+                    {
+                        processPaymentResult = GetProcessPaymentResultAsync(processPaymentRequest, details).GetAwaiter().GetResult();
 
-                if (processPaymentResult == null)
-                    throw new NopException("processPaymentResult is not available");
+                        if (processPaymentResult == null)
+                            throw new NopException("processPaymentResult is not available");
+
+                        order = processPaymentResult.Success
+                            ? SaveOrderDetailsAsync(processPaymentRequest, processPaymentResult, details).GetAwaiter().GetResult()
+                            : null;
+                    });
+
+                if (!lockAcquired)
+                    throw new NopException(await _localizationService.GetResourceAsync("Checkout.MinOrderPlacementInterval"));
 
                 if (processPaymentResult.Success)
                 {
-                    var order = await SaveOrderDetailsAsync(processPaymentRequest, processPaymentResult, details);
                     result.PlacedOrder = order;
                     
                     order.CompanyId = (await _companyService.GetCompanyByCustomerIdAsync(

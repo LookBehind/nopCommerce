@@ -126,25 +126,6 @@ namespace Nop.Web.Controllers
 
         #region Utilities
 
-        /// <returns>A task that represents the asynchronous operation</returns>
-        protected virtual async Task<bool> IsMinimumOrderPlacementIntervalValidAsync(Customer customer)
-        {
-            //prevent 2 orders being placed within an X seconds time frame
-            if (_orderSettings.MinimumOrderPlacementInterval == 0)
-                return true;
-
-            var lastOrder = (await _orderService.SearchOrdersAsync(
-                    storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
-                    customerId: (await _workContext.GetCurrentCustomerAsync()).Id, 
-                    pageSize: 1))
-                .FirstOrDefault();
-            if (lastOrder == null)
-                return true;
-
-            var interval = DateTime.UtcNow - lastOrder.CreatedOnUtc;
-            return interval.TotalSeconds > _orderSettings.MinimumOrderPlacementInterval;
-        }
-
         /// <summary>
         /// Parses the value indicating whether the "pickup in store" is allowed
         /// </summary>
@@ -1112,7 +1093,8 @@ namespace Nop.Web.Controllers
             try
             {
                 //prevent 2 orders being placed within an X seconds time frame
-                if (!await IsMinimumOrderPlacementIntervalValidAsync(await _workContext.GetCurrentCustomerAsync()))
+                if (!await _orderProcessingService.IsMinimumOrderPlacementIntervalValidAsync(
+                        (await _workContext.GetCurrentCustomerAsync()).Id, (await _storeContext.GetCurrentStoreAsync()).Id))
                     throw new Exception(await _localizationService.GetResourceAsync("Checkout.MinOrderPlacementInterval"));
 
                 //place order
@@ -1814,7 +1796,8 @@ namespace Nop.Web.Controllers
                     throw new Exception("Anonymous checkout is not allowed");
 
                 //prevent 2 orders being placed within an X seconds time frame
-                if (!await IsMinimumOrderPlacementIntervalValidAsync(await _workContext.GetCurrentCustomerAsync()))
+                if (!await _orderProcessingService.IsMinimumOrderPlacementIntervalValidAsync(
+                        (await _workContext.GetCurrentCustomerAsync()).Id, (await _storeContext.GetCurrentStoreAsync()).Id))
                     throw new Exception(await _localizationService.GetResourceAsync("Checkout.MinOrderPlacementInterval"));
 
                 //place order
