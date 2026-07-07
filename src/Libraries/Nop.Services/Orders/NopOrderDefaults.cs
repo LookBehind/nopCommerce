@@ -58,5 +58,17 @@ namespace Nop.Services.Orders
         #endregion
 
         #endregion
+
+        #region Locking defaults
+
+        /// <summary>
+        /// Gets a key for the lock used to serialize order placement per customer
+        /// </summary>
+        /// <remarks>
+        /// {0} : customer ID
+        /// </remarks>
+        public static string OrderPlacementLockKey => "Nop.order.placement.lock.{0}";
+
+        #endregion
     }
 }

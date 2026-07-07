@@ -31,6 +31,18 @@ namespace Nop.Services.Orders
         Task<PlaceOrderResult> PlaceOrderAsync(ProcessPaymentRequest processPaymentRequest);
 
         /// <summary>
+        /// Validates that the customer hasn't placed an order within the minimum order
+        /// placement interval (prevents 2 orders being placed within an X second time frame)
+        /// </summary>
+        /// <param name="customerId">Customer identifier</param>
+        /// <param name="storeId">Store identifier</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains true if placing a new order is allowed; otherwise false
+        /// </returns>
+        Task<bool> IsMinimumOrderPlacementIntervalValidAsync(int customerId, int storeId);
+
+        /// <summary>
         /// Update order totals
         /// </summary>
         /// <param name="updateOrderParameters">Parameters for the updating order</param>

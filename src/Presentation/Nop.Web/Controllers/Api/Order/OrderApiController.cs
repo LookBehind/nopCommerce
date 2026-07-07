@@ -537,7 +537,19 @@ namespace Nop.Web.Controllers.Api.Order
                         "If the issue still persist please notify MySnacks team."
                 });
             }
-            
+
+            var minIntervalValid = await _orderProcessingService.IsMinimumOrderPlacementIntervalValidAsync(customer.Id, store.Id);
+            if (!minIntervalValid)
+            {
+                await _logger.WarningAsync($"Order placed too soon after the previous one for customer {customer.Id}", customer: customer);
+                return Ok(new
+                {
+                    success = false,
+                    code = (int)OrderResultCode.None,
+                    message = await _localizationService.GetResourceAsync("Checkout.MinOrderPlacementInterval")
+                });
+            }
+
             // Replace checkout attributes
             if(orderConfirmationApiModel != null)
             {
