@@ -45,6 +45,7 @@ namespace Nop.Web.Controllers.Api.Order
 
         private readonly ICustomerService _customerService;
         private readonly IOrderService _orderService;
+        private readonly IAddressService _addressService;
         private readonly IPriceFormatter _priceFormatter;
         private readonly ICurrencyService _currencyService;
         private readonly IProductService _productService;
@@ -78,6 +79,7 @@ namespace Nop.Web.Controllers.Api.Order
         public OrderApiController(ICurrencyService currencyService,
             ICustomerService customerService,
             IOrderService orderService,
+            IAddressService addressService,
             IPriceFormatter priceFormatter,
             IPictureService pictureService,
             IUrlRecordService urlRecordService,
@@ -103,6 +105,7 @@ namespace Nop.Web.Controllers.Api.Order
             OrderSettings orderSettings)
         {
             _orderService = orderService;
+            _addressService = addressService;
             _customerService = customerService;
             _priceFormatter = priceFormatter;
             _currencyService = currencyService;
@@ -1142,7 +1145,8 @@ namespace Nop.Web.Controllers.Api.Order
                 IsReturnRequestAllowed = await _orderProcessingService.IsReturnRequestAllowedAsync(order),
                 CustomOrderNumber = order.CustomOrderNumber,
                 Rating = order.Rating,
-                RatingText = order.RatingText
+                RatingText = order.RatingText,
+                DeliveryAddress = await FormatDeliveryAddressAsync(order)
             };
             var orderTotalInCustomerCurrency = _currencyService.ConvertCurrency(order.OrderTotal, order.CurrencyRate);
             orderModel.OrderTotal = await _priceFormatter.FormatPriceAsync(orderTotalInCustomerCurrency, true, order.CustomerCurrencyCode, false, languageId);
@@ -1217,6 +1221,24 @@ namespace Nop.Web.Controllers.Api.Order
             }
 
             return orderModel;
+        }
+
+        /// <summary>
+        /// Builds a short, single-line display string for the address an order was delivered to
+        /// (pickup address for in-store pickup orders, shipping address otherwise).
+        /// </summary>
+        protected virtual async Task<string> FormatDeliveryAddressAsync(Core.Domain.Orders.Order order)
+        {
+            var addressId = order.PickupInStore ? order.PickupAddressId : order.ShippingAddressId;
+            if (!addressId.HasValue)
+                return string.Empty;
+
+            var address = await _addressService.GetAddressByIdAsync(addressId.Value);
+            if (address == null)
+                return string.Empty;
+
+            return string.Join(", ", new[] { address.Address1, address.Address2, address.City }
+                .Where(part => !string.IsNullOrWhiteSpace(part)));
         }
 
         #endregion
