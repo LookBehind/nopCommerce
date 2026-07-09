@@ -47,6 +47,7 @@
                             </div>
                             <div class="inputs">
                                 <label asp-for="AddProductReview.ReviewText" asp-postfix=":"></label>
+                                <div class="quick-review-options" id="quick-review-options"></div>
                                 <textarea asp-for="AddProductReview.ReviewText" class="review-text" asp-disabled="@(!Model.AddProductReview.CanCurrentCustomerLeaveReview)"></textarea>
                                 <nop-required />
                                 <span asp-validation-for="AddProductReview.ReviewText"></span>
@@ -209,3 +210,48 @@
         @await Component.InvokeAsync("Widget", new { widgetZone = PublicWidgetZones.ProductReviewsPageBottom, additionalData = Model })
     </div>
 </div>
+
+<style>
+    .quick-review-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 8px 0;
+    }
+
+    .quick-review-option {
+        padding: 6px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 16px;
+        background: #f8f9fa;
+        font-size: 13px;
+        cursor: pointer;
+    }
+
+    .quick-review-option:hover {
+        background: #e9ecef;
+    }
+</style>
+
+<script asp-location="Footer">
+    $(document).ready(function () {
+        //quick-select review-reason chips: tapping one replaces (not appends) the review text
+        $.ajax({
+            url: '@Url.Content("~/api/review/quick-options")',
+            type: 'GET',
+            dataType: 'json'
+        }).done(function (options) {
+            var $container = $('#quick-review-options');
+            (options || []).forEach(function (option) {
+                $('<button type="button" class="quick-review-option"></button>')
+                    .text(option.Text)
+                    .on('click', function () {
+                        $('#@Html.IdFor(m => m.AddProductReview.ReviewText)').val(option.Text);
+                    })
+                    .appendTo($container);
+            });
+        }).fail(function () {
+            console.error('Failed to load quick review options');
+        });
+    });
+</script>
