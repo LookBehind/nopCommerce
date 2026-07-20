@@ -752,6 +752,7 @@ namespace Nop.Web.Controllers.Api.Order
                             ProductSeName = await _urlRecordService.GetSeNameAsync(product),
                             Quantity = orderItem.Quantity,
                             AttributeInfo = orderItem.AttributeDescription,
+                            ProductAttributes = await GetOrderItemProductAttributesAsync(orderItem),
                             UserRating = customerReviews.TryGetValue(product.Id, out var userRating) ? userRating : null,
                             Vendor = vendorBriefModel
                         };
@@ -864,6 +865,7 @@ namespace Nop.Web.Controllers.Api.Order
                             ProductPictureUrl = productPicture.Any() ? await _pictureService.GetPictureUrlAsync(productPicture.FirstOrDefault().Id) : await _pictureService.GetDefaultPictureUrlAsync(),
                             Quantity = orderItem.Quantity,
                             AttributeInfo = orderItem.AttributeDescription,
+                            ProductAttributes = await GetOrderItemProductAttributesAsync(orderItem),
                             UserRating = customerReviews.TryGetValue(product.Id, out var userRating) ? userRating : null,
                             Vendor = vendorBriefModel
                         };
@@ -974,6 +976,7 @@ namespace Nop.Web.Controllers.Api.Order
                             ProductSeName = await _urlRecordService.GetSeNameAsync(product),
                             Quantity = orderItem.Quantity,
                             AttributeInfo = orderItem.AttributeDescription,
+                            ProductAttributes = await GetOrderItemProductAttributesAsync(orderItem),
                             UserRating = customerReviews.TryGetValue(product.Id, out var userRating) ? userRating : null,
                             Vendor = vendorBriefModel
                         };
@@ -1178,6 +1181,7 @@ namespace Nop.Web.Controllers.Api.Order
                     ProductSeName = await _urlRecordService.GetSeNameAsync(product),
                     Quantity = orderItem.Quantity,
                     AttributeInfo = orderItem.AttributeDescription,
+                    ProductAttributes = await GetOrderItemProductAttributesAsync(orderItem),
                     UserRating = customerReviews.TryGetValue(product.Id, out var userRating) ? userRating : null,
                     Vendor = vendorBriefModel
                 };
@@ -1221,6 +1225,39 @@ namespace Nop.Web.Controllers.Api.Order
             }
 
             return orderModel;
+        }
+
+        /// <summary>
+        /// Parses an order item's AttributesXml into the structured attribute/value id shape
+        /// the mobile app needs to reconstruct the exact selection on reorder.
+        /// </summary>
+        protected virtual async Task<IList<OrderDetailsModel.OrderItemProductAttributeModel>> GetOrderItemProductAttributesAsync(
+            Core.Domain.Orders.OrderItem orderItem)
+        {
+            var result = new List<OrderDetailsModel.OrderItemProductAttributeModel>();
+            if (string.IsNullOrEmpty(orderItem.AttributesXml))
+                return result;
+
+            foreach (var mapping in await _productAttributeParser.ParseProductAttributeMappingsAsync(orderItem.AttributesXml))
+            {
+                var productAttribute = await _productAttributeService.GetProductAttributeByIdAsync(mapping.ProductAttributeId);
+                var values = await _productAttributeParser.ParseProductAttributeValuesAsync(orderItem.AttributesXml, mapping.Id);
+
+                foreach (var value in values)
+                {
+                    result.Add(new OrderDetailsModel.OrderItemProductAttributeModel
+                    {
+                        ProductAttributeId = mapping.ProductAttributeId,
+                        ProductAttributeValueId = value.Id,
+                        Name = productAttribute?.Name,
+                        ValueName = value.Name,
+                        PriceAdjustment = value.PriceAdjustment,
+                        PriceAdjustmentUsePercentage = value.PriceAdjustmentUsePercentage
+                    });
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
