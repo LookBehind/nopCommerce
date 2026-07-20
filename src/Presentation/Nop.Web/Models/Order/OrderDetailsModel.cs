@@ -85,6 +85,11 @@ namespace Nop.Web.Models.Order
 
         public partial record OrderItemModel : BaseNopEntityModel
         {
+            public OrderItemModel()
+            {
+                ProductAttributes = new List<OrderItemProductAttributeModel>();
+            }
+
             public Guid OrderItemGuid { get; set; }
             public string Sku { get; set; }
             public int ProductId { get; set; }
@@ -95,6 +100,10 @@ namespace Nop.Web.Models.Order
             public string SubTotal { get; set; }
             public int Quantity { get; set; }
             public string AttributeInfo { get; set; }
+
+            //structured version of AttributeInfo (attribute/value ids + raw price adjustment),
+            //used by the mobile app to reconstruct the exact attribute selection on reorder
+            public IList<OrderItemProductAttributeModel> ProductAttributes { get; set; }
             public string RentalInfo { get; set; }
 
             //current customer's own review rating for this product (null = not yet reviewed)
@@ -106,6 +115,18 @@ namespace Nop.Web.Models.Order
             //downloadable product properties
             public int DownloadId { get; set; }
             public int LicenseId { get; set; }
+        }
+
+        public partial record OrderItemProductAttributeModel : BaseNopModel
+        {
+            //ProductAttribute.Id (matches ProductAttributesModel.ProductAttributes[i].Id on the catalog product model)
+            public int ProductAttributeId { get; set; }
+            //ProductAttributeValue.Id (matches ProductAttributesModel.ProductAttributes[i].AttributeValues[j].Id)
+            public int ProductAttributeValueId { get; set; }
+            public string Name { get; set; }
+            public string ValueName { get; set; }
+            public decimal PriceAdjustment { get; set; }
+            public bool PriceAdjustmentUsePercentage { get; set; }
         }
 
         public partial record TaxRate : BaseNopModel
