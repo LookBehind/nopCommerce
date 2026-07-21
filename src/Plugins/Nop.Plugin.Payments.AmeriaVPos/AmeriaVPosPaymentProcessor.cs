@@ -132,6 +132,13 @@ namespace Nop.Plugin.Payments.AmeriaVPos
                 await _logger.ErrorAsync(
                     $"AmeriaVPos: order {postProcessPaymentRequest.Order.Id} requires payment but InitPayment " +
                     "did not return a redirect URL - see prior error log entry for the InitPayment failure.");
+
+                //without this, falling through here lets nopCommerce's stock OPC flow carry
+                //on to CheckoutCompleted - showing "successfully processed" for an order that
+                //was never charged. BackUrlReturn already renders PaymentFail.cshtml correctly
+                //for a resolved-but-not-Paid attempt, so just send the customer there.
+                _httpContextAccessor.HttpContext.Response.Redirect(
+                    $"{_webHelper.GetStoreLocation()}ameriavpos/backurlreturn?orderId={postProcessPaymentRequest.Order.Id}");
                 return;
             }
 
