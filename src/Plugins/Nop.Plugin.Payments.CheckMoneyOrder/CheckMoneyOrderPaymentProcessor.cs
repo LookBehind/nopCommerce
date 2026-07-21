@@ -36,8 +36,6 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
         ICompanyAllowancePaymentMethod,
         IWidgetPlugin
     {
-        // keep in sync with IdramMerchantPaymentProcessor.CompanyBenefitExemptionRole
-        private const string CompanyBenefitExemptionRole = "Allowance Excempt";
         private const string UnlimitedAccountRoleSystemName = "UnlimitedAccount";
         private const string VoidedAllowancesSettingsKey = "VoidedAllowancesSettings";
         // keep in sync with Nop.Plugin.Company.Company DeliveryTimeStorageService.SELECTED_DELIVERY_TIME_KEY
@@ -597,7 +595,7 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder
             var customerRoles = await _customerService.GetCustomerRolesAsync(customer);
 
             if (customerRoles.Any(role =>
-                    string.Equals(role.Name, CompanyBenefitExemptionRole, StringComparison.OrdinalIgnoreCase)))
+                    string.Equals(role.Name, NopCustomerDefaults.CompanyBenefitExemptionRoleName, StringComparison.OrdinalIgnoreCase)))
                 return (AmountLimitType.Daily, 0M);
             
             var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);

@@ -912,12 +912,18 @@ namespace Nop.Services.Orders
             if (orderPlacedCustomerNotificationQueuedEmailIds.Any())
                 await AddOrderNoteAsync(order, $"\"Order placed\" email (to customer) has been queued. Queued email identifiers: {string.Join(", ", orderPlacedCustomerNotificationQueuedEmailIds)}.");
 
-            var vendors = await GetVendorsInOrderAsync(order);
-            foreach (var vendor in vendors)
+            //vendors are notified once payment actually resolves (see OrderPaid.VendorNotification in
+            //ProcessOrderPaidAsync) so they don't get told to prep an order that may still be
+            //declined/abandoned by a redirect-based payment method (e.g. AmeriaVPos)
+            if (order.PaymentStatus != PaymentStatus.Pending)
             {
-                var orderPlacedVendorNotificationQueuedEmailIds = await _workflowMessageService.SendOrderPlacedVendorNotificationAsync(order, vendor, _localizationSettings.DefaultAdminLanguageId);
-                if (orderPlacedVendorNotificationQueuedEmailIds.Any())
-                    await AddOrderNoteAsync(order, $"\"Order placed\" email (to vendor) has been queued. Queued email identifiers: {string.Join(", ", orderPlacedVendorNotificationQueuedEmailIds)}.");
+                var vendors = await GetVendorsInOrderAsync(order);
+                foreach (var vendor in vendors)
+                {
+                    var orderPlacedVendorNotificationQueuedEmailIds = await _workflowMessageService.SendOrderPlacedVendorNotificationAsync(order, vendor, _localizationSettings.DefaultAdminLanguageId);
+                    if (orderPlacedVendorNotificationQueuedEmailIds.Any())
+                        await AddOrderNoteAsync(order, $"\"Order placed\" email (to vendor) has been queued. Queued email identifiers: {string.Join(", ", orderPlacedVendorNotificationQueuedEmailIds)}.");
+                }
             }
 
             if (order.AffiliateId == 0)

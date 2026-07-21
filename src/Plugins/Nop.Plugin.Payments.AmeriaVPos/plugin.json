@@ -1,0 +1,11 @@
+{
+  "Group": "Payment methods",
+  "FriendlyName": "AmeriaBank vPOS",
+  "SystemName": "Payments.AmeriaVPos",
+  "Version": "1.0",
+  "SupportedVersions": [ "4.50" ],
+  "Author": "Custom",
+  "DisplayOrder": 1,
+  "FileName": "Nop.Plugin.Payments.AmeriaVPos.dll",
+  "Description": "This plugin allows paying by card via AmeriaBank vPOS"
+}

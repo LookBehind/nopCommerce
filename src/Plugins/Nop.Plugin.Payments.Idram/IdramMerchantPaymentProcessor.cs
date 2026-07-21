@@ -13,6 +13,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Nop.Core;
+using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
 using Nop.Data;
@@ -32,8 +33,6 @@ namespace Nop.Plugin.Payments.Idram
 {
     public class IdramMerchantPaymentProcessor : BasePlugin, IPaymentMethod, IPlugin
     {
-        // keep in sync with CheckMoneyOrderPaymentProcessor.CompanyBenefitExemptionRole
-        private const string CompanyBenefitExemptionRole = "Allowance Excempt";
         // keep in sync with Nop.Plugin.Company.Company DeliveryTimeStorageService.SELECTED_DELIVERY_TIME_KEY
         private const string SelectedDeliveryTimeAttributeName = "SELECTED_DELIVERY_TIME_KEY";
         
@@ -306,7 +305,7 @@ namespace Nop.Plugin.Payments.Idram
             var customerRoles = await _customerService.GetCustomerRolesAsync(currentCustomer);
 
             if (customerRoles.Any(role =>
-                    string.Equals(role.Name, CompanyBenefitExemptionRole, StringComparison.OrdinalIgnoreCase)))
+                    string.Equals(role.Name, NopCustomerDefaults.CompanyBenefitExemptionRoleName, StringComparison.OrdinalIgnoreCase)))
                 return 0M;
             
             var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
