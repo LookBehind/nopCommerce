@@ -138,7 +138,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos
                 //was never charged. BackUrlReturn already renders PaymentFail.cshtml correctly
                 //for a resolved-but-not-Paid attempt, so just send the customer there.
                 _httpContextAccessor.HttpContext.Response.Redirect(
-                    $"{_webHelper.GetStoreLocation()}ameriavpos/backurlreturn?orderId={postProcessPaymentRequest.Order.Id}");
+                    $"{_webHelper.GetStoreLocation()}ameriavpos/backurlreturn?msOrderId={postProcessPaymentRequest.Order.Id}");
                 return;
             }
 

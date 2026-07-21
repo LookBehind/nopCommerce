@@ -127,7 +127,9 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
             };
             await _attemptRepository.InsertAsync(attempt);
 
-            var backUrl = $"{_webHelper.GetStoreLocation()}ameriavpos/backurlreturn?orderId={order.Id}";
+            //"msOrderId", not "orderId" - collides with AmeriaBank's own OrderID field on
+            //their return redirect, see the comment on BackUrlReturn
+            var backUrl = $"{_webHelper.GetStoreLocation()}ameriavpos/backurlreturn?msOrderId={order.Id}";
 
             var initResponse = await _apiClient.InitPaymentAsync(new InitPaymentRequest
             {

@@ -137,13 +137,20 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
         /// session) gets bounced on into the app via the mysnacks:// deep link instead of
         /// nopCommerce's web CheckoutCompleted/PaymentFail pages, which have nothing to
         /// render against for a mobile order.
+        ///
+        /// The query param is named "msOrderId", NOT "orderId" - found live against the
+        /// sandbox 2026-07-22: AmeriaBank's own redirect appends its own querystring
+        /// (their OrderID, resposneCode, paymentID, opaque, description), and their OrderID
+        /// field is also literally named "orderId". Using the same key silently overwrote
+        /// ours with the AmeriaVPosPaymentAttempt row's own Id (their OrderID) instead of the
+        /// real nopCommerce Order.Id, sending every real bank round-trip to the wrong "order".
         /// </summary>
-        public async Task<IActionResult> BackUrlReturn(int orderId)
+        public async Task<IActionResult> BackUrlReturn(int msOrderId)
         {
-            var order = await _orderService.GetOrderByIdAsync(orderId);
+            var order = await _orderService.GetOrderByIdAsync(msOrderId);
             if (order == null)
             {
-                await _logger.WarningAsync($"AmeriaVPos BackUrlReturn: order {orderId} not found");
+                await _logger.WarningAsync($"AmeriaVPos BackUrlReturn: order {msOrderId} not found");
                 return View("~/Plugins/Payments.AmeriaVPos/Views/PaymentFail.cshtml");
             }
 
