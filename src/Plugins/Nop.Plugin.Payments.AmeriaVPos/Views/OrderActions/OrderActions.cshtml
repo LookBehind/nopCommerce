@@ -50,10 +50,18 @@
                 type: 'POST',
                 data: $.extend({ __RequestVerificationToken: token }, extraData),
                 success: function () {
+                    // The controller always redirects back to Edit (200 after
+                    // redirect) whether the AmeriaBank call succeeded or failed -
+                    // success/error notification is a banner baked into that
+                    // reloaded page, not an HTTP status. Reload shows it either way.
                     location.reload();
                 },
                 error: function (xhr) {
-                    alert(xhr.responseText || 'Request failed');
+                    // Only genuine transport failures land here (network error,
+                    // antiforgery rejection, unhandled 500). Never surface
+                    // xhr.responseText directly - it can be a raw HTML error page.
+                    console.error('AmeriaVPos action failed', xhr.status, xhr.responseText);
+                    alert('Request failed (' + xhr.status + '). Check the browser console or server log for details.');
                 }
             });
         }

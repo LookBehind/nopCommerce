@@ -324,7 +324,17 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
             attempt.Status = AmeriaVPosPaymentAttemptStatus.Cancelled;
             await _attemptRepository.UpdateAsync(attempt);
 
-            await _orderProcessingService.VoidOfflineAsync(order);
+            //Not VoidOfflineAsync: nopCommerce's CanVoidOffline requires
+            //PaymentStatus.Authorized, but AmeriaVPos is a single-stage
+            //capture - the order goes straight from Pending to Paid and is
+            //never Authorized, so VoidOfflineAsync would always throw here.
+            //RefundOfflineAsync (CanRefundOffline requires Paid) is the
+            //nopCommerce-level effect that actually matches: money went back
+            //to the customer, same as RefundAsync above. The distinction
+            //between AmeriaBank's Cancel and Refund APIs is a bank-side
+            //same-day-vs-settled distinction only - nopCommerce has no
+            //separate order status for it.
+            await _orderProcessingService.RefundOfflineAsync(order);
 
             return true;
         }

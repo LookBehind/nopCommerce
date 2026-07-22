@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
@@ -185,11 +186,19 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
             if (order == null)
                 return RedirectToAction("List", "Order", new { area = AreaNames.Admin });
 
-            var success = await _ameriaVPosPaymentService.RefundAsync(order, amount);
-            if (success)
-                _notificationService.SuccessNotification("AmeriaBank refund completed.");
-            else
-                _notificationService.ErrorNotification("AmeriaBank refund failed - check the log for details.");
+            try
+            {
+                var success = await _ameriaVPosPaymentService.RefundAsync(order, amount);
+                if (success)
+                    _notificationService.SuccessNotification("AmeriaBank refund completed.");
+                else
+                    _notificationService.ErrorNotification("AmeriaBank refund failed - check the log for details.");
+            }
+            catch (Exception exc)
+            {
+                await _logger.ErrorAsync($"AmeriaVPos RefundAmeriaPayment failed for order {orderId}", exc);
+                _notificationService.ErrorNotification(exc.Message);
+            }
 
             return RedirectToAction("Edit", "Order", new { id = orderId, area = AreaNames.Admin });
         }
@@ -211,11 +220,19 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
             if (order == null)
                 return RedirectToAction("List", "Order", new { area = AreaNames.Admin });
 
-            var success = await _ameriaVPosPaymentService.CancelAsync(order);
-            if (success)
-                _notificationService.SuccessNotification("AmeriaBank payment cancelled.");
-            else
-                _notificationService.ErrorNotification("AmeriaBank cancel failed - check the log for details.");
+            try
+            {
+                var success = await _ameriaVPosPaymentService.CancelAsync(order);
+                if (success)
+                    _notificationService.SuccessNotification("AmeriaBank payment cancelled.");
+                else
+                    _notificationService.ErrorNotification("AmeriaBank cancel failed - check the log for details.");
+            }
+            catch (Exception exc)
+            {
+                await _logger.ErrorAsync($"AmeriaVPos CancelAmeriaPayment failed for order {orderId}", exc);
+                _notificationService.ErrorNotification(exc.Message);
+            }
 
             return RedirectToAction("Edit", "Order", new { id = orderId, area = AreaNames.Admin });
         }
