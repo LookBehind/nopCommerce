@@ -12,7 +12,12 @@
             <input type="hidden" name="orderId" value="@Model.OrderId" />
             <div class="form-group">
                 <label for="ameria-refund-amount">@T("Plugins.Payments.AmeriaVPos.OrderActions.RefundAmount")</label>
-                <input type="number" step="0.01" min="0" max="@Model.ChargedAmount" name="amount" id="ameria-refund-amount" value="@Model.ChargedAmount" class="form-control" style="width: 120px; margin: 0 8px;" />
+                @* step="any" - not stricter (e.g. "0.01") - a browser's native step-mismatch
+                   check compares in floating point, so a pre-filled value with more decimal
+                   places than the DB column's precision (e.g. ChargedAmount's raw "10.0000")
+                   can false-positive as "not a multiple of 0.01" and silently block the whole
+                   form from submitting, even on a mathematically valid amount. *@
+                <input type="number" step="any" min="0" max="@Model.ChargedAmount" name="amount" id="ameria-refund-amount" value="@Model.ChargedAmount" class="form-control" style="width: 120px; margin: 0 8px;" />
             </div>
             <button type="submit" name="refundameriapayment" id="refundameriapayment" class="btn btn-primary">
                 @T("Plugins.Payments.AmeriaVPos.OrderActions.Refund")
