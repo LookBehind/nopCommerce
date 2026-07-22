@@ -106,7 +106,14 @@
             </div>
             <div class="form-group row">
                 <div class="col-md-3">
-                    <label class="col-form-label">Order source</label>
+                    @* OrderSource has no [NopResourceDisplayName], so nop-label can't be
+                       used directly - but its wrapping <div class="label-wrapper"> is what
+                       right-aligns/flexes the label to match every other row here (see
+                       .form-horizontal .label-wrapper in admin/styles.css), so replicate it
+                       manually instead of a bare <label>. *@
+                    <div class="label-wrapper">
+                        <label class="col-form-label">Order source</label>
+                    </div>
                 </div>
                 <div class="col-md-9">
                     <div class="form-text-row">@Model.OrderSource</div>
