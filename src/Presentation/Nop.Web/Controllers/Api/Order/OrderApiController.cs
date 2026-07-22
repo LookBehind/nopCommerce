@@ -652,6 +652,14 @@ namespace Nop.Web.Controllers.Api.Order
                 });
             }
 
+            //InitPayment can fail/decline before ever producing a redirect URL (e.g. the
+            //bank's own error, network issue) - the order still exists (Pending, unpaid),
+            //so the client's fallback-message path needs something other than the generic
+            //"couldn't place order", which would wrongly imply nothing was created.
+            var message = string.IsNullOrEmpty(paymentResult.PaymentUrl)
+                ? "Your order was saved, but the card payment couldn't be started. Please try paying again from your Orders."
+                : null;
+
             return Ok(new
             {
                 success = false,
@@ -659,7 +667,8 @@ namespace Nop.Web.Controllers.Api.Order
                 orderId = placedOrder.Id,
                 paymentUrl = paymentResult.PaymentUrl,
                 amountDue = paymentResult.AmountDue,
-                amountCoveredByAllowance = paymentResult.AmountCoveredByAllowance
+                amountCoveredByAllowance = paymentResult.AmountCoveredByAllowance,
+                message
             });
         }
 
