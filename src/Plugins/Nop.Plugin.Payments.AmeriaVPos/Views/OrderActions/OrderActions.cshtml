@@ -8,16 +8,7 @@
         <p>
             @string.Format(T("Plugins.Payments.AmeriaVPos.OrderActions.ChargedAmount").Text, Model.ChargedAmount)
         </p>
-        @* asp-area="Admin" is required here even though the controller/action are
-           area-scoped ([Area(AreaNames.Admin)]) and this partial is only ever
-           rendered inside an Admin-area page: ASP.NET Core's convention-based area
-           inference comes from the VIEW's own file path being under Areas/Admin/,
-           not from the page it's embedded in. This view lives in the plugin's own
-           Views/ folder (rendered into Order/Edit via a widget zone), so without an
-           explicit asp-area the tag helper can't find a matching route and the form
-           silently falls back to posting to the current page. *@
-        <form asp-controller="AmeriaVPos" asp-action="RefundAmeriaPayment" asp-area="Admin" method="post" class="form-inline" style="display:inline-block; margin-right: 10px;">
-            <input type="hidden" name="orderId" value="@Model.OrderId" />
+        <div class="form-inline" style="display:inline-block; margin-right: 10px;">
             <div class="form-group">
                 <label for="ameria-refund-amount">@T("Plugins.Payments.AmeriaVPos.OrderActions.RefundAmount")</label>
                 @* step="any" - not stricter (e.g. "0.01") - a browser's native step-mismatch
@@ -25,19 +16,61 @@
                    places than the DB column's precision (e.g. ChargedAmount's raw "10.0000")
                    can false-positive as "not a multiple of 0.01" and silently block the whole
                    form from submitting, even on a mathematically valid amount. *@
-                <input type="number" step="any" min="0" max="@Model.ChargedAmount" name="amount" id="ameria-refund-amount" value="@Model.ChargedAmount" class="form-control" style="width: 120px; margin: 0 8px;" />
+                <input type="number" step="any" min="0" max="@Model.ChargedAmount" id="ameria-refund-amount" value="@Model.ChargedAmount" class="form-control" style="width: 120px; margin: 0 8px;" />
             </div>
-            <button type="submit" name="refundameriapayment" id="refundameriapayment" class="btn btn-primary">
+            <button type="button" id="refundameriapayment" class="btn btn-primary">
                 @T("Plugins.Payments.AmeriaVPos.OrderActions.Refund")
             </button>
             <nop-action-confirmation asp-button-id="refundameriapayment" />
-        </form>
-        <form asp-controller="AmeriaVPos" asp-action="CancelAmeriaPayment" asp-area="Admin" method="post" style="display:inline-block;">
-            <input type="hidden" name="orderId" value="@Model.OrderId" />
-            <button type="submit" name="cancelameriapayment" id="cancelameriapayment" class="btn btn-danger">
-                @T("Plugins.Payments.AmeriaVPos.OrderActions.Cancel")
-            </button>
-            <nop-action-confirmation asp-button-id="cancelameriapayment" />
-        </form>
+        </div>
+        <button type="button" id="cancelameriapayment" class="btn btn-danger">
+            @T("Plugins.Payments.AmeriaVPos.OrderActions.Cancel")
+        </button>
+        <nop-action-confirmation asp-button-id="cancelameriapayment" />
     </div>
 </div>
+
+@* These actions POST via AJAX rather than a <form>: this partial is rendered
+   via a widget zone inside Order/Edit's own page-wide <form id="order-form">,
+   and HTML forbids nesting <form> elements - the browser silently drops a
+   nested opening <form> tag while parsing, so any button inside always ends
+   up submitting the OUTER order-form instead (confirmed live: the button's
+   closest('form') was Order/Edit's own form, action /Admin/Order/Edit/{id},
+   no matter what asp-controller/asp-action/asp-area was set on our own
+   <form>). AJAX to the existing AmeriaVPosController actions sidesteps the
+   nesting problem entirely - same pattern Admin/Shared/Table.cshtml's grids
+   use, reading the shared __RequestVerificationToken input rather than
+   relying on form membership. *@
+<script>
+    $(document).ready(function () {
+        function postAmeriaAction(url, extraData) {
+            var token = $('input[name=__RequestVerificationToken]').val();
+            $.ajax({
+                url: url,
+                type: 'POST',
+                data: $.extend({ __RequestVerificationToken: token }, extraData),
+                success: function () {
+                    location.reload();
+                },
+                error: function (xhr) {
+                    alert(xhr.responseText || 'Request failed');
+                }
+            });
+        }
+
+        $('#refundameriapayment-action-confirmation-submit-button').on('click', function (e) {
+            e.preventDefault();
+            postAmeriaAction('@Url.Action("RefundAmeriaPayment", "AmeriaVPos", new { area = "Admin" })', {
+                orderId: @Model.OrderId,
+                amount: $('#ameria-refund-amount').val()
+            });
+        });
+
+        $('#cancelameriapayment-action-confirmation-submit-button').on('click', function (e) {
+            e.preventDefault();
+            postAmeriaAction('@Url.Action("CancelAmeriaPayment", "AmeriaVPos", new { area = "Admin" })', {
+                orderId: @Model.OrderId
+            });
+        });
+    });
+</script>
