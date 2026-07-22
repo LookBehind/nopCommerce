@@ -19,6 +19,9 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
     /// </summary>
     public class AmeriaVPosPaymentService : IAmeriaVPosPaymentService
     {
+        //See the comment where this is used (OrderID = AmeriaVPosOrderIdOffset + attempt.Id).
+        private const int AmeriaVPosOrderIdOffset = 900_000_000;
+
         #region Fields
 
         private readonly ICustomerService _customerService;
@@ -144,7 +147,14 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
                 Username = _ameriaVPosSettings.Username,
                 Password = _ameriaVPosSettings.Password,
                 Amount = amountDue,
-                OrderID = attempt.Id,
+                //Offset well clear of small numbers - AmeriaBank's sandbox rejected a raw
+                //small attempt.Id ("Order number is duplicated...") even though it was a
+                //freshly-inserted, never-before-used row on our side, suggesting the
+                //sandbox's OrderID space may be shared across multiple integrators testing
+                //against the same merchant credentials. A large offset (already confirmed
+                //to work fine during Phase 0 verification, see OrderID 900001) avoids
+                //colliding with anyone else's small sequential test IDs.
+                OrderID = AmeriaVPosOrderIdOffset + attempt.Id,
                 Currency = "051",
                 Description = $"MySnacks order #{order.Id}",
                 BackURL = backUrl
