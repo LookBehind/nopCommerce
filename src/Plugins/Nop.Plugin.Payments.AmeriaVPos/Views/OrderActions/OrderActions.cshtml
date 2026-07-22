@@ -8,7 +8,15 @@
         <p>
             @string.Format(T("Plugins.Payments.AmeriaVPos.OrderActions.ChargedAmount").Text, Model.ChargedAmount)
         </p>
-        <form asp-controller="AmeriaVPos" asp-action="RefundAmeriaPayment" method="post" class="form-inline" style="display:inline-block; margin-right: 10px;">
+        @* asp-area="Admin" is required here even though the controller/action are
+           area-scoped ([Area(AreaNames.Admin)]) and this partial is only ever
+           rendered inside an Admin-area page: ASP.NET Core's convention-based area
+           inference comes from the VIEW's own file path being under Areas/Admin/,
+           not from the page it's embedded in. This view lives in the plugin's own
+           Views/ folder (rendered into Order/Edit via a widget zone), so without an
+           explicit asp-area the tag helper can't find a matching route and the form
+           silently falls back to posting to the current page. *@
+        <form asp-controller="AmeriaVPos" asp-action="RefundAmeriaPayment" asp-area="Admin" method="post" class="form-inline" style="display:inline-block; margin-right: 10px;">
             <input type="hidden" name="orderId" value="@Model.OrderId" />
             <div class="form-group">
                 <label for="ameria-refund-amount">@T("Plugins.Payments.AmeriaVPos.OrderActions.RefundAmount")</label>
@@ -24,7 +32,7 @@
             </button>
             <nop-action-confirmation asp-button-id="refundameriapayment" />
         </form>
-        <form asp-controller="AmeriaVPos" asp-action="CancelAmeriaPayment" method="post" style="display:inline-block;">
+        <form asp-controller="AmeriaVPos" asp-action="CancelAmeriaPayment" asp-area="Admin" method="post" style="display:inline-block;">
             <input type="hidden" name="orderId" value="@Model.OrderId" />
             <button type="submit" name="cancelameriapayment" id="cancelameriapayment" class="btn btn-danger">
                 @T("Plugins.Payments.AmeriaVPos.OrderActions.Cancel")
