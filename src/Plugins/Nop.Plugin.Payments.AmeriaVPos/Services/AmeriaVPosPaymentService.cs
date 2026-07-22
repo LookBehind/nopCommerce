@@ -97,10 +97,14 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
             //null means "nothing to draw against" here (zero limit, Allowance Excempt role, or
             //no company at all) - not an error, just the same as RemainingAllowance == 0
             var remainingAllowance = balance?.RemainingAllowance ?? 0M;
-            var amountCoveredByAllowance = Math.Min(Math.Max(remainingAllowance, 0M), order.OrderTotal);
-            var amountDue = order.OrderTotal - amountCoveredByAllowance;
 
-            if (amountDue <= 0)
+            //An order is never split between allowance and card - per-company invoice
+            //reconciliation attributes a whole order to one payer or the other (a
+            //completed AmeriaVPos charge >0 excludes the ENTIRE order from that company's
+            //allowance invoice), so a partial allowance/partial card charge would silently
+            //under-bill the company for the portion it actually covered. If the allowance
+            //can't cover the full order, none of it is drawn - the whole total goes to card.
+            if (remainingAllowance >= order.OrderTotal)
             {
                 //fully covered - mark paid the proper way (not a raw field flip) so
                 //ProcessOrderPaidAsync runs: vendor notification, reward points, etc.
@@ -113,6 +117,9 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
                     AmountCoveredByAllowance = order.OrderTotal
                 };
             }
+
+            var amountCoveredByAllowance = 0M;
+            var amountDue = order.OrderTotal;
 
             var attemptNumber = await _attemptRepository.Table.Where(a => a.OrderId == order.Id).CountAsync() + 1;
 

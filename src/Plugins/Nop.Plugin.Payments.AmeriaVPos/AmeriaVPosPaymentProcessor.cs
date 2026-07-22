@@ -42,7 +42,6 @@ namespace Nop.Plugin.Payments.AmeriaVPos
         private readonly IShoppingCartService _shoppingCartService;
         private readonly IOrderTotalCalculationService _orderTotalCalculationService;
         private readonly ICompanyAllowancePaymentMethod _companyAllowancePaymentMethod;
-        private readonly IPriceFormatter _priceFormatter;
         private readonly WidgetSettings _widgetSettings;
         private readonly ILogger _logger;
 
@@ -62,7 +61,6 @@ namespace Nop.Plugin.Payments.AmeriaVPos
             IShoppingCartService shoppingCartService,
             IOrderTotalCalculationService orderTotalCalculationService,
             ICompanyAllowancePaymentMethod companyAllowancePaymentMethod,
-            IPriceFormatter priceFormatter,
             WidgetSettings widgetSettings,
             ILogger logger)
         {
@@ -77,7 +75,6 @@ namespace Nop.Plugin.Payments.AmeriaVPos
             _shoppingCartService = shoppingCartService;
             _orderTotalCalculationService = orderTotalCalculationService;
             _companyAllowancePaymentMethod = companyAllowancePaymentMethod;
-            _priceFormatter = priceFormatter;
             _widgetSettings = widgetSettings;
             _logger = logger;
         }
@@ -193,20 +190,14 @@ namespace Nop.Plugin.Payments.AmeriaVPos
             var balance = await _companyAllowancePaymentMethod.GetCustomerRemainingAllowance(
                 new CustomerBalanceRequest { Customer = customer, OrderDateUtc = DateTime.UtcNow.Date });
 
+            //Never split a single order between allowance and card - see the comment on
+            //IAmeriaVPosPaymentService.InitiateOrCompletePaymentAsync for why (per-company
+            //invoice reconciliation attributes a whole order to one payer or the other).
             var remainingAllowance = balance?.RemainingAllowance ?? 0M;
-            var amountCoveredByAllowance = Math.Min(Math.Max(remainingAllowance, 0M), total);
-            var amountDue = total - amountCoveredByAllowance;
-
-            if (amountDue <= 0)
+            if (remainingAllowance >= total)
                 return string.Empty;
 
-            if (amountCoveredByAllowance <= 0)
-                return await _localizationService.GetResourceAsync("Plugins.Payments.AmeriaVPos.Description.FullSelfPay");
-
-            var covered = await _priceFormatter.FormatPriceAsync(amountCoveredByAllowance);
-            var due = await _priceFormatter.FormatPriceAsync(amountDue);
-            var format = await _localizationService.GetResourceAsync("Plugins.Payments.AmeriaVPos.Description.PartialSelfPay");
-            return string.Format(format, covered, due);
+            return await _localizationService.GetResourceAsync("Plugins.Payments.AmeriaVPos.Description.FullSelfPay");
         }
 
         public override string GetConfigurationPageUrl() =>
