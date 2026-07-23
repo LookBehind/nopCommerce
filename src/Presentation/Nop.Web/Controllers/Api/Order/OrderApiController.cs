@@ -69,7 +69,9 @@ namespace Nop.Web.Controllers.Api.Order
         private readonly ICheckoutAttributeService _checkoutAttributeService;
         private readonly IGenericAttributeService _genericAttributeService;
         private readonly ICheckoutAttributeParser _checkoutAttributeParser;
-        
+        private readonly IAmeriaVPosPaymentService _ameriaVPosPaymentService;
+        private readonly IPaymentPluginManager _paymentPluginManager;
+
         private readonly OrderSettings _orderSettings;
 
         #endregion
@@ -101,7 +103,9 @@ namespace Nop.Web.Controllers.Api.Order
             ILogger logger, 
             ICheckoutAttributeService checkoutAttributeService, 
             IGenericAttributeService genericAttributeService, 
-            ICheckoutAttributeParser checkoutAttributeParser, 
+            ICheckoutAttributeParser checkoutAttributeParser,
+            IAmeriaVPosPaymentService ameriaVPosPaymentService,
+            IPaymentPluginManager paymentPluginManager,
             OrderSettings orderSettings)
         {
             _orderService = orderService;
@@ -130,6 +134,8 @@ namespace Nop.Web.Controllers.Api.Order
             _checkoutAttributeService = checkoutAttributeService;
             _genericAttributeService = genericAttributeService;
             _checkoutAttributeParser = checkoutAttributeParser;
+            _ameriaVPosPaymentService = ameriaVPosPaymentService;
+            _paymentPluginManager = paymentPluginManager;
             _orderSettings = orderSettings;
         }
 
@@ -598,7 +604,25 @@ namespace Nop.Web.Controllers.Api.Order
             processPaymentRequest.ScheduleDate = scheduleDateUtc;
             processPaymentRequest.OrderSource = OrderSource.Mobile;
 
-            processPaymentRequest.PaymentMethodSystemName = "Payments.CheckMoneyOrder";
+            //AmeriaVPos is the selected method whenever it's active; it internally
+            //decides (via IAmeriaVPosPaymentService, which mirrors Idram's existing web
+            //allowance logic) whether the order is fully covered by the company
+            //allowance (marks Paid, no card involved) or needs a card payment for the
+            //shortfall (full amount for an "Allowance Excempt" customer, partial
+            //otherwise) - replacing the old hard-coded CheckMoneyOrder, which had no way
+            //to collect a card payment and simply failed the order over-allowance.
+            //
+            //If AmeriaVPos is disabled admin-side (e.g. an AmeriaBank outage), fall back
+            //to CheckMoneyOrder (allowance-only) instead of hard-coding AmeriaVPos and
+            //letting PlaceOrderAsync fail with a confusing "payment method is not
+            //active" - this degrades mobile checkout back to its pre-AmeriaVPos
+            //behavior (allowance-covered orders still succeed; over-allowance orders
+            //fail with CheckMoneyOrderPaymentProcessor's own clear "remaining allowance
+            //not enough" error) rather than breaking checkout entirely.
+            var isAmeriaVPosActive = await _paymentPluginManager.IsPluginActiveAsync("Payments.AmeriaVPos", customer, store.Id);
+            processPaymentRequest.PaymentMethodSystemName = isAmeriaVPosActive
+                ? "Payments.AmeriaVPos"
+                : "Payments.CheckMoneyOrder";
             var placeOrderResult = await _orderProcessingService.PlaceOrderAsync(processPaymentRequest);
 
             if (!placeOrderResult.Success)
@@ -624,11 +648,80 @@ namespace Nop.Web.Controllers.Api.Order
                 });
             }
 
+            var placedOrder = placeOrderResult.PlacedOrder;
+
+            if (!isAmeriaVPosActive)
+            {
+                //CheckMoneyOrder resolves synchronously inside PlaceOrderAsync above
+                //(marks Paid, or PlaceOrderAsync fails via the branch above) - there's no
+                //AmeriaVPos-style post-processing/redirect step to run.
+                return Ok(new
+                {
+                    success = true,
+                    message = await _localizationService.GetResourceAsync("Order.Placed.Successfully"),
+                    orderId = placedOrder.Id
+                });
+            }
+
+            //ProcessPaymentAsync (called synchronously inside PlaceOrderAsync above) is a
+            //no-op for AmeriaVPos - the order needs to exist first. This is the mobile/API
+            //equivalent of the web IPaymentMethod.PostProcessPaymentAsync redirect step,
+            //calling the same shared service directly instead of writing an HTTP redirect.
+            var paymentResult = await _ameriaVPosPaymentService.InitiateOrCompletePaymentAsync(placedOrder, "Mobile");
+
+            if (!paymentResult.RequiresPayment)
+            {
+                return Ok(new
+                {
+                    success = true,
+                    message = await _localizationService.GetResourceAsync("Order.Placed.Successfully"),
+                    orderId = placedOrder.Id
+                });
+            }
+
+            //InitPayment can fail/decline before ever producing a redirect URL (e.g. the
+            //bank's own error, network issue) - the order still exists (Pending, unpaid),
+            //so the client's fallback-message path needs something other than the generic
+            //"couldn't place order", which would wrongly imply nothing was created.
+            var message = string.IsNullOrEmpty(paymentResult.PaymentUrl)
+                ? "Your order was saved, but the card payment couldn't be started. Please try paying again from your Orders."
+                : null;
+
+            return Ok(new
+            {
+                success = false,
+                requiresPayment = true,
+                orderId = placedOrder.Id,
+                paymentUrl = paymentResult.PaymentUrl,
+                amountDue = paymentResult.AmountDue,
+                amountCoveredByAllowance = paymentResult.AmountCoveredByAllowance,
+                message
+            });
+        }
+
+        /// <summary>
+        /// Lightweight status check for the AmeriaVPos self-pay flow's deep-link return
+        /// screen. Reads the payment-attempt ledger only - it does not re-call
+        /// GetPaymentDetails on every poll (BackUrlReturn/the reconciliation task already
+        /// resolve the authoritative status server-side).
+        /// </summary>
+        [HttpGet("{orderId}/payment-status")]
+        public async Task<IActionResult> GetPaymentStatus(int orderId)
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var order = await _orderService.GetOrderByIdAsync(orderId);
+
+            if (order == null || order.CustomerId != customer.Id || order.Deleted)
+                return Ok(new { success = false });
+
+            var result = await _ameriaVPosPaymentService.GetLatestAttemptStatusAsync(order);
+
             return Ok(new
             {
                 success = true,
-                message = await _localizationService.GetResourceAsync("Order.Placed.Successfully"),
-                orderId = placeOrderResult.PlacedOrder.Id
+                status = result.Status,
+                resolved = result.Resolved,
+                amountDue = result.AmountDue
             });
         }
 

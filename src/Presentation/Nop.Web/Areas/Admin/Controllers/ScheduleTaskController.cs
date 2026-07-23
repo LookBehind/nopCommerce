@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Hangfire;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Nop.Services.Localization;
 using Nop.Services.Logging;
 using Nop.Services.Messages;
@@ -11,6 +13,7 @@ using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Tasks;
 using Nop.Web.Framework.Mvc;
 using Nop.Web.Framework.Mvc.ModelBinding;
+using Nop.Web.Infrastructure;
 using Task = Nop.Services.Tasks.Task;
 
 namespace Nop.Web.Areas.Admin.Controllers
@@ -99,6 +102,29 @@ namespace Nop.Web.Areas.Admin.Controllers
                 return ErrorJson(ModelState.SerializeErrors());            
 
             scheduleTask = model.ToEntity(scheduleTask);
+
+            //reconcile the Hangfire recurring job so CRON changes take effect at runtime (no restart needed on
+            //the Hangfire side). Registering also validates the CRON string - Hangfire throws on a bad expression.
+            var recurringJobManager = HttpContext.RequestServices.GetService<IRecurringJobManager>();
+            if (recurringJobManager != null)
+            {
+                var taskType = scheduleTask.Type;
+                try
+                {
+                    if (scheduleTask.Enabled && !string.IsNullOrWhiteSpace(scheduleTask.CronExpression))
+                        recurringJobManager.AddOrUpdate<HangfireScheduleTaskRunner>(taskType,
+                            runner => runner.RunScheduleTaskAsync(taskType), scheduleTask.CronExpression);
+                    else
+                        recurringJobManager.RemoveIfExists(taskType);
+                }
+                catch (Exception ex)
+                {
+                    //most likely an invalid CRON expression - report it and do not persist the change
+                    return ErrorJson(string.Format(
+                        await _localizationService.GetResourceAsync("Admin.System.ScheduleTasks.CronExpression.Invalid"),
+                        ex.Message));
+                }
+            }
 
             await _scheduleTaskService.UpdateTaskAsync(scheduleTask);
 

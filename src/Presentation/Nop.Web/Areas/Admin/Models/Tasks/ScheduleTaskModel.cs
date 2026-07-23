@@ -16,6 +16,9 @@ namespace Nop.Web.Areas.Admin.Models.Tasks
         [NopResourceDisplayName("Admin.System.ScheduleTasks.Seconds")]
         public int Seconds { get; set; }
 
+        [NopResourceDisplayName("Admin.System.ScheduleTasks.CronExpression")]
+        public string CronExpression { get; set; }
+
         [NopResourceDisplayName("Admin.System.ScheduleTasks.Enabled")]
         public bool Enabled { get; set; }
 

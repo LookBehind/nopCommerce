@@ -37,6 +37,11 @@
         /// </summary>
         public static string UnlimitedAccountRoleName => "UnlimitedAccount";
 
+        /// <summary>
+        /// Gets a system name of 'company benefit exemption' customer role
+        /// </summary>
+        public static string CompanyBenefitExemptionRoleName => "Allowance Excempt";
+
         #endregion
 
         #region System customers

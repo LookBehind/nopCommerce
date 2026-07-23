@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
+using Nop.Plugin.Company.Company.Services;
 using Nop.Services.Payments;
 using Nop.Web.Controllers;
 using Nop.Web.Framework.Mvc.Filters;
@@ -20,7 +21,9 @@ namespace Nop.Plugin.Company.Company.Controllers
     [Authorize]
     public class CompanyBalanceApiController(
         ICompanyAllowancePaymentMethod companyAllowancePaymentMethod,
-        IWorkContext workContext)
+        IWorkContext workContext,
+        IStoreContext storeContext,
+        IDeliveryTimeStorageService deliveryTimeStorageService)
         : BaseApiController
     {
         /// <summary>
@@ -33,12 +36,24 @@ namespace Nop.Plugin.Company.Company.Controllers
         public async Task<IActionResult> GetBalanceAsync()
         {
             var customer = await workContext.GetCurrentCustomerAsync();
+            var store = await storeContext.GetCurrentStoreAsync();
+
+            // The allowance is a per-day cap, and the customer's already-selected
+            // delivery date (the same value the actual order placement checks
+            // against - see AmeriaVPosPaymentService/CheckMoneyOrderPaymentProcessor,
+            // both keyed on order.ScheduleDate) is what actually matters here, not
+            // "today". Falling back to DateTime.UtcNow was showing the checkout
+            // warning (and this same value on the profile balance card) based on
+            // today's usage even when the order is scheduled for a day with its own
+            // untouched allowance - e.g. today's cap fully used, but the order is
+            // scheduled for a future day with nothing booked against it yet.
+            var selectedDeliveryTime = await deliveryTimeStorageService.GetSelectedDeliveryTimeAsync(customer, store.Id);
 
             var balanceResult = await companyAllowancePaymentMethod.GetCustomerRemainingAllowance(
                 new CustomerBalanceRequest
                 {
                     Customer = customer,
-                    OrderDateUtc = DateTime.UtcNow
+                    OrderDateUtc = selectedDeliveryTime ?? DateTime.UtcNow
                 });
 
             if (balanceResult == null)

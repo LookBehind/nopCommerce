@@ -40,6 +40,9 @@ namespace Nop.Services.Tasks
 
             var scheduleTasks = taskService
                 .GetAllTasksAsync().Result
+                //tasks carrying a CRON expression are owned by the Hangfire scheduler (registered as recurring
+                //jobs); exclude them here so they never fire on both engines. See HangfireStartup.
+                .Where(x => string.IsNullOrWhiteSpace(x.CronExpression))
                 .OrderBy(x => x.Seconds)
                 .ToList();
 

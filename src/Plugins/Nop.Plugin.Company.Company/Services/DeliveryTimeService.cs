@@ -214,9 +214,15 @@ namespace Nop.Plugin.Company.Company.Services
         {
             var currentCustomer = await _workContext.GetCurrentCustomerAsync();
             var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
-            
-            // Use company's OrderAheadDays if available, otherwise use default
-            return company?.OrderAheadDays ?? ORDER_AHEAD_DAYS_DEFAULT;
+
+            // OrderAheadDays is a non-nullable int, so "company?.OrderAheadDays ?? DEFAULT"
+            // only ever fell back to DEFAULT when company itself was null - a company row
+            // whose OrderAheadDays is 0 (the type's default, and the only value reachable
+            // today since the admin UI to set it is unreachable - see _CreateOrUpdate.Info.cshtml)
+            // silently meant "0 days ahead" instead of "not configured". Treat <= 0 as unset.
+            return company != null && company.OrderAheadDays > 0
+                ? company.OrderAheadDays
+                : ORDER_AHEAD_DAYS_DEFAULT;
         }
 
         /// <summary>

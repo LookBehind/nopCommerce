@@ -18,6 +18,12 @@
     <PackageReference Include="MySql.Data" Version="8.0.23" />
     <PackageReference Include="Npgsql" Version="6.0.11" />
     <PackageReference Include="System.Data.SqlClient" Version="4.8.2" />
+    <!-- Hangfire persistent job storage (provider chosen at runtime in HangfireStartup).
+         Hangfire.PostgreSql 1.19.x uses Npgsql >= 6.0.0 (keeps the pinned 6.0.11); do NOT bump to 1.20+,
+         which moves to Npgsql 8 and would break linq2db. Hangfire.SqlServer auto-detects the ADO client and
+         reuses the existing System.Data.SqlClient. -->
+    <PackageReference Include="Hangfire.SqlServer" Version="1.8.14" />
+    <PackageReference Include="Hangfire.PostgreSql" Version="1.19.11" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>

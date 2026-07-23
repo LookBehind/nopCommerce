@@ -27,6 +27,7 @@ using Nop.Services.Localization;
 using Nop.Services.Logging;
 using Nop.Services.Media.RoxyFileman;
 using Nop.Services.Plugins;
+using Nop.Services.Tasks;
 using Nop.Web.Framework.Globalization;
 using Nop.Web.Framework.Mvc.Routing;
 using WebMarkupMin.AspNetCore5;
@@ -74,6 +75,21 @@ namespace Nop.Web.Framework.Infrastructure.Extensions
             //further actions are performed only when the database is installed
             if (DataSettingsManager.IsDatabaseInstalled())
             {
+                //update nopCommerce core and db FIRST, so everything below runs against a fully-migrated
+                //schema. Moved above TaskManager.Initialize(): it reads ScheduleTask, which now includes
+                //migration-added columns (e.g. CronExpression) that would not yet exist if migrations ran later.
+                var migrationManager = engine.Resolve<IMigrationManager>();
+                var assembly = Assembly.GetAssembly(typeof(ApplicationBuilderExtensions));
+                migrationManager.ApplyUpMigrations(assembly, true);
+                assembly = Assembly.GetAssembly(typeof(IMigrationManager));
+                migrationManager.ApplyUpMigrations(assembly, true);
+
+#if DEBUG
+                //prevent save the update migrations into the DB during the developing process
+                var versions = EngineContext.Current.Resolve<IRepository<MigrationVersionInfo>>();
+                versions.DeleteAsync(mvi => mvi.Description.StartsWith(string.Format(NopMigrationDefaults.UpdateMigrationDescriptionPrefix, NopVersion.FULL_VERSION)));
+#endif
+
                 //initialize and start schedule tasks
                 Services.Tasks.TaskManager.Instance.Initialize();
                 Services.Tasks.TaskManager.Instance.Start();
@@ -86,18 +102,10 @@ namespace Nop.Web.Framework.Infrastructure.Extensions
                 pluginService.InstallPluginsAsync().Wait();
                 pluginService.UpdatePluginsAsync().Wait();
 
-                //update nopCommerce core and db
-                var migrationManager = engine.Resolve<IMigrationManager>();
-                var assembly = Assembly.GetAssembly(typeof(ApplicationBuilderExtensions));
-                migrationManager.ApplyUpMigrations(assembly, true);
-                assembly = Assembly.GetAssembly(typeof(IMigrationManager));
-                migrationManager.ApplyUpMigrations(assembly, true);
-
-#if DEBUG
-                //prevent save the update migrations into the DB during the developing process  
-                var versions = EngineContext.Current.Resolve<IRepository<MigrationVersionInfo>>();
-                versions.DeleteAsync(mvi => mvi.Description.StartsWith(string.Format(NopMigrationDefaults.UpdateMigrationDescriptionPrefix, NopVersion.FULL_VERSION)));
-#endif
+                //register dynamic (CRON) schedule tasks with external schedulers (e.g. Hangfire) - after
+                //migrations, so CronExpression is available. No-op when no registrar is registered.
+                foreach (var registrar in engine.ResolveAll<IRecurringTaskRegistrar>())
+                    registrar.RegisterAsync().Wait();
             }
         }
 
