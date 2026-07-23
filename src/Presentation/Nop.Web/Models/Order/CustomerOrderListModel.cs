@@ -40,6 +40,19 @@ namespace Nop.Web.Models.Order
             public string ShippingStatus { get; set; }
             public DateTime CreatedOn { get; set; }
             public string DeliveryAddress { get; set; }
+            /// <summary>
+            /// True when this order is Pending payment via AmeriaVPos and still needs a
+            /// card payment (self-pay checkout left it unpaid, e.g. InitPayment failed or
+            /// the customer backed out before completing the hosted pay page) - drives the
+            /// mobile Orders list's "Pay" button.
+            /// </summary>
+            public bool RequiresPayment { get; set; }
+            /// <summary>
+            /// The amount still owed by card when <see cref="RequiresPayment"/> is true (raw
+            /// store-currency decimal, same convention as OrderItemModel.UnitPrice - the
+            /// mobile app formats it client-side). Zero otherwise.
+            /// </summary>
+            public decimal AmountDue { get; set; }
         }
 
         public partial record RecurringOrderModel : BaseNopEntityModel

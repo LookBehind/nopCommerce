@@ -725,6 +725,58 @@ namespace Nop.Web.Controllers.Api.Order
             });
         }
 
+        /// <summary>
+        /// Re-triggers AmeriaVPos payment for an existing Pending order - the mobile
+        /// Orders list's "Pay" button, for a self-pay order left unpaid (InitPayment
+        /// failed, or the customer backed out of the hosted pay page before checkout's
+        /// order-confirmation call ever returned a usable paymentUrl). Reuses the same
+        /// InitiateOrCompletePaymentAsync as checkout - it re-checks the customer's
+        /// current allowance too, so if it's freed up since the order was placed this can
+        /// resolve it as Paid outright instead of opening a new card payment.
+        /// </summary>
+        [HttpPost("{orderId}/initiate-payment")]
+        public async Task<IActionResult> InitiatePaymentAsync(int orderId)
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var order = await _orderService.GetOrderByIdAsync(orderId);
+
+            if (order == null || order.Deleted || order.CustomerId != customer.Id)
+            {
+                return Ok(new
+                {
+                    success = false, message = await _localizationService.GetResourceAsync("Order.NoOrderFound")
+                });
+            }
+
+            if (order.PaymentStatus == Core.Domain.Payments.PaymentStatus.Paid)
+            {
+                return Ok(new { success = true, requiresPayment = false, orderId = order.Id });
+            }
+
+            var paymentResult = await _ameriaVPosPaymentService.InitiateOrCompletePaymentAsync(order, "Mobile");
+
+            if (!paymentResult.RequiresPayment)
+            {
+                return Ok(new { success = true, requiresPayment = false, orderId = order.Id });
+            }
+
+            //Mirrors order-confirmation's own fallback message for the same failure mode
+            //(InitPayment declined/errored before producing a redirect URL).
+            var message = string.IsNullOrEmpty(paymentResult.PaymentUrl)
+                ? "The card payment couldn't be started. Please try again."
+                : null;
+
+            return Ok(new
+            {
+                success = false,
+                requiresPayment = true,
+                orderId = order.Id,
+                paymentUrl = paymentResult.PaymentUrl,
+                amountDue = paymentResult.AmountDue,
+                message
+            });
+        }
+
         [HttpPost("reorder/{orderId}")]
         public virtual async Task<IActionResult> ReOrderAsync(int orderId)
         {
@@ -1244,6 +1296,13 @@ namespace Nop.Web.Controllers.Api.Order
                 RatingText = order.RatingText,
                 DeliveryAddress = await FormatDeliveryAddressAsync(order)
             };
+
+            //Self-pay orders are never split between allowance and card (see
+            //IAmeriaVPosPaymentService.InitiateOrCompletePaymentAsync), so a Pending
+            //AmeriaVPos order always owes its full total.
+            orderModel.RequiresPayment = order.PaymentStatus == Core.Domain.Payments.PaymentStatus.Pending
+                && order.PaymentMethodSystemName == "Payments.AmeriaVPos";
+            orderModel.AmountDue = orderModel.RequiresPayment ? order.OrderTotal : 0M;
             var orderTotalInCustomerCurrency = _currencyService.ConvertCurrency(order.OrderTotal, order.CurrencyRate);
             orderModel.OrderTotal = await _priceFormatter.FormatPriceAsync(orderTotalInCustomerCurrency, true, order.CustomerCurrencyCode, false, languageId);
 
