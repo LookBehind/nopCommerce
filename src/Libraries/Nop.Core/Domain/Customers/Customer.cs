@@ -138,5 +138,13 @@ namespace Nop.Core.Domain.Customers
         public bool RateReminderNotification { get; set; }
         public bool RemindMeNotification { get; set; }
         public bool OrderStatusNotification { get; set; }
+
+        /// <summary>
+        /// Gets or sets the customer's preferred order-reminder time, as minutes after local midnight
+        /// (0-1439, snapped to 15-minute slots) in the customer's own time zone. Null means "no explicit
+        /// preference" - the tenant default (CatalogSettings.StartingTimeOfRemindMeTask) is used instead.
+        /// See docs/plans/2026-07-22-dynamic-scheduled-tasks.md.
+        /// </summary>
+        public int? RemindMeTime { get; set; }
     }
 }

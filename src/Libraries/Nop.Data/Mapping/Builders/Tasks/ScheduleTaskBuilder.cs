@@ -18,7 +18,8 @@ namespace Nop.Data.Mapping.Builders.Tasks
         {
             table
                 .WithColumn(nameof(ScheduleTask.Name)).AsString(int.MaxValue).NotNullable()
-                .WithColumn(nameof(ScheduleTask.Type)).AsString(int.MaxValue).NotNullable();
+                .WithColumn(nameof(ScheduleTask.Type)).AsString(int.MaxValue).NotNullable()
+                .WithColumn(nameof(ScheduleTask.CronExpression)).AsString(100).Nullable();
         }
 
         #endregion

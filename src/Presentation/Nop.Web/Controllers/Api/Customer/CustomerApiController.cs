@@ -140,6 +140,10 @@ namespace Nop.Web.Controllers.Api.Customer
                 RemindMeNotification = customer.RemindMeNotification,
                 RateReminderNotification = customer.RateReminderNotification,
                 OrderStatusNotification = customer.OrderStatusNotification,
+                //preferred order-reminder time as "HH:mm" (null when no preference -> tenant default applies)
+                RemindMeTime = customer.RemindMeTime.HasValue
+                    ? System.TimeSpan.FromMinutes(customer.RemindMeTime.Value).ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture)
+                    : null,
                 avatar = await _pictureService.GetPictureUrlAsync(await _genericAttributeService.GetAttributeAsync<int>(customer, NopCustomerDefaults.AvatarPictureIdAttribute), _mediaSettings.AvatarPictureSize, true)
             });
         }

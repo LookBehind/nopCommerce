@@ -28,6 +28,14 @@ namespace Nop.Core.Domain.Tasks
         public bool Enabled { get; set; }
 
         /// <summary>
+        /// Gets or sets an optional CRON expression (e.g. "*/15 * * * *"). When set, the task is a dynamic
+        /// task owned by the Hangfire scheduler (registered as a recurring job) and is skipped by the legacy
+        /// interval-timer engine (TaskManager). When null/empty, the task runs on the legacy <see cref="Seconds"/>
+        /// interval. See docs/plans/2026-07-22-dynamic-scheduled-tasks.md.
+        /// </summary>
+        public string CronExpression { get; set; }
+
+        /// <summary>
         /// Gets or sets the value indicating whether a task should be stopped on some error
         /// </summary>
         public bool StopOnError { get; set; }

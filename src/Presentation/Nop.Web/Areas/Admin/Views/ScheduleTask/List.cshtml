@@ -60,6 +60,13 @@
                                     Editable = true,
                                     EditType = EditType.Number
                                 },
+                                new ColumnProperty(nameof(ScheduleTaskModel.CronExpression))
+                                {
+                                    Title = T("Admin.System.ScheduleTasks.CronExpression").Text,
+                                    Width = "150",
+                                    Editable = true,
+                                    EditType = EditType.String
+                                },
                                 new ColumnProperty(nameof(ScheduleTaskModel.Enabled))
                                 {
                                     Title = T("Admin.System.ScheduleTasks.Enabled").Text,

@@ -45,6 +45,13 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         private readonly IOllamaApiClient _ollamaApiClient;
         private readonly ILogger _logger;
         private readonly PushNotificationService _pushNotificationService;
+        private readonly CatalogSettings _catalogSettings;
+
+        /// <summary>
+        /// Reminder-time slot granularity in minutes. The mobile picker offers 15-minute slots and this task
+        /// is registered as a Hangfire recurring job on the matching "*/15 * * * *" CRON.
+        /// </summary>
+        private const int SLOT_MINUTES = 15;
 
         private class CustomerNotificationMetadata
         {
@@ -52,15 +59,16 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             public DateTime CurrentTime { get; set; }
             public ICollection<Product> PreviouslyOrderedProducts { get; set; }
         }
-        
+
         public RemindMeNotificationTask(IDateTimeHelper dateTimeHelper,
             ICustomerService customerService,
             IOrderService orderService,
             ICompanyService companyService,
-            IOllamaApiClient ollamaApiClient, 
-            ILogger logger, 
+            IOllamaApiClient ollamaApiClient,
+            ILogger logger,
             IProductService productService,
-            PushNotificationService pushNotificationService)
+            PushNotificationService pushNotificationService,
+            CatalogSettings catalogSettings)
         {
             _dateTimeHelper = dateTimeHelper;
             _customerService = customerService;
@@ -70,15 +78,39 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             _logger = logger;
             _productService = productService;
             _pushNotificationService = pushNotificationService;
+            _catalogSettings = catalogSettings;
+        }
+
+        /// <summary>
+        /// Snaps a minute-of-day value into its 15-minute slot (0..1425), clamped to a valid day range.
+        /// </summary>
+        private static int SnapToSlot(int minutesOfDay)
+        {
+            if (minutesOfDay < 0)
+                minutesOfDay = 0;
+            if (minutesOfDay > 1439)
+                minutesOfDay = 1439;
+
+            return minutesOfDay / SLOT_MINUTES * SLOT_MINUTES;
+        }
+
+        /// <summary>
+        /// The tenant default reminder slot used when a customer has no explicit RemindMeTime.
+        /// Derived from CatalogSettings.StartingTimeOfRemindMeTask (interpreted as an hour), defaulting to 10:00.
+        /// </summary>
+        private int DefaultSlot()
+        {
+            var hour = _catalogSettings.StartingTimeOfRemindMeTask;
+            if (hour <= 0 || hour > 23)
+                hour = 10;
+
+            return SnapToSlot(hour * 60);
         }
 
         private async Task<ICollection<CustomerNotificationMetadata>> GetCustomersToNotify(int loadLastOrders = 40)
         {
             var customersToNotify = new List<CustomerNotificationMetadata>();
             
-            var companies = (await _companyService.GetAllCompaniesAsync())
-                .ToDictionary(c => c.Id);
-
             ICollection<Customer> customers =
                 await _customerService.GetAllPushNotificationCustomersAsync(isRemindMeNotification: true);
 
@@ -114,12 +146,29 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                     continue;
                 }
                 
-                var timezoneInfo = !companies.TryGetValue(customer.Id, out var company) || company.TimeZone == null
+                // Prefer the customer's COMPANY time zone (resolved via the CompanyCustomer mapping), else fall
+                // back to the customer/store time zone. Previously this indexed a companies-by-Id dictionary
+                // with the CUSTOMER id, so it never matched and the company zone was silently ignored - every
+                // customer fell back to the store default zone.
+                var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+                var timezoneInfo = string.IsNullOrEmpty(company?.TimeZone)
                     ? await _dateTimeHelper.GetCustomerTimeZoneAsync(customer)
                     : TZConvert.GetTimeZoneInfo(company.TimeZone);
 
                 var customerTime =
                     _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
+
+                // Per-customer reminder-time gate: only notify when the current 15-minute slot (in the
+                // customer's time zone) matches the customer's chosen reminder time - or the tenant default
+                // when they have not set one. This buckets customers by their selected slot; the task runs
+                // every 15 minutes (Hangfire CRON) so each customer matches exactly once per day.
+                var currentSlot = SnapToSlot(customerTime.Hour * 60 + customerTime.Minute);
+                var desiredSlot = customer.RemindMeTime.HasValue
+                    ? SnapToSlot(customer.RemindMeTime.Value)
+                    : DefaultSlot();
+
+                if (currentSlot != desiredSlot)
+                    continue;
 
                 customersToNotify.Add(new CustomerNotificationMetadata()
                 {
@@ -228,9 +277,9 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         /// </summary>
         public async System.Threading.Tasks.Task ExecuteAsync()
         {
-            // var startingHour = await _settingService.GetSettingByKeyAsync("catalogSettings.StartingTimeOfRemindMeTask", 
-            //     10);
-
+            // Runs every 15 minutes (Hangfire CRON "*/15 * * * *"). GetCustomersToNotify() filters to the
+            // customers whose chosen 15-minute reminder slot matches the current time in their own time zone,
+            // so this run only processes the current slot's bucket rather than every opted-in customer.
             var expensiveProducts = await _productService.SearchProductsAsync(orderBy: ProductSortingEnum.PriceDesc);
             
             var productsToRecommend = expensiveProducts.Take(70)

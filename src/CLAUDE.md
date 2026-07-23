@@ -27,7 +27,7 @@ No hot-reload — a full rebuild is required after any code change.
 
 ## Architecture
 
-This is a **nopCommerce 4.4** fork customized for the **MySnacks** platform, running on **.NET 7** (SDK 7.0.306).
+This is a **nopCommerce 4.4** fork customized for the **MySnacks** platform, running on **.NET 9** (SDK pinned in `global.json`, currently `9.0.109`). Note: some ASP.NET Core NuGet packages are still pinned around `7.0.x` even though the target framework is `net9.0`.
 
 ### Layered Structure
 
@@ -58,6 +58,11 @@ Tests/
 - **Repository pattern**: `IRepository<T>` in `Nop.Data` for all data access.
 - **Database migrations**: FluentMigrator in `Nop.Data/Migrations/`.
 - **Authentication**: JWT Bearer tokens configured in `appsettings.json`. APIs use Swagger/OpenAPI.
+
+### Scheduled Tasks (two engines)
+
+- **Legacy timer engine** (`Nop.Services/Tasks`): `TaskManager` creates one `Timer` per `ScheduleTask`, each firing every `Seconds` and self-POSTing to `/scheduletask/runtask`. Fixed-interval only; interval changes need an app restart.
+- **Hangfire** (dynamic/cron): a `ScheduleTask` with a non-empty `CronExpression` is owned by Hangfire (registered as a recurring job by `HangfireStartup`) and is skipped by the legacy `TaskManager` so it never double-fires. Recurring jobs trigger the task via the same self-POST path, so behavior matches the legacy engine. Hangfire job storage lives in each tenant's own DB (provider chosen from `dataSettings.json`); the dashboard is at `/hangfire`, gated by the `ManageScheduleTasks` permission and linked from Admin → System. The per-customer order-reminder feature (`Customer.RemindMeTime`) is the first consumer. See `docs/plans/2026-07-22-dynamic-scheduled-tasks.md`.
 
 ### Plugin System
 
