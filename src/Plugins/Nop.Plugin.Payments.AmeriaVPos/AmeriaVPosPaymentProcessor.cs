@@ -205,12 +205,13 @@ namespace Nop.Plugin.Payments.AmeriaVPos
 
         public string GetPublicViewComponentName() => string.Empty;
 
-        public Task<bool> HidePaymentMethodAsync(IList<ShoppingCartItem> cart)
+        public async Task<bool> HidePaymentMethodAsync(IList<ShoppingCartItem> cart)
         {
-            //always visible - unlike Idram, this method handles the fully-covered case
-            //internally (marks Paid, charges nothing), so there's no "would charge zero
-            //unnecessarily" case to hide for
-            return Task.FromResult(false);
+            //mutually exclusive with the company-allowance method (CheckMoneyOrder) - an order
+            //is never split between allowance and card, so exactly one of the two should ever
+            //be a selectable radio button. Whichever one the allowance method would show, this
+            //one hides, and vice versa.
+            return !await _companyAllowancePaymentMethod.HidePaymentMethodAsync(cart);
         }
 
         public Task<ProcessPaymentResult> ProcessRecurringPaymentAsync(ProcessPaymentRequest processPaymentRequest)

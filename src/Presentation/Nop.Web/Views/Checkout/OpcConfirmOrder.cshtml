@@ -1,13 +1,19 @@
 ﻿@model CheckoutConfirmModel
 <div class="checkout-data">
     @await Component.InvokeAsync("Widget", new { widgetZone = PublicWidgetZones.OpCheckoutConfirmTop })
-    @if (!string.IsNullOrEmpty(Model.MinOrderTotalWarning) || Model.Warnings.Count > 0)
+    @if (!string.IsNullOrEmpty(Model.MinOrderTotalWarning) || !string.IsNullOrEmpty(Model.AllowanceExceededWarning) || Model.Warnings.Count > 0)
     {
         <div class="section confirm-order">
             @if (!string.IsNullOrEmpty(Model.MinOrderTotalWarning))
             {
                 <div>
                     <span class="min-order-warning">@Model.MinOrderTotalWarning</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Model.AllowanceExceededWarning))
+            {
+                <div>
+                    <span class="allowance-exceeded-warning" style="display:block;padding:10px;margin-bottom:10px;background-color:#fff3cd;color:#856404;border:1px solid #ffeeba;border-radius:4px;">@Model.AllowanceExceededWarning</span>
                 </div>
             }
             @if (Model.Warnings.Count > 0)
