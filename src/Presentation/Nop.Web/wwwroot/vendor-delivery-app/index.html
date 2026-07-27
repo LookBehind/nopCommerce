@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>MySnacks Delivery Board</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --card-bg: #ffffff;
+    --text: #1c1c1e;
+    --hint: #8e8e93;
+    --link: #2481cc;
+    --button: #2481cc;
+    --button-text: #ffffff;
+    --separator: #e5e5ea;
+    --done-bg: #e6f8ec;
+    --done-text: #1c8a43;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { padding: 12px 12px 96px; max-width: 560px; margin: 0 auto; }
+  .header { padding: 6px 4px 14px; }
+  .header h1 { font-size: 20px; margin: 0 0 2px; font-weight: 700; }
+  .header .sub { color: var(--hint); font-size: 13px; }
+
+  .summary { display: flex; gap: 8px; margin: 10px 0 18px; }
+  .pill {
+    flex: 1; background: var(--card-bg); border-radius: 12px; padding: 10px 12px;
+    text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .pill .num { font-size: 20px; font-weight: 700; }
+  .pill .label { font-size: 11px; color: var(--hint); margin-top: 2px; }
+  .pill.warn .num { color: #d97706; }
+  .pill.ok .num { color: var(--done-text); }
+
+  .slot { margin-bottom: 18px; }
+  .slot-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 8px; }
+  .slot-title { font-size: 14px; font-weight: 600; color: var(--hint); text-transform: uppercase; letter-spacing: 0.03em; }
+  .slot-count { font-size: 12px; color: var(--hint); }
+  .card-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .card {
+    background: var(--card-bg); border-radius: 14px; padding: 12px 14px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    transition: transform 0.18s ease, opacity 0.18s ease, background 0.18s ease;
+    position: relative; overflow: hidden;
+  }
+  .card.delivered { background: var(--done-bg); }
+  .card.busy { opacity: 0.55; pointer-events: none; }
+  .card-main { flex: 1; min-width: 0; }
+  .card-addr { font-weight: 600; font-size: 15px; }
+  .card-items { font-size: 12.5px; color: var(--hint); margin-top: 2px; line-height: 1.35; }
+  .card-order { font-size: 11px; color: var(--hint); margin-top: 4px; }
+
+  .check-btn {
+    flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%;
+    border: 2px solid var(--separator); background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; color: transparent; cursor: pointer;
+  }
+  .card.delivered .check-btn { border-color: var(--done-text); background: var(--done-text); color: #fff; }
+
+  .footer-bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: var(--card-bg); border-top: 1px solid var(--separator);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12.5px; color: var(--hint);
+  }
+  .footer-bar b { color: var(--text); }
+
+  .state-message { text-align: center; color: var(--hint); font-size: 14px; padding: 40px 20px; }
+  .state-message.error { color: #d64545; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1 id="board-title">Today&rsquo;s deliveries</h1>
+    <div class="sub">Tap a stop once it&rsquo;s delivered.</div>
+  </div>
+
+  <div class="summary" id="summary" style="display:none">
+    <div class="pill warn" id="pill-pending"><div class="num">0</div><div class="label">Pending</div></div>
+    <div class="pill ok" id="pill-done"><div class="num">0</div><div class="label">Delivered</div></div>
+    <div class="pill"><div class="num" id="pill-total">0</div><div class="label">Total today</div></div>
+  </div>
+
+  <div id="board"><div class="state-message" id="state-message">Loading&hellip;</div></div>
+</div>
+
+<div class="footer-bar" id="footer-bar" style="display:none">
+  <span><b id="foot-remaining">0</b> stops left today</span>
+</div>
+
+<script>
+  const tg = window.Telegram && window.Telegram.WebApp;
+
+  function getToken() {
+    const fromStartParam = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param;
+    if (fromStartParam) return fromStartParam;
+    // fallback for previewing the page directly (not launched via Telegram)
+    const params = new URLSearchParams(window.location.search);
+    return params.get('token');
+  }
+
+  function getInitData() {
+    return (tg && tg.initData) || '';
+  }
+
+  const TOKEN = getToken();
+  let orders = [];
+
+  function applyTelegramTheme() {
+    if (!tg) return;
+    tg.ready();
+    tg.expand();
+    const p = tg.themeParams || {};
+    const root = document.documentElement.style;
+    if (p.bg_color) root.setProperty('--bg', p.bg_color);
+    if (p.secondary_bg_color) root.setProperty('--card-bg', p.secondary_bg_color === p.bg_color ? '#ffffff' : p.secondary_bg_color);
+    if (p.text_color) root.setProperty('--text', p.text_color);
+    if (p.hint_color) root.setProperty('--hint', p.hint_color);
+    if (p.link_color) root.setProperty('--link', p.link_color);
+    if (p.button_color) root.setProperty('--button', p.button_color);
+    if (p.button_text_color) root.setProperty('--button-text', p.button_text_color);
+    if (tg.setHeaderColor) try { tg.setHeaderColor(p.bg_color || '#f2f2f7'); } catch(e) {}
+  }
+
+  function haptic(kind) {
+    if (tg && tg.HapticFeedback) {
+      if (kind === 'success') tg.HapticFeedback.notificationOccurred('success');
+      else tg.HapticFeedback.impactOccurred('light');
+    }
+  }
+
+  function showState(message, isError) {
+    document.getElementById('summary').style.display = 'none';
+    document.getElementById('footer-bar').style.display = 'none';
+    document.getElementById('board').innerHTML =
+      `<div class="state-message${isError ? ' error' : ''}">${message}</div>`;
+  }
+
+  async function loadOrders() {
+    if (!TOKEN) {
+      showState('No board link found. Open this from a message the bot sent to your group.', true);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/vendor-delivery-app/orders?token=${encodeURIComponent(TOKEN)}`, {
+        headers: { 'X-Telegram-Init-Data': getInitData() }
+      });
+
+      if (res.status === 401) {
+        showState('This link has expired or is invalid. Ask for a new one from the vendor chat.', true);
+        return;
+      }
+      if (!res.ok) {
+        showState('Could not load today’s deliveries. Try again shortly.', true);
+        return;
+      }
+
+      const data = await res.json();
+      document.getElementById('board-title').textContent = `${data.vendorName} — Today’s deliveries`;
+      orders = data.orders.map(o => ({
+        id: o.id, slot: o.slot, addr: o.addr, addr2: o.addr2, items: o.items, delivered: o.delivered
+      }));
+      render();
+    } catch (e) {
+      showState('Network error loading deliveries.', true);
+    }
+  }
+
+  function render() {
+    if (orders.length === 0) {
+      showState('No pending orders for today.', false);
+      return;
+    }
+
+    document.getElementById('summary').style.display = 'flex';
+    document.getElementById('footer-bar').style.display = 'flex';
+
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+
+    const slots = [...new Set(orders.map(o => o.slot))].sort();
+    let pendingCount = 0, doneCount = 0;
+
+    slots.forEach(slot => {
+      const slotOrders = orders.filter(o => o.slot === slot);
+      const remaining = slotOrders.filter(o => !o.delivered).length;
+
+      const slotEl = document.createElement('div');
+      slotEl.className = 'slot';
+      slotEl.innerHTML = `
+        <div class="slot-head">
+          <div class="slot-title">${slot} slot</div>
+          <div class="slot-count">${remaining === 0 ? 'all delivered' : remaining + ' left'}</div>
+        </div>
+        <div class="card-list" data-slot="${slot}"></div>
+      `;
+      board.appendChild(slotEl);
+      const list = slotEl.querySelector('.card-list');
+
+      slotOrders.forEach(o => {
+        pendingCount += o.delivered ? 0 : 1;
+        doneCount += o.delivered ? 1 : 0;
+
+        const card = document.createElement('div');
+        card.className = 'card' + (o.delivered ? ' delivered' : '');
+        card.dataset.id = o.id;
+        card.innerHTML = `
+          <div class="card-main">
+            <div class="card-addr">${o.addr}${o.addr2 ? ' &middot; ' + o.addr2 : ''}</div>
+            <div class="card-items">${o.items.join(', ')}</div>
+            <div class="card-order">Order #${o.id}</div>
+          </div>
+          <button class="check-btn" aria-label="Mark delivered">&#10003;</button>
+        `;
+        if (!o.delivered) {
+          card.querySelector('.check-btn').addEventListener('click', () => markDelivered(o.id, card));
+        }
+        list.appendChild(card);
+      });
+    });
+
+    document.getElementById('pill-pending').querySelector('.num').textContent = pendingCount;
+    document.getElementById('pill-done').querySelector('.num').textContent = doneCount;
+    document.getElementById('pill-total').textContent = orders.length;
+    document.getElementById('foot-remaining').textContent = pendingCount;
+
+    if (tg && tg.MainButton) {
+      if (pendingCount > 0) {
+        tg.MainButton.setText(`${pendingCount} remaining`);
+        tg.MainButton.show();
+        tg.MainButton.offClick(render);
+      } else {
+        tg.MainButton.hide();
+      }
+    }
+  }
+
+  async function markDelivered(id, cardEl) {
+    cardEl.classList.add('busy');
+    try {
+      const res = await fetch(`/api/vendor-delivery-app/orders/${id}/deliver?token=${encodeURIComponent(TOKEN)}`, {
+        method: 'POST',
+        headers: { 'X-Telegram-Init-Data': getInitData() }
+      });
+
+      if (!res.ok) {
+        cardEl.classList.remove('busy');
+        if (tg && tg.showAlert) tg.showAlert('Could not mark this order delivered. Try again.');
+        return;
+      }
+
+      const order = orders.find(o => o.id === id);
+      if (order) order.delivered = true;
+      haptic('success');
+      render();
+    } catch (e) {
+      cardEl.classList.remove('busy');
+      if (tg && tg.showAlert) tg.showAlert('Network error. Try again.');
+    }
+  }
+
+  applyTelegramTheme();
+  loadOrders();
+</script>
+</body>
+</html>

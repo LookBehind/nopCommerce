@@ -4,7 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Nop.Core.Configuration;
 using Nop.Core.Infrastructure;
 using Nop.Core.Infrastructure.DependencyManagement;
+using Nop.Plugin.Notifications.Manager.ScheduledTasks;
 using Nop.Plugin.Notifications.Manager.Services;
+using Nop.Services.Tasks;
 using OllamaSharp;
 using Telegram.Bot;
 
@@ -43,7 +45,13 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
             }));
             
             services.AddScoped<PushNotificationService>();
-            
+
+            services.AddScoped<ITelegramMiniAppAuthService, TelegramMiniAppAuthService>();
+
+            services.AddScoped<PreDeliveryNudgeReconciler>();
+            services.AddScoped<PreDeliveryNudgeJob>();
+            services.AddScoped<IRecurringTaskRegistrar, PreDeliveryNudgeBootReconciler>();
+
             services.AddScoped<IOllamaApiClient>(_ => new OllamaApiClient("http://litellm:4000", 
                 "llama-3.1-8b-instruct"));
         }

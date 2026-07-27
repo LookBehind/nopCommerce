@@ -27,6 +27,7 @@ using IScheduledTask = Nop.Services.Tasks.IScheduleTask;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 using Task = System.Threading.Tasks.Task;
 
 namespace Nop.Plugin.Notifications.Manager.ScheduledTasks;
@@ -78,9 +79,52 @@ public class TelegramNotificationSenderTask : IScheduledTask
     private readonly IEmailAccountService _emailAccountService;
     private readonly IStoreService _storeService;
     private readonly PushNotificationService _pushNotificationService;
+    private readonly ITelegramMiniAppAuthService _telegramMiniAppAuthService;
 
     private static SemaphoreSlim _chatIdToVendorReloadSemaphore = new SemaphoreSlim(1, 1);
     private static Dictionary<TelegramChatId, VendorAssociation> _chatIdToVendor;
+    private static string _cachedBotUsername;
+
+    /// <summary>
+    /// Thin accessor over the process-wide chat mappings, used by <see cref="Nop.Plugin.Notifications.Manager.ScheduledTasks.PreDeliveryNudgeJob"/>
+    /// so it doesn't need its own copy of the reload logic.
+    /// </summary>
+    internal static Dictionary<TelegramChatId, VendorAssociation> GetChatMappingsSnapshot() => _chatIdToVendor;
+
+    /// <summary>
+    /// Converts an order's stored UTC schedule time to local (Yerevan, UTC+4) wall-clock time.
+    /// </summary>
+    internal static DateTime GetLocalScheduleTime(Order order) => order.ScheduleDate.AddHours(4);
+
+    private static async Task<string> GetBotUsernameAsync(ITelegramBotClient telegramBotClient)
+    {
+        if (_cachedBotUsername != null)
+            return _cachedBotUsername;
+
+        var me = await telegramBotClient.GetMe();
+        _cachedBotUsername = me.Username;
+        return _cachedBotUsername;
+    }
+
+    /// <summary>
+    /// Mints a fresh board-link token and builds the "Open delivery board" URL button attached to
+    /// every outbound vendor message (new order / updated / cancelled / pre-delivery nudge).
+    /// Shared between this class and <see cref="PreDeliveryNudgeJob"/> - the one piece of
+    /// intentionally-shared code in this feature (see design §4.4).
+    /// </summary>
+    internal static async Task<InlineKeyboardMarkup> BuildBoardLinkMarkupAsync(
+        ITelegramBotClient telegramBotClient,
+        ITelegramMiniAppAuthService telegramMiniAppAuthService,
+        int vendorId,
+        int storeId)
+    {
+        var token = telegramMiniAppAuthService.MintBoardToken(vendorId, storeId);
+        var botUsername = await GetBotUsernameAsync(telegramBotClient);
+
+        return new InlineKeyboardMarkup(InlineKeyboardButton.WithUrl(
+            "📋 Open delivery board",
+            $"https://t.me/{botUsername}?startapp={token}"));
+    }
 
     private readonly List<(string CommandPrefix, Func<Telegram.Bot.Types.Message, Task>)> _botCommandHandlers;
 
@@ -469,9 +513,13 @@ public class TelegramNotificationSenderTask : IScheduledTask
                     
                     if (vendorChat.Key != null)
                     {
+                        var boardLinkMarkup = await BuildBoardLinkMarkupAsync(
+                            _telegramBotClient, _telegramMiniAppAuthService, vendor.Id, vendorChat.Value.StoreId);
+
                         await _telegramBotClient.SendMessage(chatId: vendorChat.Key.ChatId,
                             messageThreadId: vendorChat.Key.MessageThreadId,
-                            text: queuedEmail.Body);
+                            text: queuedEmail.Body,
+                            replyMarkup: boardLinkMarkup);
                     }
                     else
                     {
@@ -555,8 +603,9 @@ public class TelegramNotificationSenderTask : IScheduledTask
         IOrderService orderService,
         IAddressService addressService,
         IEmailAccountService emailAccountService, 
-        IStoreService storeService, 
-        PushNotificationService pushNotificationService)
+        IStoreService storeService,
+        PushNotificationService pushNotificationService,
+        ITelegramMiniAppAuthService telegramMiniAppAuthService)
     {
         _queuedEmail = queuedEmail;
         _vendor = vendor;
@@ -570,6 +619,7 @@ public class TelegramNotificationSenderTask : IScheduledTask
         _emailAccountService = emailAccountService;
         _storeService = storeService;
         _pushNotificationService = pushNotificationService;
+        _telegramMiniAppAuthService = telegramMiniAppAuthService;
 
         _botCommandHandlers = new()
         {
