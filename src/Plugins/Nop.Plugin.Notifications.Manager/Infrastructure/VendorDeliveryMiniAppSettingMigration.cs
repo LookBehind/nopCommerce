@@ -6,7 +6,7 @@ using Nop.Data.Migrations;
 
 namespace Nop.Plugin.Notifications.Manager.Infrastructure;
 
-[NopMigration("2026-07-29 00:00:00:0000001", "Notifications.Manager - Add VendorDeliveryMiniAppEnabled soft-disable setting")]
+[NopMigration("2026-07-29 00:00:00:0000002", "Notifications.Manager - Add VendorDeliveryMiniAppEnabled soft-disable setting")]
 [SkipMigrationOnInstall]
 public class VendorDeliveryMiniAppSettingMigration : Migration
 {
