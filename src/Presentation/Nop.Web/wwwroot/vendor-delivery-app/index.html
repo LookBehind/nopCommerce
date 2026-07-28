@@ -171,9 +171,9 @@
       }
 
       const data = await res.json();
-      document.getElementById('board-title').textContent = `${data.vendorName} — Today’s deliveries`;
-      orders = data.orders.map(o => ({
-        id: o.id, slot: o.slot, addr: o.addr, addr2: o.addr2, items: o.items, delivered: o.delivered
+      document.getElementById('board-title').textContent = `${data.VendorName} — Today’s deliveries`;
+      orders = data.Orders.map(o => ({
+        id: o.Id, slot: o.Slot, addr: o.Addr, addr2: o.Addr2, items: o.Items, delivered: o.Delivered
       }));
       render();
     } catch (e) {
