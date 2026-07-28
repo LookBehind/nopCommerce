@@ -9,6 +9,7 @@ using Nop.Plugin.Notifications.Manager.ScheduledTasks;
 using Nop.Plugin.Notifications.Manager.Services;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
+using Nop.Services.Configuration;
 using Nop.Services.Customers;
 using Nop.Services.Orders;
 using Nop.Services.Vendors;
@@ -37,6 +38,7 @@ public class VendorDeliveryAppController : BaseApiController
     private readonly ICustomerService _customerService;
     private readonly IProductService _productService;
     private readonly PushNotificationService _pushNotificationService;
+    private readonly ISettingService _settingService;
 
     public VendorDeliveryAppController(
         ITelegramMiniAppAuthService telegramMiniAppAuthService,
@@ -45,7 +47,8 @@ public class VendorDeliveryAppController : BaseApiController
         IAddressService addressService,
         ICustomerService customerService,
         IProductService productService,
-        PushNotificationService pushNotificationService)
+        PushNotificationService pushNotificationService,
+        ISettingService settingService)
     {
         _telegramMiniAppAuthService = telegramMiniAppAuthService;
         _orderService = orderService;
@@ -54,38 +57,37 @@ public class VendorDeliveryAppController : BaseApiController
         _customerService = customerService;
         _productService = productService;
         _pushNotificationService = pushNotificationService;
+        _settingService = settingService;
     }
 
     public record OrderCardModel(int Id, string Slot, string Addr, string Addr2, List<string> Items, bool Delivered);
     public record BoardResponse(string VendorName, List<OrderCardModel> Orders);
 
-    private bool TryAuthorize(string token, out int vendorId, out int storeId, out IActionResult errorResult)
+    private record AuthorizeResult(bool Authorized, int VendorId, int StoreId, IActionResult Error);
+
+    private async Task<AuthorizeResult> TryAuthorize(string token)
     {
-        vendorId = 0;
-        storeId = 0;
-        errorResult = null;
+        var notificationManagerSettings = await _settingService.LoadSettingAsync<NotificationManagerSettings>();
+        if (!notificationManagerSettings.VendorDeliveryMiniAppEnabled)
+            return new AuthorizeResult(false, 0, 0, NotFound());
 
         var initData = Request.Headers[InitDataHeaderName].ToString();
         if (!_telegramMiniAppAuthService.TryValidateInitData(initData, out _))
-        {
-            errorResult = Unauthorized(new ErrorMessage("Missing or invalid Telegram session"));
-            return false;
-        }
+            return new AuthorizeResult(false, 0, 0, Unauthorized(new ErrorMessage("Missing or invalid Telegram session")));
 
-        if (!_telegramMiniAppAuthService.TryValidateBoardToken(token, out vendorId, out storeId))
-        {
-            errorResult = Unauthorized(new ErrorMessage("Missing, invalid, or expired board link"));
-            return false;
-        }
+        if (!_telegramMiniAppAuthService.TryValidateBoardToken(token, out var vendorId, out var storeId))
+            return new AuthorizeResult(false, 0, 0, Unauthorized(new ErrorMessage("Missing, invalid, or expired board link")));
 
-        return true;
+        return new AuthorizeResult(true, vendorId, storeId, null);
     }
 
     [HttpGet("orders")]
     public async Task<IActionResult> GetOrders([FromQuery] string token)
     {
-        if (!TryAuthorize(token, out var vendorId, out var storeId, out var error))
-            return error;
+        var auth = await TryAuthorize(token);
+        if (!auth.Authorized)
+            return auth.Error;
+        var (vendorId, storeId) = (auth.VendorId, auth.StoreId);
 
         var vendor = await _vendorService.GetVendorByIdAsync(vendorId);
         if (vendor == null)
@@ -131,8 +133,10 @@ public class VendorDeliveryAppController : BaseApiController
     [HttpPost("orders/{orderId:int}/deliver")]
     public async Task<IActionResult> MarkDelivered(int orderId, [FromQuery] string token)
     {
-        if (!TryAuthorize(token, out var vendorId, out var storeId, out var error))
-            return error;
+        var auth = await TryAuthorize(token);
+        if (!auth.Authorized)
+            return auth.Error;
+        var (vendorId, storeId) = (auth.VendorId, auth.StoreId);
 
         var order = await _orderService.GetOrderByIdAsync(orderId);
         if (order == null || order.StoreId != storeId)

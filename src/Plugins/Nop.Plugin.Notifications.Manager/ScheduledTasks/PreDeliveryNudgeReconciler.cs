@@ -54,7 +54,11 @@ public class PreDeliveryNudgeReconciler
     public async Task ReconcileAsync()
     {
         var desiredJobIds = new HashSet<string>();
-        var stores = await _storeService.GetAllStoresAsync();
+
+        var notificationManagerSettings = await _settingService.LoadSettingAsync<NotificationManagerSettings>();
+        var stores = notificationManagerSettings.VendorDeliveryMiniAppEnabled
+            ? await _storeService.GetAllStoresAsync()
+            : Enumerable.Empty<Nop.Core.Domain.Stores.Store>();
 
         foreach (var store in stores)
         {

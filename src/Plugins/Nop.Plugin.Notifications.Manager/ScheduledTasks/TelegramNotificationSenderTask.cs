@@ -486,8 +486,11 @@ public class TelegramNotificationSenderTask : IScheduledTask
 
         if(_chatIdToVendor == null)
             await ReloadAllChatMappings();
-        
+
         await HandleBotEvents();
+
+        var notificationManagerSettings = await _setting.LoadSettingAsync<NotificationManagerSettings>();
+        var vendorDeliveryMiniAppEnabled = notificationManagerSettings.VendorDeliveryMiniAppEnabled;
 
         var maxTries = 3;
 
@@ -513,8 +516,10 @@ public class TelegramNotificationSenderTask : IScheduledTask
                     
                     if (vendorChat.Key != null)
                     {
-                        var boardLinkMarkup = await BuildBoardLinkMarkupAsync(
-                            _telegramBotClient, _telegramMiniAppAuthService, vendor.Id, vendorChat.Value.StoreId);
+                        var boardLinkMarkup = vendorDeliveryMiniAppEnabled
+                            ? await BuildBoardLinkMarkupAsync(
+                                _telegramBotClient, _telegramMiniAppAuthService, vendor.Id, vendorChat.Value.StoreId)
+                            : null;
 
                         await _telegramBotClient.SendMessage(chatId: vendorChat.Key.ChatId,
                             messageThreadId: vendorChat.Key.MessageThreadId,
