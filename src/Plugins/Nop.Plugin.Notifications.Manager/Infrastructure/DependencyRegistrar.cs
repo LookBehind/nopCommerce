@@ -52,6 +52,10 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
             services.AddScoped<PreDeliveryNudgeJob>();
             services.AddScoped<IRecurringTaskRegistrar, PreDeliveryNudgeBootReconciler>();
 
+            services.AddScoped<RateReminderReconciler>();
+            services.AddScoped<RateReminderJob>();
+            services.AddScoped<IRecurringTaskRegistrar, RateReminderBootReconciler>();
+
             services.AddScoped<IOllamaApiClient>(_ => new OllamaApiClient("http://litellm:4000", 
                 "llama-3.1-8b-instruct"));
         }
