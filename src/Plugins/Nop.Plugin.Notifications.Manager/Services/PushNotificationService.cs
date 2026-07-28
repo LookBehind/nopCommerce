@@ -24,9 +24,12 @@ public class PushNotificationService
     private const string FIREBASE_FAILED_COUNT = nameof(FIREBASE_FAILED_COUNT);
     private const int FIREBASE_MAX_FAILED_COUNT = 3;
     
+    private const string PUSH_NOTIFICATION_SENT_ACTIVITY_KEYWORD = "PublicStore.PushNotificationSent";
+
     private readonly FirebaseMessaging _firebaseMessaging;
     private readonly ICustomerService _customerService;
     private readonly IGenericAttributeService _genericAttributeService;
+    private readonly ICustomerActivityService _customerActivityService;
     private readonly ILogger _logger;
 
     
@@ -81,6 +84,10 @@ public class PushNotificationService
                 Notification = new Notification() { Title = title, Body = body },
                 Data = data ?? new Dictionary<string, string>()
             });
+
+            await _customerActivityService.InsertActivityAsync(customer,
+                PUSH_NOTIFICATION_SENT_ACTIVITY_KEYWORD,
+                $"{notificationType}: {title} - {body}");
         }
         catch (FirebaseMessagingException fme)
         {
@@ -100,11 +107,13 @@ public class PushNotificationService
         }
     }
     
-    public PushNotificationService(FirebaseApp firebaseApp, ICustomerService customerService, ILogger logger, IGenericAttributeService genericAttributeService)
+    public PushNotificationService(FirebaseApp firebaseApp, ICustomerService customerService, ILogger logger,
+        IGenericAttributeService genericAttributeService, ICustomerActivityService customerActivityService)
     {
         _customerService = customerService;
         _logger = logger;
         _genericAttributeService = genericAttributeService;
+        _customerActivityService = customerActivityService;
         _firebaseMessaging = FirebaseMessaging.GetMessaging(firebaseApp);
     }
 }

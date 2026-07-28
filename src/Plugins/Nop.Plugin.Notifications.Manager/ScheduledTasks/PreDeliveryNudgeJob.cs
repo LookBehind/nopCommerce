@@ -62,6 +62,13 @@ public class PreDeliveryNudgeJob
         if (!_appSettings.ExtendedAuthSettings.TelegramBotEnabled)
             return;
 
+        // Belt-and-suspenders: PreDeliveryNudgeReconciler already removes this job entirely when
+        // the feature is off, but a job that was already dequeued/mid-flight when the setting
+        // flipped could still reach here - so guard directly too.
+        var notificationManagerSettings = await _settingService.LoadSettingAsync<NotificationManagerSettings>();
+        if (!notificationManagerSettings.VendorDeliveryMiniAppEnabled)
+            return;
+
         if (!TimeSpan.TryParse(deliveryTimeHHmm, out var slotLocal))
         {
             await _logger.ErrorAsync($"Pre-delivery nudge job: unparseable delivery time '{deliveryTimeHHmm}' for store {storeId}");

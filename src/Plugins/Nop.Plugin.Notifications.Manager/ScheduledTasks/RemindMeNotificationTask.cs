@@ -123,29 +123,19 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                     new[] {OrderStatus.Complete, OrderStatus.Pending, OrderStatus.Processing},
                     loadLastOrders);
 
-            var lastMonthSameWeekdays = Enumerable.Range(1, 4)
-                .Select(i => DateTime.UtcNow.Date.AddDays(-7 * i))
-                .ToHashSet();
-            
             foreach (var customer in customers)
             {
                 var customerOrdersData = previouslyOrderedProductsByCustomerId[customer.Id];
-                
+
                 // If customer already ordered for today - we're not going to notify
                 if (customerOrdersData.Any() &&
                     customerOrdersData.First().order.ScheduleDate.Date == DateTime.UtcNow.Date)
-                { 
-                    await _logger.InformationAsync($"Customer {customer.Email} already ordered for today, skipping notification", 
+                {
+                    await _logger.InformationAsync($"Customer {customer.Email} already ordered for today, skipping notification",
                         customer: customer);
                     continue;
                 }
-                
-                // Never ordered on this weekday, probably doesn't need a reminder
-                if (!customerOrdersData.Any(o => lastMonthSameWeekdays.Contains(o.order.ScheduleDate.Date)))
-                {
-                    continue;
-                }
-                
+
                 // Prefer the customer's COMPANY time zone (resolved via the CompanyCustomer mapping), else fall
                 // back to the customer/store time zone. Previously this indexed a companies-by-Id dictionary
                 // with the CUSTOMER id, so it never matched and the company zone was silently ignored - every

@@ -17,6 +17,7 @@ namespace Nop.Plugin.Notifications.Manager.EventConsumer;
 public class PreDeliveryNudgeSettingConsumer : IConsumer<EntityUpdatedEvent<Setting>>
 {
     private const string SCHEDULE_DATE_SETTING_NAME = "ordersettings.scheduledate";
+    private const string FEATURE_TOGGLE_SETTING_NAME = "notificationmanagersettings.vendordeliveryminiappenabled";
 
     private readonly PreDeliveryNudgeReconciler _reconciler;
     private readonly ILogger _logger;
@@ -29,7 +30,9 @@ public class PreDeliveryNudgeSettingConsumer : IConsumer<EntityUpdatedEvent<Sett
 
     public async Task HandleEventAsync(EntityUpdatedEvent<Setting> eventMessage)
     {
-        if (!string.Equals(eventMessage.Entity.Name, SCHEDULE_DATE_SETTING_NAME, StringComparison.OrdinalIgnoreCase))
+        var settingName = eventMessage.Entity.Name;
+        if (!string.Equals(settingName, SCHEDULE_DATE_SETTING_NAME, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(settingName, FEATURE_TOGGLE_SETTING_NAME, StringComparison.OrdinalIgnoreCase))
             return;
 
         try
