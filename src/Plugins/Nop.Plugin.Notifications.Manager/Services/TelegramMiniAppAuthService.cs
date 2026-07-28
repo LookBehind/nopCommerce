@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -20,27 +21,32 @@ public class TelegramMiniAppAuthService : ITelegramMiniAppAuthService
         _appSettings = appSettings;
     }
 
-    private class BoardTokenPayload
-    {
-        public int VendorId { get; set; }
-        public int StoreId { get; set; }
-        public long ExpiresAtUnixSeconds { get; set; }
-    }
+    // Telegram restricts the `startapp` value to [A-Za-z0-9_-], max 64 characters (found the
+    // hard way - a JSON+dot-separated token got rejected client-side as "start param invalid").
+    // So the token is packed binary, not JSON: 8-byte payload (ushort vendorId, ushort storeId,
+    // uint expiresAtUnixSeconds, all big-endian) + an 8-byte truncated HMAC-SHA256 tag, base64url
+    // -encoded as one 16-byte blob (~22 chars, well under the limit, no separator needed since
+    // both fields are fixed-width). Truncating the MAC to 64 bits is fine for this threat model -
+    // worst case is viewing/marking one vendor's non-sensitive order list until the token expires.
+    private const int PayloadLength = 8;
+    private const int SignatureLength = 8;
 
     public string MintBoardToken(int vendorId, int storeId)
     {
-        var payload = new BoardTokenPayload
-        {
-            VendorId = vendorId,
-            StoreId = storeId,
-            ExpiresAtUnixSeconds = DateTimeOffset.UtcNow.Add(BoardTokenLifetime).ToUnixTimeSeconds()
-        };
+        var expiresAt = (uint)DateTimeOffset.UtcNow.Add(BoardTokenLifetime).ToUnixTimeSeconds();
 
-        var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(payload);
-        var payloadPart = Base64UrlEncode(payloadBytes);
-        var signaturePart = Base64UrlEncode(SignBoardTokenPayload(payloadBytes));
+        var payloadBytes = new byte[PayloadLength];
+        BinaryPrimitives.WriteUInt16BigEndian(payloadBytes.AsSpan(0, 2), (ushort)vendorId);
+        BinaryPrimitives.WriteUInt16BigEndian(payloadBytes.AsSpan(2, 2), (ushort)storeId);
+        BinaryPrimitives.WriteUInt32BigEndian(payloadBytes.AsSpan(4, 4), expiresAt);
 
-        return $"{payloadPart}.{signaturePart}";
+        var signature = SignBoardTokenPayload(payloadBytes)[..SignatureLength];
+
+        var tokenBytes = new byte[PayloadLength + SignatureLength];
+        payloadBytes.CopyTo(tokenBytes, 0);
+        signature.CopyTo(tokenBytes, PayloadLength);
+
+        return Base64UrlEncode(tokenBytes);
     }
 
     public bool TryValidateBoardToken(string token, out int vendorId, out int storeId)
@@ -51,44 +57,32 @@ public class TelegramMiniAppAuthService : ITelegramMiniAppAuthService
         if (string.IsNullOrWhiteSpace(token))
             return false;
 
-        var parts = token.Split('.');
-        if (parts.Length != 2)
-            return false;
-
-        byte[] payloadBytes;
-        byte[] providedSignature;
+        byte[] tokenBytes;
         try
         {
-            payloadBytes = Base64UrlDecode(parts[0]);
-            providedSignature = Base64UrlDecode(parts[1]);
+            tokenBytes = Base64UrlDecode(token);
         }
         catch (FormatException)
         {
             return false;
         }
 
-        var expectedSignature = SignBoardTokenPayload(payloadBytes);
+        if (tokenBytes.Length != PayloadLength + SignatureLength)
+            return false;
+
+        var payloadBytes = tokenBytes.AsSpan(0, PayloadLength).ToArray();
+        var providedSignature = tokenBytes.AsSpan(PayloadLength, SignatureLength).ToArray();
+
+        var expectedSignature = SignBoardTokenPayload(payloadBytes)[..SignatureLength];
         if (!CryptographicOperations.FixedTimeEquals(providedSignature, expectedSignature))
             return false;
 
-        BoardTokenPayload payload;
-        try
-        {
-            payload = JsonSerializer.Deserialize<BoardTokenPayload>(payloadBytes);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-
-        if (payload == null)
+        var expiresAt = BinaryPrimitives.ReadUInt32BigEndian(payloadBytes.AsSpan(4, 4));
+        if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > expiresAt)
             return false;
 
-        if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > payload.ExpiresAtUnixSeconds)
-            return false;
-
-        vendorId = payload.VendorId;
-        storeId = payload.StoreId;
+        vendorId = BinaryPrimitives.ReadUInt16BigEndian(payloadBytes.AsSpan(0, 2));
+        storeId = BinaryPrimitives.ReadUInt16BigEndian(payloadBytes.AsSpan(2, 2));
         return true;
     }
 
