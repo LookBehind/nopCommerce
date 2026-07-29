@@ -1,4 +1,5 @@
-﻿using FirebaseAdmin;
+﻿using System;
+using FirebaseAdmin;
 using Google.Apis.Auth.OAuth2;
 using Microsoft.Extensions.DependencyInjection;
 using Nop.Core.Configuration;
@@ -7,7 +8,6 @@ using Nop.Core.Infrastructure.DependencyManagement;
 using Nop.Plugin.Notifications.Manager.ScheduledTasks;
 using Nop.Plugin.Notifications.Manager.Services;
 using Nop.Services.Tasks;
-using OllamaSharp;
 using Telegram.Bot;
 
 namespace Nop.Plugin.Notifications.Manager.Infrastructure
@@ -56,8 +56,8 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
             services.AddScoped<RateReminderJob>();
             services.AddScoped<IRecurringTaskRegistrar, RateReminderBootReconciler>();
 
-            services.AddScoped<IOllamaApiClient>(_ => new OllamaApiClient("http://litellm:4000", 
-                "llama-3.1-8b-instruct"));
+            services.AddHttpClient<KubeAiChatClient>(client =>
+                client.BaseAddress = new Uri(KubeAiChatClient.BaseUrl));
         }
     }
 }
