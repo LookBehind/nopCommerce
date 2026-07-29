@@ -109,6 +109,11 @@ namespace Nop.Web.Models.Order
             //current customer's own review rating for this product (null = not yet reviewed)
             public int? UserRating { get; set; }
 
+            //product-wide approved review aggregates, so the mobile app can show the
+            //real rating/count on a reordered cart item (it has no other source for these)
+            public int TotalReviews { get; set; }
+            public int RatingSum { get; set; }
+
             public string VendorName { get; set; }
             public VendorBriefInfoModel Vendor { get; set; }
 

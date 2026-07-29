@@ -1335,6 +1335,8 @@ namespace Nop.Web.Controllers.Api.Order
                     AttributeInfo = orderItem.AttributeDescription,
                     ProductAttributes = await GetOrderItemProductAttributesAsync(orderItem),
                     UserRating = customerReviews.TryGetValue(product.Id, out var userRating) ? userRating : null,
+                    TotalReviews = product.ApprovedTotalReviews,
+                    RatingSum = product.ApprovedRatingSum,
                     Vendor = vendorBriefModel
                 };
                 //rental info
