@@ -218,7 +218,13 @@ namespace Nop.Web.Controllers.Api.Security
                         if (customer == null)
                             return Ok(new { success = false, message = await _localizationService.GetResourceAsync("Customer.Not.Found") });
 
-                        customer.PushToken = model.PushToken;
+                        // Only overwrite an existing token when the client actually sent one.
+                        // iOS's APNs token often isn't ready synchronously at login time (unlike
+                        // Android/FCM), so a blank login payload must not clobber a token a
+                        // previous, successful registration already stored - matches the guard
+                        // CustomerApiController.SetCustomerPushToken already uses.
+                        if (!string.IsNullOrWhiteSpace(model.PushToken))
+                            customer.PushToken = model.PushToken;
                         await _customerService.UpdateCustomerAsync(customer);
 
                         await _workContext.SetCurrentCustomerAsync(customer);

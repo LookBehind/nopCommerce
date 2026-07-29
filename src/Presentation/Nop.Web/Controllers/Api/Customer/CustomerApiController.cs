@@ -189,8 +189,25 @@ namespace Nop.Web.Controllers.Api.Customer
             return Ok(new { success = true, companyDetails });
         }
 
+        public class UpdatePushTokenModel
+        {
+            public string PushToken { get; set; }
+        }
+
+        /// <summary>
+        /// Legacy GET variant - kept only for already-shipped app builds still calling it (a device
+        /// push token in a URL path is otherwise a design smell: it can land in access logs, and a
+        /// state-mutating call shouldn't be a GET). New clients should use the POST overload below.
+        /// </summary>
         [HttpGet("update-customer-pushtoken/{pushToken}")]
         public virtual async Task<IActionResult> SetCustomerPushToken(string pushToken)
+            => await SetCustomerPushTokenInternal(pushToken);
+
+        [HttpPost("update-customer-pushtoken")]
+        public virtual async Task<IActionResult> SetCustomerPushTokenPost([FromBody] UpdatePushTokenModel model)
+            => await SetCustomerPushTokenInternal(model?.PushToken);
+
+        private async Task<IActionResult> SetCustomerPushTokenInternal(string pushToken)
         {
             if (!string.IsNullOrWhiteSpace(pushToken))
             {
@@ -198,7 +215,7 @@ namespace Nop.Web.Controllers.Api.Customer
                 if (customer == null)
                     return Ok(new
                     {
-                        success = false, 
+                        success = false,
                         message = await _localizationService.GetResourceAsync("Customer.Not.Found")
                     });
 
@@ -206,13 +223,13 @@ namespace Nop.Web.Controllers.Api.Customer
                 await _customerService.UpdateCustomerAsync(customer);
                 return Ok(new
                 {
-                    success = true, 
+                    success = true,
                     message = await _localizationService.GetResourceAsync("Account.Customer.PushTokenUpdated")
                 });
             }
             return Ok(new
             {
-                success = false, 
+                success = false,
                 message = await _localizationService.GetResourceAsync("Account.Customer.PushTokenNotFound")
             });
         }
