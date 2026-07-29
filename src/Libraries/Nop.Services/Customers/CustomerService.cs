@@ -1170,6 +1170,61 @@ namespace Nop.Services.Customers
                     await ApplyGiftCardCouponCodeAsync(customer, existingCouponCode);
         }
 
+        /// <summary>
+        /// Gets the customer's preferred order-reminder times (minutes after midnight, snapped to
+        /// 15-minute slots). Falls back to the legacy single-value Customer.RemindMeTime column if
+        /// the newer multi-time attribute was never set. Empty array means "no explicit preference".
+        /// </summary>
+        /// <param name="customer">Customer</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the reminder times
+        /// </returns>
+        public virtual async Task<int[]> GetRemindMeTimesAsync(Customer customer)
+        {
+            if (customer == null)
+                throw new ArgumentNullException(nameof(customer));
+
+            var raw = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.RemindMeTimesAttribute);
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                return raw.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(part => int.TryParse(part, out var value) ? (int?)value : null)
+                    .Where(value => value.HasValue)
+                    .Select(value => value.Value)
+                    .ToArray();
+            }
+
+            //legacy fallback: single-value column, from before multi-time support existed
+            return customer.RemindMeTime.HasValue ? new[] { customer.RemindMeTime.Value } : Array.Empty<int>();
+        }
+
+        /// <summary>
+        /// Sets the customer's preferred order-reminder times. Deduped, sorted, and capped at 3.
+        /// </summary>
+        /// <param name="customer">Customer</param>
+        /// <param name="times">Reminder times (minutes after midnight)</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public virtual async Task SetRemindMeTimesAsync(Customer customer, int[] times)
+        {
+            if (customer == null)
+                throw new ArgumentNullException(nameof(customer));
+
+            const int slotMinutes = 15;
+            const int maxTimes = 3;
+
+            var normalized = (times ?? Array.Empty<int>())
+                .Select(minutesOfDay => Math.Clamp(minutesOfDay, 0, 1439))
+                .Select(minutesOfDay => minutesOfDay / slotMinutes * slotMinutes)
+                .Distinct()
+                .OrderBy(minutesOfDay => minutesOfDay)
+                .Take(maxTimes)
+                .ToArray();
+
+            await _genericAttributeService.SaveAttributeAsync(customer, NopCustomerDefaults.RemindMeTimesAttribute,
+                string.Join(",", normalized));
+        }
+
         #endregion
 
         #region Customer roles

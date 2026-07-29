@@ -185,15 +185,17 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                     _dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, timezoneInfo);
 
                 // Per-customer reminder-time gate: only notify when the current 15-minute slot (in the
-                // customer's time zone) matches the customer's chosen reminder time - or the tenant default
-                // when they have not set one. This buckets customers by their selected slot; the task runs
-                // every 15 minutes (Hangfire CRON) so each customer matches exactly once per day.
+                // customer's time zone) matches ANY of the customer's chosen reminder times (up to 3) -
+                // or the tenant default when they have not set any. This buckets customers by their
+                // selected slot(s); the task runs every 15 minutes (Hangfire CRON) so a customer with
+                // multiple times matches once per configured time per day.
                 var currentSlot = SnapToSlot(customerTime.Hour * 60 + customerTime.Minute);
-                var desiredSlot = customer.RemindMeTime.HasValue
-                    ? SnapToSlot(customer.RemindMeTime.Value)
-                    : DefaultSlot();
+                var remindMeTimes = await _customerService.GetRemindMeTimesAsync(customer);
+                var desiredSlots = remindMeTimes.Length > 0
+                    ? remindMeTimes.Select(SnapToSlot).ToArray()
+                    : new[] { DefaultSlot() };
 
-                if (currentSlot != desiredSlot)
+                if (!desiredSlots.Contains(currentSlot))
                     continue;
 
                 customersToNotify.Add(new CustomerNotificationMetadata()

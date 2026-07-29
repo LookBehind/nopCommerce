@@ -126,6 +126,7 @@ namespace Nop.Web.Controllers.Api.Customer
                 customer, NopCustomerDefaults.FirstNameAttribute);
             var lastName = await _genericAttributeService.GetAttributeAsync<string>(
                 customer, NopCustomerDefaults.LastNameAttribute);
+            var remindMeTimes = await _customerService.GetRemindMeTimesAsync(customer);
 
             return Ok(new
             {
@@ -140,10 +141,10 @@ namespace Nop.Web.Controllers.Api.Customer
                 RemindMeNotification = customer.RemindMeNotification,
                 RateReminderNotification = customer.RateReminderNotification,
                 OrderStatusNotification = customer.OrderStatusNotification,
-                //preferred order-reminder time as "HH:mm" (null when no preference -> tenant default applies)
-                RemindMeTime = customer.RemindMeTime.HasValue
-                    ? System.TimeSpan.FromMinutes(customer.RemindMeTime.Value).ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture)
-                    : null,
+                //preferred order-reminder times as "HH:mm" (empty when no preference -> tenant default applies)
+                RemindMeTimes = remindMeTimes
+                    .Select(time => System.TimeSpan.FromMinutes(time).ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture))
+                    .ToArray(),
                 avatar = await _pictureService.GetPictureUrlAsync(await _genericAttributeService.GetAttributeAsync<int>(customer, NopCustomerDefaults.AvatarPictureIdAttribute), _mediaSettings.AvatarPictureSize, true)
             });
         }

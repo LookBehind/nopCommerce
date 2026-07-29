@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
@@ -44,10 +46,10 @@ namespace Nop.Web.Controllers.Api.PushNotification
             public bool RateReminderNotification { get; set; }
 
             /// <summary>
-            /// Preferred order-reminder time as "HH:mm" (24-hour, snapped to 15-minute slots). Null/empty
-            /// clears the preference so the tenant default applies.
+            /// Preferred order-reminder times as "HH:mm" strings (24-hour, snapped to 15-minute
+            /// slots, max 3). Null/empty clears the preference so the tenant default applies.
             /// </summary>
-            public string RemindMeTime { get; set; }
+            public List<string> RemindMeTimes { get; set; }
         }
 
         /// <summary>
@@ -90,8 +92,14 @@ namespace Nop.Web.Controllers.Api.PushNotification
             customer.OrderStatusNotification = model.OrderStatusNotification;
             customer.RateReminderNotification = model.RateReminderNotification;
             customer.RemindMeNotification= model.RemindMeNotification;
-            customer.RemindMeTime = ParseRemindMeTime(model.RemindMeTime);
             await _customerService.UpdateCustomerAsync(customer);
+
+            var remindMeTimes = (model.RemindMeTimes ?? new List<string>())
+                .Select(ParseRemindMeTime)
+                .Where(time => time.HasValue)
+                .Select(time => time.Value)
+                .ToArray();
+            await _customerService.SetRemindMeTimesAsync(customer, remindMeTimes);
 
             return Ok(new { success = true, message = await _localizationService.GetResourceAsync("Customer.Notification.Settings.Updated") });
         }

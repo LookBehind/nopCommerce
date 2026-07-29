@@ -318,6 +318,26 @@ namespace Nop.Services.Customers
         Task ApplyGiftCardCouponCodeAsync(Customer customer, string couponCode);
 
         /// <summary>
+        /// Gets the customer's preferred order-reminder times (minutes after midnight, snapped to
+        /// 15-minute slots). Falls back to the legacy single-value Customer.RemindMeTime column if
+        /// the newer multi-time attribute was never set. Empty array means "no explicit preference".
+        /// </summary>
+        /// <param name="customer">Customer</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the reminder times
+        /// </returns>
+        Task<int[]> GetRemindMeTimesAsync(Customer customer);
+
+        /// <summary>
+        /// Sets the customer's preferred order-reminder times. Deduped, sorted, and capped at 3.
+        /// </summary>
+        /// <param name="customer">Customer</param>
+        /// <param name="times">Reminder times (minutes after midnight)</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        Task SetRemindMeTimesAsync(Customer customer, int[] times);
+
+        /// <summary>
         /// Removes a coupon code
         /// </summary>
         /// <param name="customer">Customer</param>

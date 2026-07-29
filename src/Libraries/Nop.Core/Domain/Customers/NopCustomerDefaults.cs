@@ -166,6 +166,16 @@
         public static string AvatarPictureIdAttribute => "AvatarPictureId";
 
         /// <summary>
+        /// Gets a name of generic attribute to store the customer's multiple preferred order-reminder
+        /// times (up to 3, minutes after local midnight, snapped to 15-minute slots), as a
+        /// comma-separated string (e.g. "480,720,1080"). Empty/missing means "no explicit
+        /// preference" - the tenant default applies. Supersedes the legacy single-value
+        /// Customer.RemindMeTime column, which ICustomerService.GetRemindMeTimesAsync still falls
+        /// back to for customers who set a single time before this attribute existed.
+        /// </summary>
+        public static string RemindMeTimesAttribute => "RemindMeTimes";
+
+        /// <summary>
         /// Gets a name of generic attribute to store the value of 'ForumPostCount'
         /// </summary>
         public static string ForumPostCountAttribute => "ForumPostCount";
