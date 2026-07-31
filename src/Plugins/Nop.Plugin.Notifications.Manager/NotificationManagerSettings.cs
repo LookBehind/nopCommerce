@@ -11,4 +11,12 @@ public class NotificationManagerSettings : ISettings
     /// be configured for the tenant, or board-link minting has nothing to sign with.
     /// </summary>
     public bool VendorDeliveryMiniAppEnabled { get; set; }
+
+    /// <summary>
+    /// Master switch for auto-creating a Telegram group (via the MTProto user-account client) and
+    /// adding the bot whenever a new Vendor is inserted. Off by default - also requires
+    /// ExtendedAuthSettings.TelegramUserApiId/TelegramUserApiHash/TelegramUserSessionPath to be
+    /// configured with a valid, already-authorized session for the tenant.
+    /// </summary>
+    public bool TelegramGroupAutoCreationEnabled { get; set; }
 }

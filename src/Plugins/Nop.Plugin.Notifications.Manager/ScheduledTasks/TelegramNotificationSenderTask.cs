@@ -42,25 +42,10 @@ public class ShortAddressMapping
     public Dictionary<string, SimpleAddressDescription> ShortAddressToDescMap { get; set; }
 }
 
-/// <summary>
-/// Identifies the chat ID and thread ID.
-/// </summary>
-/// <param name="ChatId"></param>
-/// <param name="MessageThreadId">Thread ID of the chat, 0 if the group is a group or supergroup</param>
-public record TelegramChatId(long ChatId, int MessageThreadId);
-
-/// <summary>
-/// Identifies a vendor and a store. Stores are used to identify the Company.
-/// </summary>
-/// <param name="Vendor"></param>
-/// <param name="StoreId"></param>
-public record VendorAssociation(Vendor Vendor, int StoreId);
-
 public class TelegramNotificationSenderTask : IScheduledTask
 {
     public const string TELEGRAM_NOTIFICATION_SENDER_TASK_NAME = "Nop.Plugin.Notifications.Manager.ScheduledTasks.TelegramNotificationSenderTask";
     public const string TELEGRAM_NOTIFICATION_SENDER_FRIENDLY_NAME = "Telegram notification sender";
-    private const string VENDOR_TELEGRAM_CHANNEL_KEY = nameof(VENDOR_TELEGRAM_CHANNEL_KEY);
     private const string STORE_TELEGRAM_CHANNEL_KEY = nameof(STORE_TELEGRAM_CHANNEL_KEY);
     private const string LAST_UPDATE_ID_SEEN_KEY = nameof(LAST_UPDATE_ID_SEEN_KEY);
     private const string DELIVERED_SHORT_ADDRESS_MAP_KEY = "delivered_short_address_map_key";
@@ -80,16 +65,9 @@ public class TelegramNotificationSenderTask : IScheduledTask
     private readonly IStoreService _storeService;
     private readonly PushNotificationService _pushNotificationService;
     private readonly ITelegramMiniAppAuthService _telegramMiniAppAuthService;
+    private readonly IVendorTelegramChatCache _chatCache;
 
-    private static SemaphoreSlim _chatIdToVendorReloadSemaphore = new SemaphoreSlim(1, 1);
-    private static Dictionary<TelegramChatId, VendorAssociation> _chatIdToVendor;
     private static string _cachedBotUsername;
-
-    /// <summary>
-    /// Thin accessor over the process-wide chat mappings, used by <see cref="Nop.Plugin.Notifications.Manager.ScheduledTasks.PreDeliveryNudgeJob"/>
-    /// so it doesn't need its own copy of the reload logic.
-    /// </summary>
-    internal static Dictionary<TelegramChatId, VendorAssociation> GetChatMappingsSnapshot() => _chatIdToVendor;
 
     /// <summary>
     /// Converts an order's stored UTC schedule time to local (Yerevan, UTC+4) wall-clock time.
@@ -128,89 +106,11 @@ public class TelegramNotificationSenderTask : IScheduledTask
 
     private readonly List<(string CommandPrefix, Func<Telegram.Bot.Types.Message, Task>)> _botCommandHandlers;
 
-    private async Task ReloadAllChatMappings()
-    {
-        await _chatIdToVendorReloadSemaphore.WaitAsync(10000);
-        try
-        {
-            var newMappings = new Dictionary<TelegramChatId, VendorAssociation>();
-
-            var allVendors = await _vendor.GetAllVendorsAsync();
-
-            var allStores = await _storeService.GetAllStoresAsync();
-
-            foreach (var vendor in allVendors)
-            {
-                foreach (var store in allStores)
-                {
-                    var storeChannelKey =
-                        await _genericAttribute.GetAttributeAsync<string>(vendor, VENDOR_TELEGRAM_CHANNEL_KEY,
-                            store.Id);
-
-                    if (storeChannelKey == null)
-                        continue;
-
-                    var storeChannelKeySplit = storeChannelKey?.Split(':');
-                    if (storeChannelKeySplit.Length != 2)
-                    {
-                        await _logger.ErrorAsync(
-                            $"Invalid store channel key '{storeChannelKey}' for vendor '{vendor.Name}' and store '{store.Name}'. Should be chatId:threadId");
-                        continue;
-                    }
-
-                    var storeVendorChatId = new TelegramChatId(long.Parse(storeChannelKeySplit[0]),
-                        int.Parse(storeChannelKeySplit[1]));
-
-                    if (newMappings.ContainsKey(storeVendorChatId))
-                        await _logger.WarningAsync(
-                            $"Duplicate mapping for vendor '{vendor.Name}' and store '{store.Name}'");
-
-                    newMappings[storeVendorChatId] = new VendorAssociation(vendor, store.Id);
-                }
-
-                // Backward compatibility
-                var channelKey =
-                    await _genericAttribute.GetAttributeAsync<string>(vendor, VENDOR_TELEGRAM_CHANNEL_KEY, 0);
-                if (channelKey == null)
-                {
-                    // Already migrated
-                    continue;
-                }
-
-                if (long.TryParse(channelKey, out var chatIdLong))
-                {
-                    // Old version (chatId only, use 0 as threadId)
-                    var chatId = new TelegramChatId(chatIdLong, 0);
-                    newMappings[chatId] = new VendorAssociation(vendor, allStores.First().Id);
-
-                    await _genericAttribute.SaveAttributeAsync<string>(vendor, VENDOR_TELEGRAM_CHANNEL_KEY, null, 0);
-                    await _genericAttribute.SaveAttributeAsync(vendor, VENDOR_TELEGRAM_CHANNEL_KEY, $"{chatIdLong}:0",
-                        allStores.First().Id);
-                    await _logger.InformationAsync(
-                        $"Updated telegram channel key for vendor '{vendor.Name}' to store-aware attribute");
-                }
-                else
-                {
-                    await _logger.WarningAsync(
-                        $"Invalid telegram channel key '{channelKey}' for vendor '{vendor.Name}'. Should be long");
-                }
-            }
-
-            Interlocked.Exchange(ref _chatIdToVendor, newMappings);
-
-            await _logger.InformationAsync($"Loaded {_chatIdToVendor.Count} chat mappings");
-        }
-        finally
-        {
-            _chatIdToVendorReloadSemaphore.Release();
-        }
-    }
-    
     private VendorAssociation TryGetVendorFromChat(Chat chat, int? messageThreadId)
     {
         messageThreadId ??= 0;
-        
-        if (_chatIdToVendor!.TryGetValue(new TelegramChatId(chat.Id, messageThreadId.Value), 
+
+        if (_chatCache.Snapshot!.TryGetValue(new TelegramChatId(chat.Id, messageThreadId.Value),
                 out var cachedVendors))
             return cachedVendors;
 
@@ -251,12 +151,8 @@ public class TelegramNotificationSenderTask : IScheduledTask
                 var store = stores.First();
                 
                 var telegramChatId = new TelegramChatId(botEvent.Chat.Id, botEvent.MessageThreadId ?? 0);
-                
-                await _genericAttribute.SaveAttributeAsync(vendor, VENDOR_TELEGRAM_CHANNEL_KEY, 
-                    $"{telegramChatId.ChatId}:{telegramChatId.MessageThreadId}",
-                    store.Id);
 
-                await ReloadAllChatMappings();
+                await _chatCache.SaveVendorChatMappingAsync(vendor, store.Id, telegramChatId);
 
                 await _telegramBotClient.SendMessage(chatId: botEvent.Chat,
                     messageThreadId: botEvent.MessageThreadId,
@@ -276,34 +172,19 @@ public class TelegramNotificationSenderTask : IScheduledTask
     {
         try
         {
-            foreach (var affectedVendor in 
-                     _chatIdToVendor.Where(kv => kv.Key.ChatId == botEvent.MigrateFromChatId!))
+            foreach (var affectedVendor in
+                     _chatCache.Snapshot.Where(kv => kv.Key.ChatId == botEvent.MigrateFromChatId!).ToList())
             {
-                var previousChannelKey = await _genericAttribute.GetAttributeAsync<string>(
-                    affectedVendor.Value.Vendor,
-                    VENDOR_TELEGRAM_CHANNEL_KEY, 
-                    affectedVendor.Value.StoreId);
-            
-                var previousChannelKeySplit = previousChannelKey?.Split(':');
-                if (previousChannelKeySplit == null || previousChannelKeySplit.Length != 2)
-                {
-                    throw new InvalidOperationException($"Invalid previous channel key format: {previousChannelKey}. Should be chatId:messageThreadId");
-                }
-                
-                var newChannelKey = $"{botEvent.Chat.Id}:{previousChannelKeySplit[1]}";
-                
-                await _genericAttribute.SaveAttributeAsync(affectedVendor.Value.Vendor, 
-                    VENDOR_TELEGRAM_CHANNEL_KEY, 
-                    newChannelKey, 
-                    affectedVendor.Value.StoreId);
+                var newChannelKey = new TelegramChatId(botEvent.Chat.Id, affectedVendor.Key.MessageThreadId);
+
+                await _chatCache.SaveVendorChatMappingAsync(affectedVendor.Value.Vendor,
+                    affectedVendor.Value.StoreId, newChannelKey);
 
                 await _telegramBotClient.SendMessage(chatId: botEvent.Chat.Id,
                     messageThreadId: botEvent.MessageThreadId,
                     text:
                     $"Successfully migrated channel key for vendor {affectedVendor.Value.Vendor.Name} from chat {botEvent.MigrateFromChatId} to chat {botEvent.Chat.Id}");
             }
-
-            await ReloadAllChatMappings();
         }
         catch (Exception e)
         {
@@ -484,8 +365,7 @@ public class TelegramNotificationSenderTask : IScheduledTask
         if (!_appSettings.ExtendedAuthSettings.TelegramBotEnabled)
             return;
 
-        if(_chatIdToVendor == null)
-            await ReloadAllChatMappings();
+        await _chatCache.EnsureLoadedAsync();
 
         await HandleBotEvents();
 
@@ -511,7 +391,7 @@ public class TelegramNotificationSenderTask : IScheduledTask
                 if (isVendorNotification)
                 {
                     var vendorChat =
-                        _chatIdToVendor!.FirstOrDefault(kv => kv.Value.StoreId == queuedEmail.StoreId &&
+                        _chatCache.Snapshot!.FirstOrDefault(kv => kv.Value.StoreId == queuedEmail.StoreId &&
                                                               kv.Value.Vendor.Id == vendor.Id);
                     
                     if (vendorChat.Key != null)
@@ -607,10 +487,11 @@ public class TelegramNotificationSenderTask : IScheduledTask
         AppSettings appSettings, 
         IOrderService orderService,
         IAddressService addressService,
-        IEmailAccountService emailAccountService, 
+        IEmailAccountService emailAccountService,
         IStoreService storeService,
         PushNotificationService pushNotificationService,
-        ITelegramMiniAppAuthService telegramMiniAppAuthService)
+        ITelegramMiniAppAuthService telegramMiniAppAuthService,
+        IVendorTelegramChatCache chatCache)
     {
         _queuedEmail = queuedEmail;
         _vendor = vendor;
@@ -625,6 +506,7 @@ public class TelegramNotificationSenderTask : IScheduledTask
         _storeService = storeService;
         _pushNotificationService = pushNotificationService;
         _telegramMiniAppAuthService = telegramMiniAppAuthService;
+        _chatCache = chatCache;
 
         _botCommandHandlers = new()
         {

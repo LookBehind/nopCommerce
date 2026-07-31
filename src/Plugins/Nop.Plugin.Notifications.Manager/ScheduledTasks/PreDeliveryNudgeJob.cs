@@ -36,6 +36,7 @@ public class PreDeliveryNudgeJob
     private readonly ITelegramMiniAppAuthService _telegramMiniAppAuthService;
     private readonly ILogger _logger;
     private readonly AppSettings _appSettings;
+    private readonly IVendorTelegramChatCache _chatCache;
 
     public PreDeliveryNudgeJob(
         IOrderService orderService,
@@ -45,7 +46,8 @@ public class PreDeliveryNudgeJob
         ITelegramBotClient telegramBotClient,
         ITelegramMiniAppAuthService telegramMiniAppAuthService,
         ILogger logger,
-        AppSettings appSettings)
+        AppSettings appSettings,
+        IVendorTelegramChatCache chatCache)
     {
         _orderService = orderService;
         _settingService = settingService;
@@ -55,6 +57,7 @@ public class PreDeliveryNudgeJob
         _telegramMiniAppAuthService = telegramMiniAppAuthService;
         _logger = logger;
         _appSettings = appSettings;
+        _chatCache = chatCache;
     }
 
     public async Task RunForSlotAsync(int storeId, string deliveryTimeHHmm)
@@ -75,7 +78,7 @@ public class PreDeliveryNudgeJob
             return;
         }
 
-        var chatMappings = TelegramNotificationSenderTask.GetChatMappingsSnapshot();
+        var chatMappings = _chatCache.Snapshot;
         if (chatMappings == null || chatMappings.Count == 0)
             return;
 

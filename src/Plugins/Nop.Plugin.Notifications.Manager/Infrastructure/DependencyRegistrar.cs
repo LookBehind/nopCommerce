@@ -48,6 +48,18 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
 
             services.AddScoped<ITelegramMiniAppAuthService, TelegramMiniAppAuthService>();
 
+            services.AddScoped<IVendorTelegramChatCache, VendorTelegramChatCache>();
+
+            var telegramUserAuthConfigured =
+                appSettings.ExtendedAuthSettings.TelegramUserApiId != 0 &&
+                !string.IsNullOrEmpty(appSettings.ExtendedAuthSettings.TelegramUserApiHash) &&
+                !string.IsNullOrEmpty(appSettings.ExtendedAuthSettings.TelegramUserSessionPath);
+
+            if (telegramUserAuthConfigured)
+                services.AddScoped<ITelegramGroupProvisioningService, TelegramGroupProvisioningService>();
+            else
+                services.AddScoped<ITelegramGroupProvisioningService, NullTelegramGroupProvisioningService>();
+
             services.AddScoped<PreDeliveryNudgeReconciler>();
             services.AddScoped<PreDeliveryNudgeJob>();
             services.AddScoped<IRecurringTaskRegistrar, PreDeliveryNudgeBootReconciler>();
