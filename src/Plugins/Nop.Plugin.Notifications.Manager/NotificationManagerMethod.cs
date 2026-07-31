@@ -12,11 +12,19 @@ namespace Nop.Plugin.Notifications.Manager
     {
         private readonly IPluginService _pluginService;
         private readonly IScheduleTaskService _scheduleTaskService;
+        private readonly IWebHelper _webHelper;
 
-        public NotificationManagerMethod(IPluginService pluginService, IScheduleTaskService scheduleTaskService)
+        public NotificationManagerMethod(IPluginService pluginService, IScheduleTaskService scheduleTaskService,
+            IWebHelper webHelper)
         {
             _pluginService = pluginService;
             _scheduleTaskService = scheduleTaskService;
+            _webHelper = webHelper;
+        }
+
+        public override string GetConfigurationPageUrl()
+        {
+            return $"{_webHelper.GetStoreLocation()}Admin/NotificationsManager/Configure";
         }
 
         public override async Task InstallAsync()

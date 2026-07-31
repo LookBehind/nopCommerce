@@ -9,7 +9,7 @@ namespace Nop.Services.Companies
     {
         #region Companies
         Task<IPagedList<Company>> GetAllCompaniesAsync(string name = null, string email = null,
-          int pageIndex = 0, int pageSize = int.MaxValue, bool getOnlyTotalCount = false);
+          int? storeId = null, int pageIndex = 0, int pageSize = int.MaxValue, bool getOnlyTotalCount = false);
         Task DeleteCompanyAsync(Company company);
         Task<Company> GetCompanyByIdAsync(int companyId);
         Task InsertCompanyAsync(Company company);

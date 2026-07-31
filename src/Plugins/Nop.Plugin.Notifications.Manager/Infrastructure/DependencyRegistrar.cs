@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nop.Core.Configuration;
 using Nop.Core.Infrastructure;
 using Nop.Core.Infrastructure.DependencyManagement;
+using Nop.Plugin.Notifications.Manager.Areas.Admin.Factories;
 using Nop.Plugin.Notifications.Manager.ScheduledTasks;
 using Nop.Plugin.Notifications.Manager.Services;
 using Nop.Services.Tasks;
@@ -49,6 +50,8 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
             services.AddScoped<ITelegramMiniAppAuthService, TelegramMiniAppAuthService>();
 
             services.AddScoped<IVendorTelegramChatCache, VendorTelegramChatCache>();
+
+            services.AddScoped<INotificationsManagerModelFactory, NotificationsManagerModelFactory>();
 
             var telegramUserAuthConfigured =
                 appSettings.ExtendedAuthSettings.TelegramUserApiId != 0 &&

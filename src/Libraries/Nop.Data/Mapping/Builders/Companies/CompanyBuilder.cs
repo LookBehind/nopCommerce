@@ -1,5 +1,7 @@
 ﻿using FluentMigrator.Builders.Create.Table;
 using Nop.Core.Domain.Companies;
+using Nop.Core.Domain.Stores;
+using Nop.Data.Extensions;
 
 namespace Nop.Data.Mapping.Builders.Companies
 {
@@ -15,7 +17,8 @@ namespace Nop.Data.Mapping.Builders.Companies
         {
             table
                 .WithColumn(nameof(Company.Name)).AsString(400).NotNullable()
-                .WithColumn(nameof(Company.OrderAheadDays)).AsInt32().NotNullable().WithDefaultValue(14);
+                .WithColumn(nameof(Company.OrderAheadDays)).AsInt32().NotNullable().WithDefaultValue(14)
+                .WithColumn(nameof(Company.StoreId)).AsInt32().ForeignKey<Store>();
         }
 
         #endregion

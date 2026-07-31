@@ -13,6 +13,7 @@ namespace Nop.Plugin.Notifications.Manager.Services;
 public class VendorTelegramChatCache : IVendorTelegramChatCache
 {
     public const string VENDOR_TELEGRAM_CHANNEL_KEY = nameof(VENDOR_TELEGRAM_CHANNEL_KEY);
+    public const string VENDOR_TELEGRAM_CHANNEL_TITLE_KEY = nameof(VENDOR_TELEGRAM_CHANNEL_TITLE_KEY);
 
     private static readonly SemaphoreSlim _reloadSemaphore = new(1, 1);
     private static Dictionary<TelegramChatId, VendorAssociation> _chatIdToVendor;
@@ -127,4 +128,10 @@ public class VendorTelegramChatCache : IVendorTelegramChatCache
 
         await ReloadAsync();
     }
+
+    public async Task<string> GetVendorChatTitleAsync(Vendor vendor, int storeId) =>
+        await _genericAttributeService.GetAttributeAsync<string>(vendor, VENDOR_TELEGRAM_CHANNEL_TITLE_KEY, storeId);
+
+    public async Task SaveVendorChatTitleAsync(Vendor vendor, int storeId, string title) =>
+        await _genericAttributeService.SaveAttributeAsync(vendor, VENDOR_TELEGRAM_CHANNEL_TITLE_KEY, title, storeId);
 }

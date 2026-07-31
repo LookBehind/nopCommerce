@@ -1,0 +1,188 @@
+@using Nop.Plugin.Notifications.Manager.Areas.Admin.Models
+@using Nop.Web.Framework.Models.DataTables
+@using Microsoft.AspNetCore.Routing
+@model ConfigurationModel
+@{
+    Layout = "_ConfigurePlugin";
+    ViewBag.PageTitle = "Notifications Manager";
+}
+
+<div class="cards-group">
+    <div class="card card-default">
+        <div class="card-header">
+            Vendor Telegram Chats
+        </div>
+        <div class="card-body">
+            <p>
+                Every vendor's Telegram group for this store. Rows with a warning icon are vendors
+                allowed for a company here that don't have a group yet - click "Fix" to auto-create one.
+            </p>
+            <button type="button" id="btn-refresh-names" class="btn btn-default">Refresh names</button>
+            @await Html.PartialAsync("Table", new DataTablesModel
+            {
+                Name = "vendor-telegram-chat-grid",
+                UrlRead = new DataUrl("VendorChatList", "NotificationsManager",
+                    new RouteValueDictionary { [nameof(Model.VendorTelegramChatSearchModel.StoreId)] = Model.VendorTelegramChatSearchModel.StoreId }),
+                Length = Model.VendorTelegramChatSearchModel.PageSize,
+                LengthMenu = Model.VendorTelegramChatSearchModel.AvailablePageSizes,
+                ColumnCollection = new List<ColumnProperty>
+                {
+                    new ColumnProperty(nameof(VendorTelegramChatModel.VendorName))
+                    {
+                        Title = "Vendor"
+                    },
+                    new ColumnProperty(nameof(VendorTelegramChatModel.StoreName))
+                    {
+                        Title = "Store"
+                    },
+                    new ColumnProperty(nameof(VendorTelegramChatModel.ChatTitle))
+                    {
+                        Title = "Chat title"
+                    },
+                    new ColumnProperty(nameof(VendorTelegramChatModel.ChatId))
+                    {
+                        Title = "Chat ID"
+                    },
+                    new ColumnProperty(nameof(VendorTelegramChatModel.MessageThreadId))
+                    {
+                        Title = "Thread ID"
+                    },
+                    new ColumnProperty(nameof(VendorTelegramChatModel.IsMissing))
+                    {
+                        Title = "Status",
+                        Width = "150",
+                        ClassName = NopColumnClassDefaults.CenterAll,
+                        Render = new RenderCustom("renderChatStatus")
+                    }
+                }
+            })
+        </div>
+    </div>
+
+    <div class="card card-default">
+        <div class="card-header">
+            Auto-invited Telegram Users
+        </div>
+        <div class="card-body">
+            <p>
+                Telegram usernames listed here get added to every vendor group above (and every
+                future one). Removing a username sweeps them out of every group.
+            </p>
+            <div class="form-inline mb-3">
+                <input type="text" id="new-auto-invite-username" class="form-control mr-2" placeholder="@@username" />
+                <button type="button" id="btn-add-auto-invite-user" class="btn btn-primary">Add</button>
+            </div>
+            @await Html.PartialAsync("Table", new DataTablesModel
+            {
+                Name = "auto-invite-user-grid",
+                UrlRead = new DataUrl("AutoInviteUserList", "NotificationsManager",
+                    new RouteValueDictionary { [nameof(Model.AutoInviteUserSearchModel.StoreId)] = Model.AutoInviteUserSearchModel.StoreId }),
+                Length = Model.AutoInviteUserSearchModel.PageSize,
+                LengthMenu = Model.AutoInviteUserSearchModel.AvailablePageSizes,
+                ColumnCollection = new List<ColumnProperty>
+                {
+                    new ColumnProperty(nameof(AutoInviteUserModel.Username))
+                    {
+                        Title = "Username"
+                    },
+                    new ColumnProperty(nameof(AutoInviteUserModel.Username))
+                    {
+                        Title = "Remove",
+                        Width = "100",
+                        ClassName = NopColumnClassDefaults.Button,
+                        Render = new RenderCustom("renderRemoveAutoInviteButton")
+                    }
+                }
+            })
+        </div>
+    </div>
+</div>
+
+<script>
+    var notificationsManagerStoreId = @Model.VendorTelegramChatSearchModel.StoreId;
+
+    function renderChatStatus(data, type, row, meta) {
+        if (!row.IsMissing) {
+            return '<span class="text-success"><i class="fas fa-check"></i> OK</span>';
+        }
+        return '<span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Missing group</span>' +
+            ' <button type="button" class="btn btn-sm btn-warning" onclick="fixVendorChat(' + row.VendorId + ')">Fix</button>';
+    }
+
+    function fixVendorChat(vendorId) {
+        $.ajax({
+            url: '@Url.Action("Fix", "NotificationsManager")',
+            type: 'POST',
+            data: { vendorId: vendorId },
+            headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+            success: function () {
+                updateTable('#vendor-telegram-chat-grid');
+            },
+            error: function () {
+                alert('Failed to enqueue group creation, check the logs.');
+            }
+        });
+    }
+
+    $('#btn-refresh-names').on('click', function () {
+        $.ajax({
+            url: '@Url.Action("RefreshChatNames", "NotificationsManager")',
+            type: 'POST',
+            headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+            success: function (result) {
+                updateTable('#vendor-telegram-chat-grid');
+            }
+        });
+    });
+
+    $('#btn-add-auto-invite-user').on('click', function () {
+        var username = $('#new-auto-invite-username').val();
+        if (!username) return;
+
+        $.ajax({
+            url: '@Url.Action("AddAutoInviteUser", "NotificationsManager")',
+            type: 'POST',
+            data: { username: username },
+            headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+            success: function (result) {
+                if (result.success) {
+                    $('#new-auto-invite-username').val('');
+                    updateTable('#auto-invite-user-grid');
+                } else {
+                    alert(result.message || 'Failed to add user.');
+                }
+            }
+        });
+    });
+
+    function renderRemoveAutoInviteButton(data, type, row, meta) {
+        return '<button type="button" class="btn btn-sm btn-danger" onclick="removeAutoInviteUser(\'' + row.Username + '\')">Remove</button>';
+    }
+
+    function removeAutoInviteUser(username) {
+        $.ajax({
+            url: '@Url.Action("GetAutoInviteRemovalImpact", "NotificationsManager")',
+            type: 'GET',
+            data: { username: username },
+            success: function (result) {
+                var confirmed = confirm('This will remove @@' + username + ' from ' + result.groupCount + ' group(s). Continue?');
+                if (!confirmed) return;
+
+                $.ajax({
+                    url: '@Url.Action("RemoveAutoInviteUser", "NotificationsManager")',
+                    type: 'POST',
+                    data: { username: username },
+                    headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+                    success: function (result) {
+                        if (result.success) {
+                            updateTable('#auto-invite-user-grid');
+                        } else {
+                            alert(result.message || 'Failed to remove user.');
+                        }
+                    }
+                });
+            }
+        });
+    }
+</script>
+<form style="display:none">@Html.AntiForgeryToken()</form>

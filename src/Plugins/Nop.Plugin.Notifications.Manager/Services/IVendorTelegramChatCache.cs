@@ -46,4 +46,15 @@ public interface IVendorTelegramChatCache
     /// Persists a vendor+store's chat mapping and reloads the in-memory snapshot.
     /// </summary>
     Task SaveVendorChatMappingAsync(Vendor vendor, int storeId, TelegramChatId chatId);
+
+    /// <summary>
+    /// Cached group title, populated at auto-creation time or via the admin "Refresh names" action.
+    /// Null for a mapping that predates title caching and hasn't been refreshed yet.
+    /// </summary>
+    Task<string> GetVendorChatTitleAsync(Vendor vendor, int storeId);
+
+    /// <summary>
+    /// Saves the cached group title for a vendor+store (does not touch the chat id mapping itself).
+    /// </summary>
+    Task SaveVendorChatTitleAsync(Vendor vendor, int storeId, string title);
 }

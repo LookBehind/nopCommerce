@@ -55,7 +55,7 @@ namespace Nop.Services.Companies
         #region Companies
 
         public virtual async Task<IPagedList<Company>> GetAllCompaniesAsync(string name = null, string email = null,
-            int pageIndex = 0, int pageSize = int.MaxValue, bool getOnlyTotalCount = false)
+            int? storeId = null, int pageIndex = 0, int pageSize = int.MaxValue, bool getOnlyTotalCount = false)
         {
             var companies = await _companyRepository.GetAllPagedAsync(query =>
             {
@@ -64,6 +64,9 @@ namespace Nop.Services.Companies
 
                 if (!string.IsNullOrWhiteSpace(email))
                     query = query.Where(c => c.Email.Contains(email));
+
+                if (storeId.HasValue)
+                    query = query.Where(c => c.StoreId == storeId.Value);
 
                 query = query.OrderByDescending(c => c.Id);
 
@@ -89,6 +92,8 @@ namespace Nop.Services.Companies
         public virtual async Task InsertCompanyAsync(Company company)
         {
             company.TimeZone = company.TimeZone ?? (await _dateTimeHelper.GetCurrentTimeZoneAsync()).DisplayName;
+            if (company.StoreId == 0)
+                company.StoreId = (await _storeContext.GetCurrentStoreAsync()).Id;
             await _companyRepository.InsertAsync(company);
         }
 
