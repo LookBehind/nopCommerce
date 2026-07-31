@@ -67,7 +67,13 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
                 "api_id" => authSettings.TelegramUserApiId.ToString(),
                 "api_hash" => authSettings.TelegramUserApiHash,
                 "session_pathname" => authSettings.TelegramUserSessionPath,
-                "verification_code" or "password" or "first_name" or "last_name" =>
+                // Accept whichever user this session is already authorized as, instead of the
+                // library's default phone-number-match check - we only ever expect to resume an
+                // already-authorized session here, never to answer a fresh login prompt. See
+                // WTelegramClient's Client.LoginUserIfNeeded source: "user_id" == "-1" short-circuits
+                // its self-lookup verification without ever touching "phone_number".
+                "user_id" => "-1",
+                "verification_code" or "password" or "first_name" or "last_name" or "phone_number" =>
                     throw new InvalidOperationException(
                         $"Telegram user session at '{authSettings.TelegramUserSessionPath}' is missing, expired, " +
                         $"or was never authorized - the one-time interactive login must be (re-)run out-of-band; " +
@@ -75,8 +81,19 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
                 _ => null
             });
 
-            var me = await client.LoginUserIfNeeded();
-            await _logger.InformationAsync($"Telegram user-account client (vendor group auto-creation) logged in as {me} (id {me.id})");
+            try
+            {
+                var me = await client.LoginUserIfNeeded();
+                await _logger.InformationAsync($"Telegram user-account client (vendor group auto-creation) logged in as {me} (id {me.id})");
+            }
+            catch
+            {
+                // Otherwise the session file's handle (opened inside the Client ctor) leaks and
+                // permanently locks out every subsequent attempt with an unrelated IOException,
+                // even after this one's root cause is fixed.
+                client.Dispose();
+                throw;
+            }
 
             _client = client;
             return _client;
