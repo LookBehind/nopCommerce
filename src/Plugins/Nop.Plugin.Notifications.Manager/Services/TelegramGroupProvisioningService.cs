@@ -59,6 +59,8 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         _appSettings = appSettings;
     }
 
+    public bool IsConfigured => true;
+
     private async Task<WTelegram.Client> GetClientAsync()
     {
         if (_client != null)

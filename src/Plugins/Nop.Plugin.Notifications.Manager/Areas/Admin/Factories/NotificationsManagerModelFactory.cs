@@ -115,12 +115,15 @@ public class NotificationsManagerModelFactory : INotificationsManagerModelFactor
     public async Task<AutoInviteUserListModel> PrepareAutoInviteUserListModelAsync(AutoInviteUserSearchModel searchModel)
     {
         var storeId = searchModel.StoreId;
-        var entries = await _provisioningService.GetAutoInviteEntriesAsync(storeId);
 
-        var rows = entries
-            .Select(entry => new AutoInviteUserModel { Identifier = entry.Identifier, DisplayName = entry.DisplayName, StoreId = storeId })
-            .OrderBy(m => m.DisplayName)
-            .ToList();
+        // Not configured for this tenant (no MTProto session) - show an empty grid rather than
+        // calling into the Null service, which throws by design for anything that skips this check.
+        var rows = _provisioningService.IsConfigured
+            ? (await _provisioningService.GetAutoInviteEntriesAsync(storeId))
+                .Select(entry => new AutoInviteUserModel { Identifier = entry.Identifier, DisplayName = entry.DisplayName, StoreId = storeId })
+                .OrderBy(m => m.DisplayName)
+                .ToList()
+            : new List<AutoInviteUserModel>();
 
         var pagedRows = new PagedList<AutoInviteUserModel>(rows, searchModel.Page - 1, searchModel.PageSize);
 

@@ -50,6 +50,9 @@ public class NotificationsManagerController : BaseAdminController
         _logger = logger;
     }
 
+    private const string NOT_CONFIGURED_MESSAGE =
+        "Telegram auto-invite isn't configured for this tenant (no MTProto user session set up).";
+
     private async Task<int> GetActiveStoreIdAsync()
     {
         var storeScope = await _storeContext.GetActiveStoreScopeConfigurationAsync();
@@ -107,6 +110,9 @@ public class NotificationsManagerController : BaseAdminController
     {
         if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
             return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
 
         var storeId = await GetActiveStoreIdAsync();
 
@@ -168,6 +174,9 @@ public class NotificationsManagerController : BaseAdminController
         if (string.IsNullOrWhiteSpace(identifier))
             return Json(new { found = false, message = "Enter a username or phone number" });
 
+        if (!_provisioningService.IsConfigured)
+            return Json(new { found = false, message = NOT_CONFIGURED_MESSAGE });
+
         var candidate = await _provisioningService.ResolveAutoInviteCandidateAsync(identifier);
         return Json(new { found = candidate.Found, displayName = candidate.DisplayName, message = candidate.Error });
     }
@@ -180,6 +189,9 @@ public class NotificationsManagerController : BaseAdminController
     {
         if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
             return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
 
         try
         {
@@ -206,6 +218,9 @@ public class NotificationsManagerController : BaseAdminController
         if (string.IsNullOrWhiteSpace(identifier))
             return Json(new { success = false, message = "A username or phone number is required" });
 
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
         var storeId = await GetActiveStoreIdAsync();
 
         try
@@ -225,6 +240,9 @@ public class NotificationsManagerController : BaseAdminController
     {
         if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
             return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { groupCount = 0 });
 
         var storeId = await GetActiveStoreIdAsync();
         var groupCount = await _provisioningService.GetGroupCountAsync(storeId);

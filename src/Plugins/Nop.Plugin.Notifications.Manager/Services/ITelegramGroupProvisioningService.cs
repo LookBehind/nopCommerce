@@ -13,6 +13,14 @@ namespace Nop.Plugin.Notifications.Manager.Services;
 public interface ITelegramGroupProvisioningService
 {
     /// <summary>
+    /// False when the MTProto user-account session isn't configured for this tenant (the
+    /// <see cref="NullTelegramGroupProvisioningService"/> fallback is registered) - every other
+    /// method throws in that case, so callers (the admin config page in particular) must check this
+    /// first rather than let the exception surface as an unhandled 500.
+    /// </summary>
+    bool IsConfigured { get; }
+
+    /// <summary>
     /// Idempotent: does nothing if the vendor+store already has a chat mapping. Includes every
     /// currently-configured auto-invite user (<see cref="GetAutoInviteEntriesAsync"/>) as an
     /// initial member of the new group, alongside the bot.
