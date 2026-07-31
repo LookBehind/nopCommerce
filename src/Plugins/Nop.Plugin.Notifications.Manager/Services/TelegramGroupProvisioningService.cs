@@ -120,17 +120,57 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             return _cachedBotInputUser;
 
         var me = await _telegramBotClient.GetMe();
-        _cachedBotInputUser = await ResolveUserInputAsync(client, me.Username);
+        var user = await ResolveUserAsync(client, me.Username);
+        if (user == null)
+            throw new InvalidOperationException($"Unable to resolve bot user '@{me.Username}' via the Telegram user-account client");
+
+        _cachedBotInputUser = new InputUser(user.id, user.access_hash);
         return _cachedBotInputUser;
     }
 
-    private static async Task<InputUser> ResolveUserInputAsync(WTelegram.Client client, string username)
+    /// <summary>
+    /// True for anything that looks like a phone number (optional leading '+', otherwise all
+    /// digits/spaces/dashes, at least 6 digits) rather than a "@username".
+    /// </summary>
+    private static bool LooksLikePhoneNumber(string identifier)
     {
-        var resolved = await client.Contacts_ResolveUsername(username);
-        if (resolved.User == null)
-            throw new InvalidOperationException($"Unable to resolve Telegram user '@{username}' via the Telegram user-account client");
+        var digitsOnly = new string(identifier.Where(char.IsDigit).ToArray());
+        return digitsOnly.Length >= 6 && digitsOnly.Length == identifier.Count(c => char.IsDigit(c) || c is '+' or ' ' or '-' or '(' or ')');
+    }
 
-        return new InputUser(resolved.User.id, resolved.User.access_hash);
+    /// <summary>
+    /// Resolves a "@username" or a phone number to a Telegram <see cref="User"/> (access_hash
+    /// included), or null if Telegram has no match / the target's privacy settings block discovery.
+    /// Phone-number resolution goes through Contacts_ImportContacts (the only MTProto path that
+    /// starts from a phone number), and the temporary contact it creates on the lkbhnd account is
+    /// deleted again immediately after - this shouldn't leave every invited person as a permanent
+    /// contact of the ops account.
+    /// </summary>
+    private static async Task<User> ResolveUserAsync(WTelegram.Client client, string identifier)
+    {
+        if (LooksLikePhoneNumber(identifier))
+        {
+            var phone = identifier.StartsWith('+') ? identifier : $"+{identifier}";
+            var contact = new InputPhoneContact { client_id = 1, phone = phone, first_name = "MySnacks", last_name = "AutoInvite" };
+            var imported = await client.Contacts_ImportContacts(new[] { contact });
+
+            User user = null;
+            if (imported.imported.Length > 0)
+                imported.users.TryGetValue(imported.imported[0].user_id, out user);
+
+            if (user != null)
+            {
+                // Best-effort cleanup - a failure here shouldn't fail the resolution itself. Uses the
+                // real access_hash we just received, not a guessed/zero one.
+                try { await client.Contacts_DeleteContacts(new InputUserBase[] { new InputUser(user.id, user.access_hash) }); }
+                catch { /* ignore */ }
+            }
+
+            return user;
+        }
+
+        var resolved = await client.Contacts_ResolveUsername(identifier.TrimStart('@'));
+        return resolved.User;
     }
 
     private static async Task<InputChannel> ResolveInputChannelAsync(WTelegram.Client client, long chatId)
@@ -172,25 +212,34 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         }
     }
 
-    private async Task<List<string>> GetAutoInviteUsernamesInternalAsync(int storeId)
+    private async Task<List<AutoInviteEntry>> GetAutoInviteEntriesInternalAsync(int storeId)
     {
         var settings = await _settingService.LoadSettingAsync<NotificationManagerSettings>(storeId);
-        if (string.IsNullOrWhiteSpace(settings.AutoInviteTelegramUsernamesJson))
-            return new List<string>();
+        if (string.IsNullOrWhiteSpace(settings.AutoInviteTelegramUsersJson))
+            return new List<AutoInviteEntry>();
 
-        return JsonSerializer.Deserialize<List<string>>(settings.AutoInviteTelegramUsernamesJson) ?? new List<string>();
+        return JsonSerializer.Deserialize<List<AutoInviteEntry>>(settings.AutoInviteTelegramUsersJson) ?? new List<AutoInviteEntry>();
     }
 
-    private async Task SaveAutoInviteUsernamesAsync(int storeId, List<string> usernames)
+    private async Task SaveAutoInviteEntriesAsync(int storeId, List<AutoInviteEntry> entries)
     {
         var settings = await _settingService.LoadSettingAsync<NotificationManagerSettings>(storeId);
-        settings.AutoInviteTelegramUsernamesJson = JsonSerializer.Serialize(usernames);
+        settings.AutoInviteTelegramUsersJson = JsonSerializer.Serialize(entries);
         await _settingService.SaveSettingAsync(settings, storeId);
         await _settingService.ClearCacheAsync();
     }
 
-    public async Task<IReadOnlyList<string>> GetAutoInviteUsernamesAsync(int storeId) =>
-        await GetAutoInviteUsernamesInternalAsync(storeId);
+    private static string BuildDisplayName(User user, string fallbackIdentifier)
+    {
+        var name = string.Join(" ", new[] { user.first_name, user.last_name }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (!string.IsNullOrWhiteSpace(name))
+            return user.MainUsername != null ? $"{name} (@{user.MainUsername})" : name;
+
+        return user.MainUsername != null ? $"@{user.MainUsername}" : fallbackIdentifier;
+    }
+
+    public async Task<IReadOnlyList<AutoInviteEntry>> GetAutoInviteEntriesAsync(int storeId) =>
+        await GetAutoInviteEntriesInternalAsync(storeId);
 
     public async Task<int> GetGroupCountAsync(int storeId)
     {
@@ -198,19 +247,54 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         return _chatCache.Snapshot.Count(kv => kv.Value.StoreId == storeId);
     }
 
-    public async Task AddAutoInviteUserAsync(int storeId, string username)
+    public async Task<AutoInviteCandidate> ResolveAutoInviteCandidateAsync(string identifier)
     {
-        username = username.TrimStart('@').Trim();
+        identifier = identifier.Trim();
 
-        var usernames = await GetAutoInviteUsernamesInternalAsync(storeId);
-        if (usernames.Any(u => string.Equals(u, username, StringComparison.OrdinalIgnoreCase)))
-            return;
+        try
+        {
+            var client = await GetClientAsync();
+            var user = await ResolveUserAsync(client, identifier);
+            if (user == null)
+            {
+                return new AutoInviteCandidate(false, identifier, null, 0,
+                    LooksLikePhoneNumber(identifier)
+                        ? "No Telegram user found for that phone number - they may have their privacy settings set to hide phone-number discovery."
+                        : "No Telegram user found with that username.");
+            }
 
-        usernames.Add(username);
-        await SaveAutoInviteUsernamesAsync(storeId, usernames);
+            return new AutoInviteCandidate(true, identifier, BuildDisplayName(user, identifier), user.id, null);
+        }
+        catch (Exception e)
+        {
+            await _logger.ErrorAsync($"Failed to resolve auto-invite candidate '{identifier}'", e);
+            return new AutoInviteCandidate(false, identifier, null, 0, "Failed to resolve - check the logs.");
+        }
+    }
+
+    public async Task<AutoInviteCandidate> AddAutoInviteUserAsync(int storeId, string identifier)
+    {
+        identifier = identifier.Trim();
 
         var client = await GetClientAsync();
-        var inputUser = await ResolveUserInputAsync(client, username);
+        var user = await ResolveUserAsync(client, identifier);
+        if (user == null)
+        {
+            return new AutoInviteCandidate(false, identifier, null, 0,
+                LooksLikePhoneNumber(identifier)
+                    ? "No Telegram user found for that phone number."
+                    : "No Telegram user found with that username.");
+        }
+
+        var entries = await GetAutoInviteEntriesInternalAsync(storeId);
+        if (entries.Any(e => e.TelegramUserId == user.id))
+            return new AutoInviteCandidate(true, identifier, BuildDisplayName(user, identifier), user.id, null);
+
+        var displayName = BuildDisplayName(user, identifier);
+        entries.Add(new AutoInviteEntry(identifier, displayName, user.id));
+        await SaveAutoInviteEntriesAsync(storeId, entries);
+
+        var inputUser = new InputUser(user.id, user.access_hash);
 
         await _chatCache.EnsureLoadedAsync();
         var chatIds = _chatCache.Snapshot.Where(kv => kv.Value.StoreId == storeId)
@@ -224,25 +308,34 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             }
             catch (Exception e)
             {
-                await _logger.ErrorAsync($"Failed to add auto-invite user '@{username}' to chat {chatId}", e);
+                await _logger.ErrorAsync($"Failed to add auto-invite user '{displayName}' to chat {chatId}", e);
             }
         }
+
+        return new AutoInviteCandidate(true, identifier, displayName, user.id, null);
     }
 
-    public async Task RemoveAutoInviteUserAsync(int storeId, string username)
+    public async Task RemoveAutoInviteUserAsync(int storeId, string identifier)
     {
-        username = username.TrimStart('@').Trim();
+        identifier = identifier.Trim();
 
-        var usernames = await GetAutoInviteUsernamesInternalAsync(storeId);
-        var match = usernames.FirstOrDefault(u => string.Equals(u, username, StringComparison.OrdinalIgnoreCase));
+        var entries = await GetAutoInviteEntriesInternalAsync(storeId);
+        var match = entries.FirstOrDefault(e => string.Equals(e.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
         if (match == null)
             return;
 
-        usernames.Remove(match);
-        await SaveAutoInviteUsernamesAsync(storeId, usernames);
+        entries.Remove(match);
+        await SaveAutoInviteEntriesAsync(storeId, entries);
 
         var client = await GetClientAsync();
-        var inputUser = await ResolveUserInputAsync(client, username);
+        var user = await ResolveUserAsync(client, match.Identifier);
+        if (user == null)
+        {
+            await _logger.ErrorAsync($"Could not re-resolve '{match.DisplayName}' ({match.Identifier}) to remove them from groups - removed from the list only");
+            return;
+        }
+
+        var inputUser = new InputUser(user.id, user.access_hash);
 
         await _chatCache.EnsureLoadedAsync();
         var chatIds = _chatCache.Snapshot.Where(kv => kv.Value.StoreId == storeId)
@@ -256,7 +349,7 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             }
             catch (Exception e)
             {
-                await _logger.ErrorAsync($"Failed to remove auto-invite user '@{username}' from chat {chatId}", e);
+                await _logger.ErrorAsync($"Failed to remove auto-invite user '{match.DisplayName}' from chat {chatId}", e);
             }
         }
     }
@@ -297,16 +390,24 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             var botInputUser = await GetBotInputUserAsync(client);
 
             var members = new List<InputUserBase> { botInputUser };
-            foreach (var username in await GetAutoInviteUsernamesInternalAsync(storeId))
+            foreach (var entry in await GetAutoInviteEntriesInternalAsync(storeId))
             {
                 try
                 {
-                    members.Add(await ResolveUserInputAsync(client, username));
+                    var autoInviteUser = await ResolveUserAsync(client, entry.Identifier);
+                    if (autoInviteUser == null)
+                    {
+                        await _logger.ErrorAsync(
+                            $"Auto-invite user '{entry.DisplayName}' no longer resolves for new group '{title}', skipping");
+                        continue;
+                    }
+
+                    members.Add(new InputUser(autoInviteUser.id, autoInviteUser.access_hash));
                 }
                 catch (Exception e)
                 {
                     await _logger.ErrorAsync(
-                        $"Failed to resolve auto-invite user '@{username}' for new group '{title}', skipping", e);
+                        $"Failed to resolve auto-invite user '{entry.DisplayName}' for new group '{title}', skipping", e);
                 }
             }
 

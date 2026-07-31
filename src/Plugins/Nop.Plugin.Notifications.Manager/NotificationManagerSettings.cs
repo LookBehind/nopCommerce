@@ -21,11 +21,12 @@ public class NotificationManagerSettings : ISettings
     public bool TelegramGroupAutoCreationEnabled { get; set; }
 
     /// <summary>
-    /// JSON-encoded array of Telegram usernames that get auto-added to every vendor Telegram group
-    /// (existing ones when added to this list, and every future one at creation time), and swept out
-    /// of every group when removed. Store-scoped like this plugin's other settings. Kept as a plain
-    /// JSON string rather than a new DB table - this plugin has no custom tables today and the list
-    /// is expected to stay small.
+    /// JSON-encoded array of <see cref="Services.AutoInviteEntry"/> - Telegram users (identified by
+    /// username or phone number, resolved and confirmed via the admin UI before being added) that get
+    /// auto-added to every vendor Telegram group (existing ones when added to this list, and every
+    /// future one at creation time), and swept out of every group when removed. Store-scoped like this
+    /// plugin's other settings. Kept as a plain JSON string rather than a new DB table - this plugin
+    /// has no custom tables today and the list is expected to stay small.
     /// </summary>
-    public string AutoInviteTelegramUsernamesJson { get; set; }
+    public string AutoInviteTelegramUsersJson { get; set; }
 }

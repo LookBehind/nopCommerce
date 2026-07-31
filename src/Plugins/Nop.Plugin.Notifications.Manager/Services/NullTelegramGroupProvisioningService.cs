@@ -20,13 +20,16 @@ public class NullTelegramGroupProvisioningService : ITelegramGroupProvisioningSe
     public Task ProvisionVendorGroupAsync(int vendorId, int storeId) =>
         throw new NotImplementedException(ERROR_MESSAGE);
 
-    public Task<IReadOnlyList<string>> GetAutoInviteUsernamesAsync(int storeId) =>
+    public Task<IReadOnlyList<AutoInviteEntry>> GetAutoInviteEntriesAsync(int storeId) =>
         throw new NotImplementedException(ERROR_MESSAGE);
 
-    public Task AddAutoInviteUserAsync(int storeId, string username) =>
+    public Task<AutoInviteCandidate> ResolveAutoInviteCandidateAsync(string identifier) =>
         throw new NotImplementedException(ERROR_MESSAGE);
 
-    public Task RemoveAutoInviteUserAsync(int storeId, string username) =>
+    public Task<AutoInviteCandidate> AddAutoInviteUserAsync(int storeId, string identifier) =>
+        throw new NotImplementedException(ERROR_MESSAGE);
+
+    public Task RemoveAutoInviteUserAsync(int storeId, string identifier) =>
         throw new NotImplementedException(ERROR_MESSAGE);
 
     public Task<int> GetGroupCountAsync(int storeId) =>

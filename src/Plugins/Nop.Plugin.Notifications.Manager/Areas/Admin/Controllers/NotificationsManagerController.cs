@@ -155,31 +155,48 @@ public class NotificationsManagerController : BaseAdminController
         return Json(new { success = true, refreshed });
     }
 
+    /// <summary>
+    /// Resolves an identifier (username or phone) WITHOUT adding it to the list or joining any
+    /// group - the admin UI shows the matched name for confirmation before calling AddAutoInviteUser.
+    /// </summary>
     [HttpPost]
-    public async Task<IActionResult> AddAutoInviteUser(string username)
+    public async Task<IActionResult> ResolveAutoInviteCandidate(string identifier)
     {
         if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
             return AccessDeniedView();
 
-        if (string.IsNullOrWhiteSpace(username))
-            return Json(new { success = false, message = "Username is required" });
+        if (string.IsNullOrWhiteSpace(identifier))
+            return Json(new { found = false, message = "Enter a username or phone number" });
+
+        var candidate = await _provisioningService.ResolveAutoInviteCandidateAsync(identifier);
+        return Json(new { found = candidate.Found, displayName = candidate.DisplayName, message = candidate.Error });
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> AddAutoInviteUser(string identifier)
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (string.IsNullOrWhiteSpace(identifier))
+            return Json(new { success = false, message = "A username or phone number is required" });
 
         var storeId = await GetActiveStoreIdAsync();
 
         try
         {
-            await _provisioningService.AddAutoInviteUserAsync(storeId, username);
-            return Json(new { success = true });
+            var candidate = await _provisioningService.AddAutoInviteUserAsync(storeId, identifier);
+            return Json(new { success = candidate.Found, message = candidate.Error });
         }
         catch (Exception e)
         {
-            await _logger.ErrorAsync($"Failed to add auto-invite user '@{username}'", e);
+            await _logger.ErrorAsync($"Failed to add auto-invite user '{identifier}'", e);
             return Json(new { success = false, message = e.Message });
         }
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAutoInviteRemovalImpact(string username)
+    public async Task<IActionResult> GetAutoInviteRemovalImpact(string identifier)
     {
         if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
             return AccessDeniedView();
@@ -191,7 +208,7 @@ public class NotificationsManagerController : BaseAdminController
     }
 
     [HttpPost]
-    public async Task<IActionResult> RemoveAutoInviteUser(string username)
+    public async Task<IActionResult> RemoveAutoInviteUser(string identifier)
     {
         if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
             return AccessDeniedView();
@@ -200,12 +217,12 @@ public class NotificationsManagerController : BaseAdminController
 
         try
         {
-            await _provisioningService.RemoveAutoInviteUserAsync(storeId, username);
+            await _provisioningService.RemoveAutoInviteUserAsync(storeId, identifier);
             return Json(new { success = true });
         }
         catch (Exception e)
         {
-            await _logger.ErrorAsync($"Failed to remove auto-invite user '@{username}'", e);
+            await _logger.ErrorAsync($"Failed to remove auto-invite user '{identifier}'", e);
             return Json(new { success = false, message = e.Message });
         }
     }

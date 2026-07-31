@@ -115,11 +115,11 @@ public class NotificationsManagerModelFactory : INotificationsManagerModelFactor
     public async Task<AutoInviteUserListModel> PrepareAutoInviteUserListModelAsync(AutoInviteUserSearchModel searchModel)
     {
         var storeId = searchModel.StoreId;
-        var usernames = await _provisioningService.GetAutoInviteUsernamesAsync(storeId);
+        var entries = await _provisioningService.GetAutoInviteEntriesAsync(storeId);
 
-        var rows = usernames
-            .Select(username => new AutoInviteUserModel { Username = username, StoreId = storeId })
-            .OrderBy(m => m.Username)
+        var rows = entries
+            .Select(entry => new AutoInviteUserModel { Identifier = entry.Identifier, DisplayName = entry.DisplayName, StoreId = storeId })
+            .OrderBy(m => m.DisplayName)
             .ToList();
 
         var pagedRows = new PagedList<AutoInviteUserModel>(rows, searchModel.Page - 1, searchModel.PageSize);

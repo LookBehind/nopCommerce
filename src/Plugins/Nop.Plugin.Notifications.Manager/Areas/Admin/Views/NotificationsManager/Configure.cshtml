@@ -65,12 +65,13 @@
         </div>
         <div class="card-body">
             <p>
-                Telegram usernames listed here get added to every vendor group above (and every
-                future one). Removing a username sweeps them out of every group.
+                Telegram users listed here (by username or phone number) get added to every vendor
+                group above (and every future one). Removing someone sweeps them out of every group.
             </p>
             <div class="form-inline mb-3">
-                <input type="text" id="new-auto-invite-username" class="form-control mr-2" placeholder="@@username" />
+                <input type="text" id="new-auto-invite-identifier" class="form-control mr-2" placeholder="@@username or phone number" />
                 <button type="button" id="btn-add-auto-invite-user" class="btn btn-primary">Add</button>
+                <span id="auto-invite-add-status" class="ml-2"></span>
             </div>
             @await Html.PartialAsync("Table", new DataTablesModel
             {
@@ -81,11 +82,15 @@
                 LengthMenu = Model.AutoInviteUserSearchModel.AvailablePageSizes,
                 ColumnCollection = new List<ColumnProperty>
                 {
-                    new ColumnProperty(nameof(AutoInviteUserModel.Username))
+                    new ColumnProperty(nameof(AutoInviteUserModel.DisplayName))
                     {
-                        Title = "Username"
+                        Title = "Name"
                     },
-                    new ColumnProperty(nameof(AutoInviteUserModel.Username))
+                    new ColumnProperty(nameof(AutoInviteUserModel.Identifier))
+                    {
+                        Title = "Added via"
+                    },
+                    new ColumnProperty(nameof(AutoInviteUserModel.Identifier))
                     {
                         Title = "Remove",
                         Width = "100",
@@ -135,43 +140,65 @@
         });
     });
 
+    // Resolve-then-confirm: never adds to the list or joins any group until the admin has
+    // confirmed the resolved Telegram identity actually matches who they meant.
     $('#btn-add-auto-invite-user').on('click', function () {
-        var username = $('#new-auto-invite-username').val();
-        if (!username) return;
+        var identifier = $('#new-auto-invite-identifier').val();
+        if (!identifier) return;
+
+        $('#auto-invite-add-status').text('Resolving...');
 
         $.ajax({
-            url: '@Url.Action("AddAutoInviteUser", "NotificationsManager")',
+            url: '@Url.Action("ResolveAutoInviteCandidate", "NotificationsManager")',
             type: 'POST',
-            data: { username: username },
+            data: { identifier: identifier },
             headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
             success: function (result) {
-                if (result.success) {
-                    $('#new-auto-invite-username').val('');
-                    updateTable('#auto-invite-user-grid');
-                } else {
-                    alert(result.message || 'Failed to add user.');
+                $('#auto-invite-add-status').text('');
+
+                if (!result.found) {
+                    alert(result.message || 'Could not find a matching Telegram user.');
+                    return;
                 }
+
+                var confirmed = confirm('Found: ' + result.displayName + '. Add them to every vendor group?');
+                if (!confirmed) return;
+
+                $.ajax({
+                    url: '@Url.Action("AddAutoInviteUser", "NotificationsManager")',
+                    type: 'POST',
+                    data: { identifier: identifier },
+                    headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+                    success: function (result) {
+                        if (result.success) {
+                            $('#new-auto-invite-identifier').val('');
+                            updateTable('#auto-invite-user-grid');
+                        } else {
+                            alert(result.message || 'Failed to add user.');
+                        }
+                    }
+                });
             }
         });
     });
 
     function renderRemoveAutoInviteButton(data, type, row, meta) {
-        return '<button type="button" class="btn btn-sm btn-danger" onclick="removeAutoInviteUser(\'' + row.Username + '\')">Remove</button>';
+        return '<button type="button" class="btn btn-sm btn-danger" onclick="removeAutoInviteUser(\'' + row.Identifier + '\')">Remove</button>';
     }
 
-    function removeAutoInviteUser(username) {
+    function removeAutoInviteUser(identifier) {
         $.ajax({
             url: '@Url.Action("GetAutoInviteRemovalImpact", "NotificationsManager")',
             type: 'GET',
-            data: { username: username },
+            data: { identifier: identifier },
             success: function (result) {
-                var confirmed = confirm('This will remove @@' + username + ' from ' + result.groupCount + ' group(s). Continue?');
+                var confirmed = confirm('This will remove ' + identifier + ' from ' + result.groupCount + ' group(s). Continue?');
                 if (!confirmed) return;
 
                 $.ajax({
                     url: '@Url.Action("RemoveAutoInviteUser", "NotificationsManager")',
                     type: 'POST',
-                    data: { username: username },
+                    data: { identifier: identifier },
                     headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
                     success: function (result) {
                         if (result.success) {
