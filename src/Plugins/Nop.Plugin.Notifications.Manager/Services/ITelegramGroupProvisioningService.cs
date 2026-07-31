@@ -53,4 +53,10 @@ public interface ITelegramGroupProvisioningService
     /// show an accurate count in the admin removal-confirmation dialog.
     /// </summary>
     Task<int> GetGroupCountAsync(int storeId);
+
+    /// <summary>
+    /// Lists the MTProto account's own Telegram contacts, for an admin "pick from contacts" picker -
+    /// not a general Telegram-wide directory search (MTProto doesn't expose one).
+    /// </summary>
+    Task<IReadOnlyList<AutoInviteCandidate>> GetTelegramContactsAsync();
 }

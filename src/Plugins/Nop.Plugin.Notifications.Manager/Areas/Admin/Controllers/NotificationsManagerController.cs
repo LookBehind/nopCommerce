@@ -172,6 +172,31 @@ public class NotificationsManagerController : BaseAdminController
         return Json(new { found = candidate.Found, displayName = candidate.DisplayName, message = candidate.Error });
     }
 
+    /// <summary>
+    /// Lists lkbhnd's own Telegram contacts for the admin "pick from contacts" dropdown.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetTelegramContacts()
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        try
+        {
+            var contacts = await _provisioningService.GetTelegramContactsAsync();
+            return Json(new
+            {
+                success = true,
+                contacts = contacts.Select(c => new { identifier = c.Identifier, displayName = c.DisplayName })
+            });
+        }
+        catch (Exception e)
+        {
+            await _logger.ErrorAsync("Failed to list Telegram contacts", e);
+            return Json(new { success = false, message = e.Message });
+        }
+    }
+
     [HttpPost]
     public async Task<IActionResult> AddAutoInviteUser(string identifier)
     {

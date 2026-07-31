@@ -134,8 +134,14 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     /// </summary>
     private static bool LooksLikePhoneNumber(string identifier)
     {
-        var digitsOnly = new string(identifier.Where(char.IsDigit).ToArray());
-        return digitsOnly.Length >= 6 && digitsOnly.Length == identifier.Count(c => char.IsDigit(c) || c is '+' or ' ' or '-' or '(' or ')');
+        var digitCount = identifier.Count(char.IsDigit);
+        var allowedCharCount = identifier.Count(c => char.IsDigit(c) || c is '+' or ' ' or '-' or '(' or ')');
+
+        // Every character must be a digit or common phone punctuation (so it isn't a username),
+        // and there must be enough actual digits to plausibly be a phone number. Comparing against
+        // the identifier's own length (not the digit-only count) is what makes a leading '+' - or
+        // spaces/dashes - not break the match.
+        return digitCount >= 6 && allowedCharCount == identifier.Length;
     }
 
     /// <summary>
@@ -212,6 +218,33 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         }
     }
 
+    /// <summary>
+    /// Promotes an auto-invite user to admin in a group - only ever called on add, never on
+    /// removal (removal kicks them out entirely, nothing to demote). For a basic group this is an
+    /// all-or-nothing flag; for a supergroup/channel it's a specific set of rights, matching what
+    /// Telegram's own clients default to when you tap "promote to admin" (everything except
+    /// add_admins/anonymous/manage_ranks, which aren't appropriate to hand out automatically).
+    /// </summary>
+    private static async Task PromoteUserToAdminAsync(WTelegram.Client client, long chatId, InputUser user)
+    {
+        if (chatId <= SUPERGROUP_ID_THRESHOLD)
+        {
+            var channel = await ResolveInputChannelAsync(client, chatId);
+            var rights = new ChatAdminRights
+            {
+                flags = ChatAdminRights.Flags.change_info | ChatAdminRights.Flags.delete_messages |
+                        ChatAdminRights.Flags.ban_users | ChatAdminRights.Flags.invite_users |
+                        ChatAdminRights.Flags.pin_messages | ChatAdminRights.Flags.manage_call |
+                        ChatAdminRights.Flags.manage_topics
+            };
+            await client.Channels_EditAdmin(channel, user, rights, rank: null);
+        }
+        else
+        {
+            await client.Messages_EditChatAdmin(-chatId, user, is_admin: true);
+        }
+    }
+
     private async Task<List<AutoInviteEntry>> GetAutoInviteEntriesInternalAsync(int storeId)
     {
         var settings = await _settingService.LoadSettingAsync<NotificationManagerSettings>(storeId);
@@ -245,6 +278,32 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     {
         await _chatCache.EnsureLoadedAsync();
         return _chatCache.Snapshot.Count(kv => kv.Value.StoreId == storeId);
+    }
+
+    /// <summary>
+    /// Lists lkbhnd's own Telegram contacts (name + a resolvable identifier), for the admin "pick
+    /// from contacts" dropdown - not a general Telegram-wide directory search, which isn't something
+    /// MTProto exposes; only the account's own contact list is browsable like this.
+    /// </summary>
+    public async Task<IReadOnlyList<AutoInviteCandidate>> GetTelegramContactsAsync()
+    {
+        var client = await GetClientAsync();
+        var contacts = await client.Contacts_GetContacts(0);
+
+        return contacts.contacts
+            .Select(c => contacts.users.TryGetValue(c.user_id, out var user) ? user : null)
+            .Where(user => user != null)
+            .Select(user =>
+            {
+                var identifier = user.MainUsername != null ? $"@{user.MainUsername}"
+                    : !string.IsNullOrEmpty(user.phone) ? $"+{user.phone}"
+                    : null;
+                return (user, identifier);
+            })
+            .Where(x => x.identifier != null)
+            .Select(x => new AutoInviteCandidate(true, x.identifier, BuildDisplayName(x.user, x.identifier), x.user.id, null))
+            .OrderBy(c => c.DisplayName)
+            .ToList();
     }
 
     public async Task<AutoInviteCandidate> ResolveAutoInviteCandidateAsync(string identifier)
@@ -305,6 +364,10 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             try
             {
                 await AddUserToChatAsync(client, chatId, inputUser);
+
+                // Admin promotion is add-only by design - removal just kicks them, no demote step.
+                try { await PromoteUserToAdminAsync(client, chatId, inputUser); }
+                catch (Exception e) { await _logger.ErrorAsync($"Failed to promote auto-invite user '{displayName}' to admin in chat {chatId}", e); }
             }
             catch (Exception e)
             {
@@ -390,6 +453,7 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             var botInputUser = await GetBotInputUserAsync(client);
 
             var members = new List<InputUserBase> { botInputUser };
+            var autoInviteMembers = new List<InputUser>();
             foreach (var entry in await GetAutoInviteEntriesInternalAsync(storeId))
             {
                 try
@@ -402,7 +466,9 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
                         continue;
                     }
 
-                    members.Add(new InputUser(autoInviteUser.id, autoInviteUser.access_hash));
+                    var inputUser = new InputUser(autoInviteUser.id, autoInviteUser.access_hash);
+                    members.Add(inputUser);
+                    autoInviteMembers.Add(inputUser);
                 }
                 catch (Exception e)
                 {
@@ -425,6 +491,14 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
 
             await _chatCache.SaveVendorChatMappingAsync(vendor, storeId, chatId);
             await _chatCache.SaveVendorChatTitleAsync(vendor, storeId, title);
+
+            // Auto-invite users get admin rights on the groups they're added to - the bot itself
+            // does not, it only ever needs to send messages.
+            foreach (var inputUser in autoInviteMembers)
+            {
+                try { await PromoteUserToAdminAsync(client, chatId.ChatId, inputUser); }
+                catch (Exception e) { await _logger.ErrorAsync($"Failed to promote auto-invite user to admin in new group '{title}'", e); }
+            }
 
             await _telegramBotClient.SendMessage(chatId: chatId.ChatId,
                 text: $"This group was auto-created for vendor \"{vendor.Name}\" ({store.Name}). " +

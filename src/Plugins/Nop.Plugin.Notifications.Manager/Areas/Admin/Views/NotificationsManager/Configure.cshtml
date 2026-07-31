@@ -66,9 +66,13 @@
         <div class="card-body">
             <p>
                 Telegram users listed here (by username or phone number) get added to every vendor
-                group above (and every future one). Removing someone sweeps them out of every group.
+                group above (and every future one) as a group admin. Removing someone sweeps them
+                out of every group.
             </p>
             <div class="form-inline mb-3">
+                <select id="auto-invite-contact-picker" class="form-control mr-2">
+                    <option value="">-- pick from contacts --</option>
+                </select>
                 <input type="text" id="new-auto-invite-identifier" class="form-control mr-2" placeholder="@@username or phone number" />
                 <button type="button" id="btn-add-auto-invite-user" class="btn btn-primary">Add</button>
                 <span id="auto-invite-add-status" class="ml-2"></span>
@@ -105,6 +109,28 @@
 
 <script>
     var notificationsManagerStoreId = @Model.VendorTelegramChatSearchModel.StoreId;
+
+    // Populate the "pick from contacts" dropdown from lkbhnd's own Telegram contact list - not a
+    // general Telegram-wide search, MTProto doesn't expose one.
+    $.ajax({
+        url: '@Url.Action("GetTelegramContacts", "NotificationsManager")',
+        type: 'GET',
+        success: function (result) {
+            if (!result.success) return;
+
+            var $picker = $('#auto-invite-contact-picker');
+            result.contacts.forEach(function (c) {
+                $picker.append($('<option>', { value: c.identifier, text: c.displayName + ' (' + c.identifier + ')' }));
+            });
+        }
+    });
+
+    $('#auto-invite-contact-picker').on('change', function () {
+        var selected = $(this).val();
+        if (selected) {
+            $('#new-auto-invite-identifier').val(selected);
+        }
+    });
 
     function renderChatStatus(data, type, row, meta) {
         if (!row.IsMissing) {
@@ -176,8 +202,15 @@
                         } else {
                             alert(result.message || 'Failed to add user.');
                         }
+                    },
+                    error: function (xhr) {
+                        alert('Request failed (' + xhr.status + '). Check the logs.');
                     }
                 });
+            },
+            error: function (xhr) {
+                $('#auto-invite-add-status').text('');
+                alert('Request failed (' + xhr.status + '). Check the logs.');
             }
         });
     });

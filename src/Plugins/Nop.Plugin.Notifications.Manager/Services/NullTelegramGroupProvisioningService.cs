@@ -34,4 +34,7 @@ public class NullTelegramGroupProvisioningService : ITelegramGroupProvisioningSe
 
     public Task<int> GetGroupCountAsync(int storeId) =>
         throw new NotImplementedException(ERROR_MESSAGE);
+
+    public Task<IReadOnlyList<AutoInviteCandidate>> GetTelegramContactsAsync() =>
+        throw new NotImplementedException(ERROR_MESSAGE);
 }
