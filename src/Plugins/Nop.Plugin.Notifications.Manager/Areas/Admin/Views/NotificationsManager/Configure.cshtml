@@ -194,7 +194,6 @@
             }
         });
     }
-    loadVendorChatFixStatus();
 
     function fixVendorChatTopics(vendorId) {
         var item = window.vendorChatFixStatus && window.vendorChatFixStatus[vendorId];
@@ -376,7 +375,6 @@
             }
         });
     }
-    loadAutoInviteMembershipStatus();
 
     // Actually checks membership against Telegram - one paced (~1.5s) call per real group. Too slow
     // to await inline (a prod run of this 524'd through Cloudflare), so it only runs as a background
@@ -455,5 +453,21 @@
             }
         });
     }
+
+    // Both of these call updateTable(), which just grabs the already-initialized DataTable API
+    // (Table.cshtml's own $(document).ready is what actually calls .DataTable(options) for each
+    // grid) - deferred to $(document).ready here too so they can never run first. They used to be
+    // plain top-level calls that fired the moment this script block was parsed (before
+    // DOMContentLoaded), which raced Table.cshtml's initialization: if an AJAX response came back
+    // fast enough (confirmed with the now-cache-only auto-invite membership check), updateTable's
+    // bare .DataTable() call would default-initialize the grid early, and Table.cshtml's real
+    // .DataTable({...}) call moments later would then throw "Cannot reinitialise DataTable" (and a
+    // follow-on "aDataSort" crash from the resulting mismatched internal column state). Registering
+    // both here (after Table.cshtml's own ready handlers, which are emitted earlier in the page) is
+    // enough - jQuery runs ready handlers in registration order.
+    $(function () {
+        loadVendorChatFixStatus();
+        loadAutoInviteMembershipStatus();
+    });
 </script>
 <form style="display:none">@Html.AntiForgeryToken()</form>
