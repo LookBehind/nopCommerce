@@ -169,18 +169,32 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     /// Resolves a "@username" or a phone number to a Telegram <see cref="User"/> (access_hash
     /// included), or null if Telegram has no match / the target's privacy settings block discovery.
     /// Phone-number resolution goes through Contacts_ImportContacts (the only MTProto path that
-    /// starts from a phone number) and leaves them as a contact on the lkbhnd account afterward -
-    /// this used to delete them again immediately as "cleanup", but that bought nothing (adding
-    /// someone to a group never required them to be a contact in the first place) while causing real
-    /// harm: this method re-runs on every Check/Fix for every phone-based auto-invite entry, so the
-    /// unconditional delete wiped out real, pre-existing contacts of the lkbhnd account whenever a
-    /// phone number happened to already be a genuine contact - confirmed live, not hypothetical.
+    /// starts from a phone number) - the only way to actually run it: not a passive lookup, it's a
+    /// write that sets the phone as a contact using whatever first_name/last_name it's given.
+    /// Previously it always ran with a fake "MySnacks"/"AutoInvite" name and unconditionally deleted
+    /// the contact afterward as "cleanup" - both bought nothing (a group invite never required
+    /// contact status) while causing real harm on every Check/Fix re-run for every phone-based
+    /// entry: it wiped out real, pre-existing contacts once (fixed), then it turned out the import
+    /// itself also silently RENAMED real, pre-existing contacts to "MySnacks AutoInvite" (Telegram
+    /// overwrites a contact's stored name to match the import call, even for someone already a
+    /// contact) - confirmed live both times, not hypothetical. So this now checks the existing
+    /// contact list first and only imports (with the placeholder name, harmless for someone with no
+    /// prior name to clobber) when the phone genuinely isn't a contact yet.
     /// </summary>
     private static async Task<User> ResolveUserAsync(WTelegram.Client client, string identifier)
     {
         if (LooksLikePhoneNumber(identifier))
         {
             var phone = identifier.StartsWith('+') ? identifier : $"+{identifier}";
+            var normalizedPhone = phone.TrimStart('+');
+
+            var existingContacts = await client.Contacts_GetContacts(0);
+            var alreadyContact = existingContacts.contacts
+                .Select(c => existingContacts.users.TryGetValue(c.user_id, out var u) ? u : null)
+                .FirstOrDefault(u => u != null && u.phone == normalizedPhone);
+            if (alreadyContact != null)
+                return alreadyContact;
+
             var contact = new InputPhoneContact { client_id = 1, phone = phone, first_name = "MySnacks", last_name = "AutoInvite" };
             var imported = await client.Contacts_ImportContacts(new[] { contact });
 
