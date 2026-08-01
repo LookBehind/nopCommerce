@@ -203,9 +203,10 @@ public class NotificationsManagerController : BaseAdminController
     }
 
     /// <summary>
-    /// Actual current group membership for every configured auto-invite user - reveals drift (kicked
-    /// by mistake, left, etc.) the stored list alone can't show. One membership fetch per real group,
-    /// reused across every user, not one call per (user, group) pair.
+    /// Last computed group membership for every configured auto-invite user - reads an in-memory
+    /// cache only (never talks to Telegram itself), so it's always fast. Call
+    /// <see cref="RefreshAutoInviteMembershipStatus"/> first (or again) to get fresher data - the two
+    /// are separate actions specifically so this one can never 524.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetAutoInviteMembershipStatus()
@@ -235,11 +236,41 @@ public class NotificationsManagerController : BaseAdminController
         }
         catch (Exception e)
         {
-            await _logger.ErrorAsync("Failed to check auto-invite membership status", e);
+            await _logger.ErrorAsync("Failed to read auto-invite membership status", e);
             return Json(new { success = false, message = e.Message });
         }
     }
 
+    /// <summary>
+    /// Actually checks every configured auto-invite user's current membership across every real,
+    /// mapped vendor group - one membership fetch per group, paced ~1.5s apart (Telegram's flood
+    /// control). For any real number of groups this is too slow to await inline in a request (a
+    /// prod run of this 524'd through Cloudflare before this was split out), so it only ever runs as
+    /// a background job; poll <see cref="GetAutoInviteMembershipStatus"/> afterward for the result.
+    /// </summary>
+    [HttpPost]
+    public async Task<IActionResult> RefreshAutoInviteMembershipStatus()
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        var backgroundJobClient = _serviceProvider.GetRequiredService<IBackgroundJobClient>();
+        backgroundJobClient.Enqueue<ITelegramGroupProvisioningService>(
+            s => s.RefreshAutoInviteMembershipStatusAsync(storeId));
+
+        return Json(new { success = true });
+    }
+
+    /// <summary>
+    /// Re-adds (and re-promotes) an auto-invite user to every real group they're currently missing
+    /// from - same per-chat pacing as <see cref="RefreshAutoInviteMembershipStatus"/> and same
+    /// reason it only ever runs as a background job rather than being awaited inline.
+    /// </summary>
     [HttpPost]
     public async Task<IActionResult> FixAutoInviteUserMembership(string identifier)
     {
@@ -251,16 +282,11 @@ public class NotificationsManagerController : BaseAdminController
 
         var storeId = await GetActiveStoreIdAsync();
 
-        try
-        {
-            var fixedCount = await _provisioningService.FixAutoInviteUserMembershipAsync(storeId, identifier);
-            return Json(new { success = true, fixedCount });
-        }
-        catch (Exception e)
-        {
-            await _logger.ErrorAsync($"Failed to fix auto-invite membership for '{identifier}'", e);
-            return Json(new { success = false, message = e.Message });
-        }
+        var backgroundJobClient = _serviceProvider.GetRequiredService<IBackgroundJobClient>();
+        backgroundJobClient.Enqueue<ITelegramGroupProvisioningService>(
+            s => s.FixAutoInviteUserMembershipAsync(storeId, identifier));
+
+        return Json(new { success = true });
     }
 
     [HttpPost]

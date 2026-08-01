@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -34,6 +35,12 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     private static readonly SemaphoreSlim _clientInitLock = new(1, 1);
     private static WTelegram.Client _client;
     private static InputUser _cachedBotInputUser;
+
+    // Last computed auto-invite membership status per store - checking membership is a paced,
+    // multi-second-per-chat Telegram sweep (see RefreshAutoInviteMembershipStatusAsync) that's too
+    // slow to run inline in an HTTP request (confirmed live: it 524'd through Cloudflare), so it only
+    // ever runs as a background job and writes here; GetAutoInviteMembershipStatusAsync just reads it.
+    private static readonly ConcurrentDictionary<int, IReadOnlyList<AutoInviteMembershipStatus>> _membershipStatusCache = new();
 
     private readonly IVendorService _vendorService;
     private readonly IStoreService _storeService;
@@ -796,11 +803,20 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         }
     }
 
-    public async Task<IReadOnlyList<AutoInviteMembershipStatus>> GetAutoInviteMembershipStatusAsync(int storeId)
+    public Task<IReadOnlyList<AutoInviteMembershipStatus>> GetAutoInviteMembershipStatusAsync(int storeId) =>
+        Task.FromResult(_membershipStatusCache.TryGetValue(storeId, out var cached)
+            ? cached
+            : (IReadOnlyList<AutoInviteMembershipStatus>)Array.Empty<AutoInviteMembershipStatus>());
+
+    [AutomaticRetry(Attempts = 1)]
+    public async Task RefreshAutoInviteMembershipStatusAsync(int storeId)
     {
         var entries = await GetAutoInviteEntriesInternalAsync(storeId);
         if (entries.Count == 0)
-            return Array.Empty<AutoInviteMembershipStatus>();
+        {
+            _membershipStatusCache[storeId] = Array.Empty<AutoInviteMembershipStatus>();
+            return;
+        }
 
         var client = await GetClientAsync();
 
@@ -862,24 +878,25 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             }
         }
 
-        return results;
+        _membershipStatusCache[storeId] = results;
     }
 
-    public async Task<int> FixAutoInviteUserMembershipAsync(int storeId, string identifier)
+    [AutomaticRetry(Attempts = 1)]
+    public async Task FixAutoInviteUserMembershipAsync(int storeId, string identifier)
     {
         identifier = identifier.Trim();
 
         var entries = await GetAutoInviteEntriesInternalAsync(storeId);
         var match = entries.FirstOrDefault(e => string.Equals(e.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
         if (match == null)
-            return 0;
+            return;
 
         var client = await GetClientAsync();
         var user = await ResolveUserAsync(client, match.Identifier);
         if (user == null)
         {
             await _logger.ErrorAsync($"Could not re-resolve '{match.DisplayName}' ({match.Identifier}) to fix their group membership");
-            return 0;
+            return;
         }
 
         var inputUser = new InputUser(user.id, user.access_hash);
@@ -891,7 +908,7 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         var isFirstChat = true;
         foreach (var kv in mappedForStore)
         {
-            // Same flood-control pacing as GetAutoInviteMembershipStatusAsync - one
+            // Same flood-control pacing as RefreshAutoInviteMembershipStatusAsync - one
             // Channels_GetParticipants/Messages_GetFullChat call per chat trips Telegram's burst
             // limit almost immediately with no delay between them.
             if (!isFirstChat)
@@ -920,6 +937,6 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             }
         }
 
-        return fixedCount;
+        await _logger.InformationAsync($"Fixed membership for '{match.DisplayName}' in {fixedCount} group(s)");
     }
 }

@@ -92,17 +92,29 @@ public interface ITelegramGroupProvisioningService
     Task FixAllVendorChatTopicsAsync(int storeId);
 
     /// <summary>
-    /// Checks every configured auto-invite user's actual current membership across every real,
-    /// mapped vendor group in this store - one membership fetch per group (not per user), reused for
-    /// everyone. Reveals drift the stored auto-invite list alone can't (kicked by mistake, left, etc).
+    /// Last computed result of <see cref="RefreshAutoInviteMembershipStatusAsync"/> for this store -
+    /// reads an in-memory cache only, never talks to Telegram itself, so it's always fast regardless
+    /// of how many groups exist. Empty (not null) if a refresh has never run in this process.
     /// </summary>
     Task<IReadOnlyList<AutoInviteMembershipStatus>> GetAutoInviteMembershipStatusAsync(int storeId);
 
     /// <summary>
+    /// Actually checks every configured auto-invite user's current membership across every real,
+    /// mapped vendor group in this store - one membership fetch per group (not per user), paced ~1.5s
+    /// apart to stay under Telegram's flood-control burst limit (confirmed live: unpaced calls
+    /// tripped repeated FLOOD_WAIT_30s and the resulting multi-minute request 524'd through
+    /// Cloudflare). Meant to be run as a background job (see the admin controller's use of
+    /// <c>IBackgroundJobClient</c>), not awaited inline in a request - caches its result for
+    /// <see cref="GetAutoInviteMembershipStatusAsync"/> to read.
+    /// </summary>
+    Task RefreshAutoInviteMembershipStatusAsync(int storeId);
+
+    /// <summary>
     /// Re-adds (and re-promotes to admin) an auto-invite user to every real vendor group in this
     /// store they're currently missing from - a targeted repair for exactly the gap
-    /// <see cref="GetAutoInviteMembershipStatusAsync"/> found, not a full re-sweep. Returns how many
-    /// groups they were actually missing from (and were just fixed).
+    /// <see cref="GetAutoInviteMembershipStatusAsync"/> found, not a full re-sweep. Same per-chat
+    /// pacing as <see cref="RefreshAutoInviteMembershipStatusAsync"/> and meant to be run the same
+    /// way, as a background job rather than awaited inline.
     /// </summary>
-    Task<int> FixAutoInviteUserMembershipAsync(int storeId, string identifier);
+    Task FixAutoInviteUserMembershipAsync(int storeId, string identifier);
 }

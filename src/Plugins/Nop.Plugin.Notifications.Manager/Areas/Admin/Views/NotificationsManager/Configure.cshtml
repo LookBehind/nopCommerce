@@ -359,28 +359,45 @@
         });
     }
 
-    // Loaded once on page open (cheap when the list is empty, which it usually is) and on demand via
-    // Deliberately NOT auto-run on page load, unlike loadVendorChatFixStatus above - checking
-    // membership costs one real Telegram API call per mapped group (paced ~1.5s apart to stay under
-    // Telegram's flood-control burst limit, confirmed the hard way: no pacing tripped repeated
-    // FLOOD_WAIT_30 errors and turned a page load into several minutes of appearing to hang), so this
-    // only runs when an admin explicitly asks for it via the button below.
+    // Reads the last computed membership status (an in-memory cache the server keeps, never a live
+    // Telegram call) - safe to run on page load and as often as we like, since it can never be slow.
     function loadAutoInviteMembershipStatus() {
         window.autoInviteMembershipStatus = window.autoInviteMembershipStatus || {};
-        $('#btn-check-membership').prop('disabled', true).text('Checking… (paced ~1.5s per group, can take a while)');
         $.ajax({
             url: '@Url.Action("GetAutoInviteMembershipStatus", "NotificationsManager")',
             type: 'GET',
             success: function (result) {
-                if (!result.success) {
-                    alert(result.message || 'Failed to check membership.');
-                    return;
-                }
+                if (!result.success) return;
                 window.autoInviteMembershipStatus = {};
                 result.statuses.forEach(function (s) {
                     window.autoInviteMembershipStatus[s.identifier] = s;
                 });
                 updateTable('#auto-invite-user-grid');
+            }
+        });
+    }
+    loadAutoInviteMembershipStatus();
+
+    // Actually checks membership against Telegram - one paced (~1.5s) call per real group. Too slow
+    // to await inline (a prod run of this 524'd through Cloudflare), so it only runs as a background
+    // job: this just enqueues it and polls the (fast, cache-only) load above a few times afterward.
+    function refreshAutoInviteMembershipStatus() {
+        $('#btn-check-membership').prop('disabled', true).text('Checking in the background…');
+        $.ajax({
+            url: '@Url.Action("RefreshAutoInviteMembershipStatus", "NotificationsManager")',
+            type: 'POST',
+            headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+            success: function (result) {
+                if (!result.success) {
+                    alert(result.message || 'Failed to start the membership check.');
+                    return;
+                }
+                // Best-effort auto-refresh of the display a few times as the background job (paced
+                // ~1.5s per real group) works through the list - the admin can also just click the
+                // button again anytime to load whatever's ready so far.
+                [10000, 25000, 45000].forEach(function (delayMs) {
+                    setTimeout(loadAutoInviteMembershipStatus, delayMs);
+                });
             },
             error: function () {
                 alert('Request failed, check the logs.');
@@ -391,7 +408,7 @@
         });
     }
 
-    $('#btn-check-membership').on('click', loadAutoInviteMembershipStatus);
+    $('#btn-check-membership').on('click', refreshAutoInviteMembershipStatus);
 
     function renderAutoInviteMembership(data, type, row, meta) {
         var status = window.autoInviteMembershipStatus && window.autoInviteMembershipStatus[row.Identifier];
@@ -428,8 +445,7 @@
             headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
             success: function (result) {
                 if (result.success) {
-                    delete window.autoInviteMembershipStatus[identifier];
-                    loadAutoInviteMembershipStatus();
+                    alert('Fix enqueued - it runs in the background (paced ~1.5s per group), click "Check group membership" again shortly to confirm.');
                 } else {
                     alert(result.message || 'Failed to fix membership.');
                 }
