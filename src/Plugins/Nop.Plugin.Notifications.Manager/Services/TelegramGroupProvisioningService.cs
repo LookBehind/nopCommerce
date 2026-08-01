@@ -808,10 +808,20 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         var mappedForStore = _chatCache.Snapshot.Where(kv => kv.Value.StoreId == storeId).ToList();
 
         // One membership fetch per real chat, reused across every auto-invite user below - not one
-        // per (user, chat) pair.
+        // per (user, chat) pair. Still one Channels_GetParticipants/Messages_GetFullChat call per
+        // chat though, and Telegram's flood control on those methods triggers almost immediately
+        // once fired back-to-back with no pacing (confirmed in prod: a burst of ~15 calls produced
+        // repeated FLOOD_WAIT_30 errors that WTelegramClient silently waits out and retries, turning
+        // one page load into several minutes of the browser just sitting there). A small delay
+        // between chats keeps this under Telegram's burst threshold instead of tripping it.
         var memberIdsByChat = new Dictionary<long, HashSet<long>>();
+        var isFirstChat = true;
         foreach (var chatId in mappedForStore.Select(kv => kv.Key.ChatId).Distinct())
         {
+            if (!isFirstChat)
+                await Task.Delay(1500);
+            isFirstChat = false;
+
             try
             {
                 memberIdsByChat[chatId] = await GetChatMemberUserIdsAsync(client, chatId);
@@ -878,8 +888,16 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         var mappedForStore = _chatCache.Snapshot.Where(kv => kv.Value.StoreId == storeId).ToList();
 
         var fixedCount = 0;
+        var isFirstChat = true;
         foreach (var kv in mappedForStore)
         {
+            // Same flood-control pacing as GetAutoInviteMembershipStatusAsync - one
+            // Channels_GetParticipants/Messages_GetFullChat call per chat trips Telegram's burst
+            // limit almost immediately with no delay between them.
+            if (!isFirstChat)
+                await Task.Delay(1500);
+            isFirstChat = false;
+
             try
             {
                 var members = await GetChatMemberUserIdsAsync(client, kv.Key.ChatId);

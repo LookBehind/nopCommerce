@@ -360,24 +360,36 @@
     }
 
     // Loaded once on page open (cheap when the list is empty, which it usually is) and on demand via
-    // "Check group membership" - populates window.autoInviteMembershipStatus so
-    // renderAutoInviteMembership / fixAutoInviteMembership read from it without extra round trips.
+    // Deliberately NOT auto-run on page load, unlike loadVendorChatFixStatus above - checking
+    // membership costs one real Telegram API call per mapped group (paced ~1.5s apart to stay under
+    // Telegram's flood-control burst limit, confirmed the hard way: no pacing tripped repeated
+    // FLOOD_WAIT_30 errors and turned a page load into several minutes of appearing to hang), so this
+    // only runs when an admin explicitly asks for it via the button below.
     function loadAutoInviteMembershipStatus() {
         window.autoInviteMembershipStatus = window.autoInviteMembershipStatus || {};
+        $('#btn-check-membership').prop('disabled', true).text('Checking… (paced ~1.5s per group, can take a while)');
         $.ajax({
             url: '@Url.Action("GetAutoInviteMembershipStatus", "NotificationsManager")',
             type: 'GET',
             success: function (result) {
-                if (!result.success) return;
+                if (!result.success) {
+                    alert(result.message || 'Failed to check membership.');
+                    return;
+                }
                 window.autoInviteMembershipStatus = {};
                 result.statuses.forEach(function (s) {
                     window.autoInviteMembershipStatus[s.identifier] = s;
                 });
                 updateTable('#auto-invite-user-grid');
+            },
+            error: function () {
+                alert('Request failed, check the logs.');
+            },
+            complete: function () {
+                $('#btn-check-membership').prop('disabled', false).text('Check group membership');
             }
         });
     }
-    loadAutoInviteMembershipStatus();
 
     $('#btn-check-membership').on('click', loadAutoInviteMembershipStatus);
 
