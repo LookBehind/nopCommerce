@@ -162,9 +162,12 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     /// Resolves a "@username" or a phone number to a Telegram <see cref="User"/> (access_hash
     /// included), or null if Telegram has no match / the target's privacy settings block discovery.
     /// Phone-number resolution goes through Contacts_ImportContacts (the only MTProto path that
-    /// starts from a phone number), and the temporary contact it creates on the lkbhnd account is
-    /// deleted again immediately after - this shouldn't leave every invited person as a permanent
-    /// contact of the ops account.
+    /// starts from a phone number) and leaves them as a contact on the lkbhnd account afterward -
+    /// this used to delete them again immediately as "cleanup", but that bought nothing (adding
+    /// someone to a group never required them to be a contact in the first place) while causing real
+    /// harm: this method re-runs on every Check/Fix for every phone-based auto-invite entry, so the
+    /// unconditional delete wiped out real, pre-existing contacts of the lkbhnd account whenever a
+    /// phone number happened to already be a genuine contact - confirmed live, not hypothetical.
     /// </summary>
     private static async Task<User> ResolveUserAsync(WTelegram.Client client, string identifier)
     {
@@ -177,14 +180,6 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             User user = null;
             if (imported.imported.Length > 0)
                 imported.users.TryGetValue(imported.imported[0].user_id, out user);
-
-            if (user != null)
-            {
-                // Best-effort cleanup - a failure here shouldn't fail the resolution itself. Uses the
-                // real access_hash we just received, not a guessed/zero one.
-                try { await client.Contacts_DeleteContacts(new InputUserBase[] { new InputUser(user.id, user.access_hash) }); }
-                catch { /* ignore */ }
-            }
 
             return user;
         }
