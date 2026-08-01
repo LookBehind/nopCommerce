@@ -230,7 +230,7 @@ public class NotificationsManagerController : BaseAdminController
                     identifier = s.Identifier,
                     displayName = s.DisplayName,
                     found = s.Found,
-                    missingChatTitles = s.MissingFromChatTitles
+                    missingChatTitles = s.MissingFrom.Select(m => m.ChatTitle)
                 })
             });
         }

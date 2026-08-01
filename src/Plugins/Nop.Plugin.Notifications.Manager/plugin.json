@@ -2,7 +2,7 @@
   "Group": "Notifications Manager",
   "FriendlyName": "Notifications Manager",
   "SystemName": "NotificationsManager",
-  "Version": "1.18",
+  "Version": "1.19",
   "SupportedVersions": [ "4.30", "4.40", "4.50" ],
   "Author": "Edgar Isajanyan",
   "DisplayOrder": 1,

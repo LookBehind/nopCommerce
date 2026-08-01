@@ -20,6 +20,13 @@ public record AutoInviteEntry(string Identifier, string DisplayName, long Telegr
 public record AutoInviteCandidate(bool Found, string Identifier, string DisplayName, long TelegramUserId, string Error);
 
 /// <summary>
+/// A real, mapped vendor group this person is currently missing from - both the id (for
+/// <see cref="ITelegramGroupProvisioningService.FixAutoInviteUserMembershipAsync"/> to act on
+/// directly, without re-checking membership from scratch) and the title (for display).
+/// </summary>
+public record MissingChatEntry(long ChatId, string ChatTitle);
+
+/// <summary>
 /// Whether a configured auto-invite user is actually a current member of every real, mapped vendor
 /// group in a store right now - catches drift (e.g. someone kicked by mistake, like the 2026-08-01
 /// incident where an unrelated cleanup accidentally swept 2 real people out of real vendor groups)
@@ -27,6 +34,6 @@ public record AutoInviteCandidate(bool Found, string Identifier, string DisplayN
 /// </summary>
 /// <param name="Found">False if the identifier no longer resolves to a Telegram user at all - a
 /// distinct, worse case than just being missing from some groups.</param>
-/// <param name="MissingFromChatTitles">Real vendor group titles this person is not currently a
-/// member of, empty if they're in every group.</param>
-public record AutoInviteMembershipStatus(string Identifier, string DisplayName, bool Found, IReadOnlyList<string> MissingFromChatTitles);
+/// <param name="MissingFrom">Real vendor groups this person is not currently a member of, empty if
+/// they're in every group.</param>
+public record AutoInviteMembershipStatus(string Identifier, string DisplayName, bool Found, IReadOnlyList<MissingChatEntry> MissingFrom);

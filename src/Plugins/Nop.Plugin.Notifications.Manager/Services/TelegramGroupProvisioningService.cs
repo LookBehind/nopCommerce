@@ -851,21 +851,21 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
                 var user = await ResolveUserAsync(client, entry.Identifier);
                 if (user == null)
                 {
-                    results.Add(new AutoInviteMembershipStatus(entry.Identifier, entry.DisplayName, false, Array.Empty<string>()));
+                    results.Add(new AutoInviteMembershipStatus(entry.Identifier, entry.DisplayName, false, Array.Empty<MissingChatEntry>()));
                     continue;
                 }
 
-                var missingChatTitles = new List<string>();
+                var missingFrom = new List<MissingChatEntry>();
                 foreach (var kv in mappedForStore)
                 {
                     if (memberIdsByChat.TryGetValue(kv.Key.ChatId, out var members) && !members.Contains(user.id))
                     {
                         var title = await _chatCache.GetVendorChatTitleAsync(kv.Value.Vendor, storeId) ?? kv.Value.Vendor.Name;
-                        missingChatTitles.Add(title);
+                        missingFrom.Add(new MissingChatEntry(kv.Key.ChatId, title));
                     }
                 }
 
-                results.Add(new AutoInviteMembershipStatus(entry.Identifier, entry.DisplayName, true, missingChatTitles));
+                results.Add(new AutoInviteMembershipStatus(entry.Identifier, entry.DisplayName, true, missingFrom));
             }
             catch (Exception e)
             {
@@ -881,57 +881,68 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     {
         identifier = identifier.Trim();
 
-        var entries = await GetAutoInviteEntriesInternalAsync(storeId);
-        var match = entries.FirstOrDefault(e => string.Equals(e.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
-        if (match == null)
+        // Acts directly on the gap RefreshAutoInviteMembershipStatusAsync already found and cached -
+        // no point re-checking membership for every chat again, we already know exactly which ones
+        // this person is missing from. Requires a Check to have run first (the admin UI only shows a
+        // Fix button once it has); if the cache is empty or stale enough that this entry isn't in it,
+        // there's nothing safe to act on without a fresh Check.
+        if (!_membershipStatusCache.TryGetValue(storeId, out var statuses))
+        {
+            await _logger.ErrorAsync(
+                $"Cannot fix membership for '{identifier}': no cached membership status for store {storeId} - run 'Check group membership' first");
+            return;
+        }
+
+        var status = statuses.FirstOrDefault(s => string.Equals(s.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
+        if (status == null || status.MissingFrom.Count == 0)
             return;
 
         var client = await GetClientAsync();
-        var user = await ResolveUserAsync(client, match.Identifier);
+        var user = await ResolveUserAsync(client, identifier);
         if (user == null)
         {
-            await _logger.ErrorAsync($"Could not re-resolve '{match.DisplayName}' ({match.Identifier}) to fix their group membership");
+            await _logger.ErrorAsync($"Could not re-resolve '{status.DisplayName}' ({identifier}) to fix their group membership");
             return;
         }
 
         var inputUser = new InputUser(user.id, user.access_hash);
 
-        await _chatCache.EnsureLoadedAsync();
-        var mappedForStore = _chatCache.Snapshot.Where(kv => kv.Value.StoreId == storeId).ToList();
-
         var fixedCount = 0;
         var isFirstChat = true;
-        foreach (var kv in mappedForStore)
+        foreach (var missing in status.MissingFrom)
         {
-            // Same flood-control pacing as RefreshAutoInviteMembershipStatusAsync - one
-            // Channels_GetParticipants/Messages_GetFullChat call per chat trips Telegram's burst
-            // limit almost immediately with no delay between them.
+            // Pacing between the add/promote calls themselves - lighter risk than the membership
+            // fetches this skips entirely, but still real Telegram traffic per chat.
             if (!isFirstChat)
                 await Task.Delay(1500);
             isFirstChat = false;
 
             try
             {
-                var members = await GetChatMemberUserIdsAsync(client, kv.Key.ChatId);
-                if (members.Contains(user.id))
-                    continue;
-
-                await AddUserToChatAsync(client, kv.Key.ChatId, inputUser);
-                try { await PromoteUserToAdminAsync(client, kv.Key.ChatId, inputUser); }
+                await AddUserToChatAsync(client, missing.ChatId, inputUser);
+                try { await PromoteUserToAdminAsync(client, missing.ChatId, inputUser); }
                 catch (Exception e)
                 {
                     await _logger.ErrorAsync(
-                        $"Failed to re-promote '{match.DisplayName}' to admin after re-adding them to chat {kv.Key.ChatId}", e);
+                        $"Failed to re-promote '{status.DisplayName}' to admin after re-adding them to chat {missing.ChatId}", e);
                 }
 
                 fixedCount++;
             }
             catch (Exception e)
             {
-                await _logger.ErrorAsync($"Failed to fix membership for '{match.DisplayName}' in chat {kv.Key.ChatId}", e);
+                await _logger.ErrorAsync($"Failed to fix membership for '{status.DisplayName}' in chat {missing.ChatId}", e);
             }
         }
 
-        await _logger.InformationAsync($"Fixed membership for '{match.DisplayName}' in {fixedCount} group(s)");
+        await _logger.InformationAsync($"Fixed membership for '{status.DisplayName}' in {fixedCount} group(s)");
+
+        // Reflect the fix immediately in the cache rather than waiting for the next full Check -
+        // the entries just added shouldn't still show as "missing" until an admin re-checks.
+        _membershipStatusCache[storeId] = statuses
+            .Select(s => s.Identifier == status.Identifier
+                ? s with { MissingFrom = Array.Empty<MissingChatEntry>() }
+                : s)
+            .ToList();
     }
 }
