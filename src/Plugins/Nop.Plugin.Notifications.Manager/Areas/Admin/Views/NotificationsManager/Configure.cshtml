@@ -380,7 +380,28 @@
     // to await inline (a prod run of this 524'd through Cloudflare), so it only runs as a background
     // job: this just enqueues it and polls the (fast, cache-only) load above a few times afterward.
     function refreshAutoInviteMembershipStatus() {
-        $('#btn-check-membership').prop('disabled', true).text('Checking in the background…');
+        // A real run can take several minutes for many groups (confirmed live on prod with 19 real
+        // groups: ~30-45s expected, but 4+ minutes when overlapping clicks piled up concurrent runs -
+        // now guarded server-side, but even a single well-behaved run isn't fast). Keep the button
+        // disabled and polling for the whole realistic window rather than reverting right after the
+        // enqueue POST returns (which is near-instant and used to make this look like it did nothing).
+        var pollDelaysMs = [15000, 30000, 60000, 120000, 180000, 270000];
+        var pollsScheduled = 0;
+
+        function schedulePolls() {
+            pollDelaysMs.forEach(function (delayMs) {
+                setTimeout(function () {
+                    loadAutoInviteMembershipStatus();
+                    pollsScheduled--;
+                    if (pollsScheduled === 0) {
+                        $('#btn-check-membership').prop('disabled', false).text('Check group membership');
+                    }
+                }, delayMs);
+                pollsScheduled++;
+            });
+        }
+
+        $('#btn-check-membership').prop('disabled', true).text('Checking… (can take a few minutes for many groups)');
         $.ajax({
             url: '@Url.Action("RefreshAutoInviteMembershipStatus", "NotificationsManager")',
             type: 'POST',
@@ -388,19 +409,16 @@
             success: function (result) {
                 if (!result.success) {
                     alert(result.message || 'Failed to start the membership check.');
+                    $('#btn-check-membership').prop('disabled', false).text('Check group membership');
                     return;
                 }
-                // Best-effort auto-refresh of the display a few times as the background job (paced
-                // ~1.5s per real group) works through the list - the admin can also just click the
-                // button again anytime to load whatever's ready so far.
-                [10000, 25000, 45000].forEach(function (delayMs) {
-                    setTimeout(loadAutoInviteMembershipStatus, delayMs);
-                });
+                if (result.alreadyInProgress) {
+                    $('#btn-check-membership').text('A check is already running… (can take a few minutes)');
+                }
+                schedulePolls();
             },
             error: function () {
                 alert('Request failed, check the logs.');
-            },
-            complete: function () {
                 $('#btn-check-membership').prop('disabled', false).text('Check group membership');
             }
         });

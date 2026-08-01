@@ -51,6 +51,9 @@ public class NullTelegramGroupProvisioningService : ITelegramGroupProvisioningSe
     public Task<IReadOnlyList<AutoInviteMembershipStatus>> GetAutoInviteMembershipStatusAsync(int storeId) =>
         throw new NotImplementedException(ERROR_MESSAGE);
 
+    public bool IsAutoInviteMembershipRefreshInProgress(int storeId) =>
+        throw new NotImplementedException(ERROR_MESSAGE);
+
     public Task RefreshAutoInviteMembershipStatusAsync(int storeId) =>
         throw new NotImplementedException(ERROR_MESSAGE);
 

@@ -99,13 +99,24 @@ public interface ITelegramGroupProvisioningService
     Task<IReadOnlyList<AutoInviteMembershipStatus>> GetAutoInviteMembershipStatusAsync(int storeId);
 
     /// <summary>
+    /// True while a <see cref="RefreshAutoInviteMembershipStatusAsync"/> run is already in flight for
+    /// this store - lets the admin UI tell "already checking, wait for it" apart from silently
+    /// enqueueing another one. Confirmed live on prod (19 real groups): clicking "Check group
+    /// membership" repeatedly before the first run finished queued that many concurrent runs, all
+    /// competing for the same shared Telegram account's rate limit at once - each took 4+ minutes
+    /// instead of the ~30-45s a single paced run should take.
+    /// </summary>
+    bool IsAutoInviteMembershipRefreshInProgress(int storeId);
+
+    /// <summary>
     /// Actually checks every configured auto-invite user's current membership across every real,
     /// mapped vendor group in this store - one membership fetch per group (not per user), paced ~1.5s
     /// apart to stay under Telegram's flood-control burst limit (confirmed live: unpaced calls
     /// tripped repeated FLOOD_WAIT_30s and the resulting multi-minute request 524'd through
     /// Cloudflare). Meant to be run as a background job (see the admin controller's use of
     /// <c>IBackgroundJobClient</c>), not awaited inline in a request - caches its result for
-    /// <see cref="GetAutoInviteMembershipStatusAsync"/> to read.
+    /// <see cref="GetAutoInviteMembershipStatusAsync"/> to read. No-ops (doesn't queue a second
+    /// concurrent run) if one is already in progress for this store.
     /// </summary>
     Task RefreshAutoInviteMembershipStatusAsync(int storeId);
 

@@ -259,11 +259,17 @@ public class NotificationsManagerController : BaseAdminController
 
         var storeId = await GetActiveStoreIdAsync();
 
+        // Clicking this repeatedly before the first run finishes used to queue that many concurrent
+        // runs, all competing for the same shared Telegram account's rate limit - confirmed live,
+        // each run took 4+ minutes instead of ~30-45s. Tell the admin it's already checking instead.
+        if (_provisioningService.IsAutoInviteMembershipRefreshInProgress(storeId))
+            return Json(new { success = true, alreadyInProgress = true });
+
         var backgroundJobClient = _serviceProvider.GetRequiredService<IBackgroundJobClient>();
         backgroundJobClient.Enqueue<ITelegramGroupProvisioningService>(
             s => s.RefreshAutoInviteMembershipStatusAsync(storeId));
 
-        return Json(new { success = true });
+        return Json(new { success = true, alreadyInProgress = false });
     }
 
     /// <summary>

@@ -42,6 +42,13 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     // ever runs as a background job and writes here; GetAutoInviteMembershipStatusAsync just reads it.
     private static readonly ConcurrentDictionary<int, IReadOnlyList<AutoInviteMembershipStatus>> _membershipStatusCache = new();
 
+    // Guards against overlapping refreshes for the same store. Confirmed live on prod (19 real
+    // groups): clicking "Check group membership" a few times in a row before the first run finished
+    // enqueued that many concurrent RefreshAutoInviteMembershipStatusAsync jobs, all hammering the
+    // same shared lkbhnd Telegram account's rate limit at once - each run took 4+ minutes instead of
+    // the ~30-45s a single paced run should take. A later click now just no-ops instead of piling on.
+    private static readonly ConcurrentDictionary<int, bool> _membershipRefreshInProgress = new();
+
     private readonly IVendorService _vendorService;
     private readonly IStoreService _storeService;
     private readonly ICompanyService _companyService;
@@ -803,77 +810,96 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             ? cached
             : (IReadOnlyList<AutoInviteMembershipStatus>)Array.Empty<AutoInviteMembershipStatus>());
 
+    public bool IsAutoInviteMembershipRefreshInProgress(int storeId) =>
+        _membershipRefreshInProgress.ContainsKey(storeId);
+
     [AutomaticRetry(Attempts = 1)]
     public async Task RefreshAutoInviteMembershipStatusAsync(int storeId)
     {
-        var entries = await GetAutoInviteEntriesInternalAsync(storeId);
-        if (entries.Count == 0)
+        if (!_membershipRefreshInProgress.TryAdd(storeId, true))
         {
-            _membershipStatusCache[storeId] = Array.Empty<AutoInviteMembershipStatus>();
+            await _logger.InformationAsync(
+                $"Skipping auto-invite membership refresh for store {storeId}: one is already in progress");
             return;
         }
 
-        var client = await GetClientAsync();
-
-        await _chatCache.EnsureLoadedAsync();
-        var mappedForStore = _chatCache.Snapshot.Where(kv => kv.Value.StoreId == storeId).ToList();
-
-        // One membership fetch per real chat, reused across every auto-invite user below - not one
-        // per (user, chat) pair. Still one Channels_GetParticipants/Messages_GetFullChat call per
-        // chat though, and Telegram's flood control on those methods triggers almost immediately
-        // once fired back-to-back with no pacing (confirmed in prod: a burst of ~15 calls produced
-        // repeated FLOOD_WAIT_30 errors that WTelegramClient silently waits out and retries, turning
-        // one page load into several minutes of the browser just sitting there). A small delay
-        // between chats keeps this under Telegram's burst threshold instead of tripping it.
-        var memberIdsByChat = new Dictionary<long, HashSet<long>>();
-        var isFirstChat = true;
-        foreach (var chatId in mappedForStore.Select(kv => kv.Key.ChatId).Distinct())
+        try
         {
-            if (!isFirstChat)
-                await Task.Delay(1500);
-            isFirstChat = false;
-
-            try
+            var entries = await GetAutoInviteEntriesInternalAsync(storeId);
+            if (entries.Count == 0)
             {
-                memberIdsByChat[chatId] = await GetChatMemberUserIdsAsync(client, chatId);
+                _membershipStatusCache[storeId] = Array.Empty<AutoInviteMembershipStatus>();
+                return;
             }
-            catch (Exception e)
-            {
-                await _logger.ErrorAsync($"Failed to read membership for chat {chatId} while checking auto-invite status", e);
-            }
-        }
 
-        var results = new List<AutoInviteMembershipStatus>();
-        foreach (var entry in entries)
-        {
-            try
+            var client = await GetClientAsync();
+
+            await _chatCache.EnsureLoadedAsync();
+            var mappedForStore = _chatCache.Snapshot.Where(kv => kv.Value.StoreId == storeId).ToList();
+
+            // One membership fetch per real chat, reused across every auto-invite user below - not
+            // one per (user, chat) pair. Still one Channels_GetParticipants/Messages_GetFullChat call
+            // per chat though, and Telegram's flood control on those methods triggers almost
+            // immediately once fired back-to-back with no pacing (confirmed in prod: a burst of ~15
+            // calls produced repeated FLOOD_WAIT_30 errors that WTelegramClient silently waits out and
+            // retries, turning one page load into several minutes of the browser just sitting there).
+            // A small delay between chats keeps this under Telegram's burst threshold instead of
+            // tripping it - but only holds if a single run isn't also competing with another
+            // concurrent one for the same account's rate limit, which is what the guard above prevents.
+            var memberIdsByChat = new Dictionary<long, HashSet<long>>();
+            var isFirstChat = true;
+            foreach (var chatId in mappedForStore.Select(kv => kv.Key.ChatId).Distinct())
             {
-                var user = await ResolveUserAsync(client, entry.Identifier);
-                if (user == null)
+                if (!isFirstChat)
+                    await Task.Delay(1500);
+                isFirstChat = false;
+
+                try
                 {
-                    results.Add(new AutoInviteMembershipStatus(entry.Identifier, entry.DisplayName, false, Array.Empty<MissingChatEntry>()));
-                    continue;
+                    memberIdsByChat[chatId] = await GetChatMemberUserIdsAsync(client, chatId);
                 }
-
-                var missingFrom = new List<MissingChatEntry>();
-                foreach (var kv in mappedForStore)
+                catch (Exception e)
                 {
-                    if (memberIdsByChat.TryGetValue(kv.Key.ChatId, out var members) && !members.Contains(user.id))
+                    await _logger.ErrorAsync($"Failed to read membership for chat {chatId} while checking auto-invite status", e);
+                }
+            }
+
+            var results = new List<AutoInviteMembershipStatus>();
+            foreach (var entry in entries)
+            {
+                try
+                {
+                    var user = await ResolveUserAsync(client, entry.Identifier);
+                    if (user == null)
                     {
-                        var title = await _chatCache.GetVendorChatTitleAsync(kv.Value.Vendor, storeId) ?? kv.Value.Vendor.Name;
-                        missingFrom.Add(new MissingChatEntry(kv.Key.ChatId, title));
+                        results.Add(new AutoInviteMembershipStatus(entry.Identifier, entry.DisplayName, false, Array.Empty<MissingChatEntry>()));
+                        continue;
                     }
+
+                    var missingFrom = new List<MissingChatEntry>();
+                    foreach (var kv in mappedForStore)
+                    {
+                        if (memberIdsByChat.TryGetValue(kv.Key.ChatId, out var members) && !members.Contains(user.id))
+                        {
+                            var title = await _chatCache.GetVendorChatTitleAsync(kv.Value.Vendor, storeId) ?? kv.Value.Vendor.Name;
+                            missingFrom.Add(new MissingChatEntry(kv.Key.ChatId, title));
+                        }
+                    }
+
+                    results.Add(new AutoInviteMembershipStatus(entry.Identifier, entry.DisplayName, true, missingFrom));
                 }
+                catch (Exception e)
+                {
+                    await _logger.ErrorAsync($"Failed to check membership for auto-invite user '{entry.DisplayName}'", e);
+                }
+            }
 
-                results.Add(new AutoInviteMembershipStatus(entry.Identifier, entry.DisplayName, true, missingFrom));
-            }
-            catch (Exception e)
-            {
-                await _logger.ErrorAsync($"Failed to check membership for auto-invite user '{entry.DisplayName}'", e);
-            }
+            _membershipStatusCache[storeId] = results;
         }
-
-        _membershipStatusCache[storeId] = results;
+        finally
+        {
+            _membershipRefreshInProgress.TryRemove(storeId, out _);
+        }
     }
 
     [AutomaticRetry(Attempts = 1)]
