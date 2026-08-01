@@ -125,6 +125,144 @@ public class NotificationsManagerController : BaseAdminController
         return Json(new { success = true });
     }
 
+    /// <summary>
+    /// Every real vendor group in this store that currently needs a topics/threads fix - used both
+    /// to drive the per-row "needs fix" indicator (client-side, no per-row round trip) and to build
+    /// the "Fix all" confirmation's full breakdown.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetVendorChatFixSummary()
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        try
+        {
+            var previews = await _provisioningService.GetVendorChatFixPreviewsAsync(storeId);
+            return Json(new
+            {
+                success = true,
+                items = previews.Select(p => new
+                {
+                    vendorId = p.VendorId,
+                    vendorName = p.VendorName,
+                    chatTitle = p.ChatTitle,
+                    chatId = p.ChatId,
+                    needsMigration = p.NeedsMigration,
+                    alreadyForumEnabled = p.AlreadyForumEnabled,
+                    missingCompanyNames = p.MissingCompanyNames
+                })
+            });
+        }
+        catch (Exception e)
+        {
+            await _logger.ErrorAsync("Failed to build vendor chat fix summary", e);
+            return Json(new { success = false, message = e.Message });
+        }
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> FixVendorChatTopics(int vendorId)
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        var backgroundJobClient = _serviceProvider.GetRequiredService<IBackgroundJobClient>();
+        backgroundJobClient.Enqueue<ITelegramGroupProvisioningService>(
+            s => s.FixVendorChatTopicsAsync(vendorId, storeId));
+
+        return Json(new { success = true });
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> FixAllVendorChatTopics()
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        var backgroundJobClient = _serviceProvider.GetRequiredService<IBackgroundJobClient>();
+        backgroundJobClient.Enqueue<ITelegramGroupProvisioningService>(
+            s => s.FixAllVendorChatTopicsAsync(storeId));
+
+        return Json(new { success = true });
+    }
+
+    /// <summary>
+    /// Actual current group membership for every configured auto-invite user - reveals drift (kicked
+    /// by mistake, left, etc.) the stored list alone can't show. One membership fetch per real group,
+    /// reused across every user, not one call per (user, group) pair.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetAutoInviteMembershipStatus()
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        try
+        {
+            var statuses = await _provisioningService.GetAutoInviteMembershipStatusAsync(storeId);
+            return Json(new
+            {
+                success = true,
+                statuses = statuses.Select(s => new
+                {
+                    identifier = s.Identifier,
+                    displayName = s.DisplayName,
+                    found = s.Found,
+                    missingChatTitles = s.MissingFromChatTitles
+                })
+            });
+        }
+        catch (Exception e)
+        {
+            await _logger.ErrorAsync("Failed to check auto-invite membership status", e);
+            return Json(new { success = false, message = e.Message });
+        }
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> FixAutoInviteUserMembership(string identifier)
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        try
+        {
+            var fixedCount = await _provisioningService.FixAutoInviteUserMembershipAsync(storeId, identifier);
+            return Json(new { success = true, fixedCount });
+        }
+        catch (Exception e)
+        {
+            await _logger.ErrorAsync($"Failed to fix auto-invite membership for '{identifier}'", e);
+            return Json(new { success = false, message = e.Message });
+        }
+    }
+
     [HttpPost]
     public async Task<IActionResult> RefreshChatNames()
     {

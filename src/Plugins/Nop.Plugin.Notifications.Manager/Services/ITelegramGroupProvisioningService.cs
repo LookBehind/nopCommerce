@@ -67,4 +67,42 @@ public interface ITelegramGroupProvisioningService
     /// not a general Telegram-wide directory search (MTProto doesn't expose one).
     /// </summary>
     Task<IReadOnlyList<AutoInviteCandidate>> GetTelegramContactsAsync();
+
+    /// <summary>
+    /// Every already-mapped, real vendor group in this store that needs a topics/threads fix right
+    /// now - either it's still a basic group (never forum-enabled), or a company allowed for that
+    /// vendor has no forum thread yet. A single batched Telegram call covers every group's forum
+    /// status; only vendors actually needing something are returned.
+    /// </summary>
+    Task<IReadOnlyList<VendorChatFixPreview>> GetVendorChatFixPreviewsAsync(int storeId);
+
+    /// <summary>
+    /// Upgrades an existing, real vendor group to a forum-enabled supergroup with "List" view if it
+    /// isn't one already (this migration cannot be undone), then creates a forum thread for every
+    /// company allowed for this vendor that doesn't have one yet. No-ops on whatever's already done -
+    /// safe to call repeatedly, including via <see cref="GetVendorChatFixPreviewsAsync"/> having
+    /// already flagged it.
+    /// </summary>
+    Task FixVendorChatTopicsAsync(int vendorId, int storeId);
+
+    /// <summary>
+    /// Runs <see cref="FixVendorChatTopicsAsync"/> for every vendor group in this store that
+    /// currently needs it (best-effort per vendor - one failure doesn't stop the rest).
+    /// </summary>
+    Task FixAllVendorChatTopicsAsync(int storeId);
+
+    /// <summary>
+    /// Checks every configured auto-invite user's actual current membership across every real,
+    /// mapped vendor group in this store - one membership fetch per group (not per user), reused for
+    /// everyone. Reveals drift the stored auto-invite list alone can't (kicked by mistake, left, etc).
+    /// </summary>
+    Task<IReadOnlyList<AutoInviteMembershipStatus>> GetAutoInviteMembershipStatusAsync(int storeId);
+
+    /// <summary>
+    /// Re-adds (and re-promotes to admin) an auto-invite user to every real vendor group in this
+    /// store they're currently missing from - a targeted repair for exactly the gap
+    /// <see cref="GetAutoInviteMembershipStatusAsync"/> found, not a full re-sweep. Returns how many
+    /// groups they were actually missing from (and were just fixed).
+    /// </summary>
+    Task<int> FixAutoInviteUserMembershipAsync(int storeId, string identifier);
 }

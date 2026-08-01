@@ -16,8 +16,12 @@
             <p>
                 Every vendor's Telegram group for this store. Rows with a warning icon are vendors
                 allowed for a company here that don't have a group yet - click "Fix" to auto-create one.
+                Rows flagged "Needs topics fix" are real, existing groups missing Topics/List view
+                and/or a thread for a company allowed for that vendor - click "Fix" (or "Fix all
+                topics") to bring them up to date. These act on real, currently-active Telegram groups.
             </p>
             <button type="button" id="btn-refresh-names" class="btn btn-default">Refresh names</button>
+            <button type="button" id="btn-fix-all-topics" class="btn btn-warning" onclick="fixAllVendorChatTopics()">Fix all topics/threads</button>
             @await Html.PartialAsync("Table", new DataTablesModel
             {
                 Name = "vendor-telegram-chat-grid",
@@ -67,7 +71,9 @@
             <p>
                 Telegram users listed here (by username or phone number) get added to every vendor
                 group above (and every future one) as a group admin. Removing someone sweeps them
-                out of every group.
+                out of every group. "Membership" reflects their actual current membership in each
+                real group right now - useful if someone was kicked by mistake (this has happened
+                before) rather than removed on purpose.
             </p>
             <div class="form-inline mb-3">
                 <select id="auto-invite-contact-picker" class="form-control mr-2">
@@ -77,6 +83,7 @@
                 <button type="button" id="btn-add-auto-invite-user" class="btn btn-primary">Add</button>
                 <span id="auto-invite-add-status" class="ml-2"></span>
             </div>
+            <button type="button" id="btn-check-membership" class="btn btn-default mb-3">Check group membership</button>
             @await Html.PartialAsync("Table", new DataTablesModel
             {
                 Name = "auto-invite-user-grid",
@@ -93,6 +100,12 @@
                     new ColumnProperty(nameof(AutoInviteUserModel.Identifier))
                     {
                         Title = "Added via"
+                    },
+                    new ColumnProperty(nameof(AutoInviteUserModel.Identifier))
+                    {
+                        Title = "Membership",
+                        Width = "260",
+                        Render = new RenderCustom("renderAutoInviteMembership")
                     },
                     new ColumnProperty(nameof(AutoInviteUserModel.Identifier))
                     {
@@ -133,11 +146,112 @@
     });
 
     function renderChatStatus(data, type, row, meta) {
-        if (!row.IsMissing) {
-            return '<span class="text-success"><i class="fas fa-check"></i> OK</span>';
+        if (row.IsMissing) {
+            return '<span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Missing group</span>' +
+                ' <button type="button" class="btn btn-sm btn-warning" onclick="fixVendorChat(' + row.VendorId + ')">Fix</button>';
         }
-        return '<span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Missing group</span>' +
-            ' <button type="button" class="btn btn-sm btn-warning" onclick="fixVendorChat(' + row.VendorId + ')">Fix</button>';
+
+        var fixItem = window.vendorChatFixStatus && window.vendorChatFixStatus[row.VendorId];
+        if (fixItem) {
+            return '<span class="text-warning"><i class="fas fa-exclamation-triangle"></i> Needs topics fix</span>' +
+                ' <button type="button" class="btn btn-sm btn-warning" onclick="fixVendorChatTopics(' + row.VendorId + ')">Fix</button>';
+        }
+
+        return '<span class="text-success"><i class="fas fa-check"></i> OK</span>';
+    }
+
+    // Describes what fixing one vendor's real, existing Telegram group would actually do - shared by
+    // the per-row confirm and the "Fix all" aggregate confirm below.
+    function describeVendorChatFix(item) {
+        var lines = [];
+        if (item.needsMigration) {
+            lines.push('Upgrade from a basic group to a Topics-enabled supergroup (Telegram carries over members/history automatically - this step cannot be undone)');
+            lines.push('Enable "List" view for topics');
+        } else if (!item.alreadyForumEnabled) {
+            lines.push('Enable Topics + "List" view on this existing supergroup');
+        }
+        if (item.missingCompanyNames.length > 0) {
+            lines.push('Create a discussion thread for: ' + item.missingCompanyNames.join(', '));
+        }
+        return lines;
+    }
+
+    // Loaded once on page open (a single batched Telegram call covers every group's forum status) -
+    // populates window.vendorChatFixStatus so renderChatStatus / fixVendorChatTopics / "Fix all" all
+    // read from it without extra round trips per row.
+    function loadVendorChatFixStatus() {
+        window.vendorChatFixStatus = window.vendorChatFixStatus || {};
+        $.ajax({
+            url: '@Url.Action("GetVendorChatFixSummary", "NotificationsManager")',
+            type: 'GET',
+            success: function (result) {
+                if (!result.success) return;
+                window.vendorChatFixStatus = {};
+                result.items.forEach(function (item) {
+                    window.vendorChatFixStatus[item.vendorId] = item;
+                });
+                updateTable('#vendor-telegram-chat-grid');
+            }
+        });
+    }
+    loadVendorChatFixStatus();
+
+    function fixVendorChatTopics(vendorId) {
+        var item = window.vendorChatFixStatus && window.vendorChatFixStatus[vendorId];
+        if (!item) {
+            alert('Fix status not loaded yet (or nothing needs fixing) - try again in a moment.');
+            return;
+        }
+
+        var message = 'This will modify the REAL, currently-active Telegram group "' + item.chatTitle +
+            '" (chat ' + item.chatId + ') for vendor "' + item.vendorName + '":\n\n- ' +
+            describeVendorChatFix(item).join('\n- ') +
+            '\n\nContinue?';
+
+        if (!confirm(message)) return;
+
+        $.ajax({
+            url: '@Url.Action("FixVendorChatTopics", "NotificationsManager")',
+            type: 'POST',
+            data: { vendorId: vendorId },
+            headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+            success: function () {
+                alert('Fix enqueued - it runs in the background, refresh "Check topics" / reload the page shortly to see the result.');
+            },
+            error: function () {
+                alert('Failed to enqueue fix, check the logs.');
+            }
+        });
+    }
+
+    function fixAllVendorChatTopics() {
+        var map = window.vendorChatFixStatus || {};
+        var items = Object.keys(map).map(function (k) { return map[k]; });
+        if (items.length === 0) {
+            alert('Nothing needs a topics fix right now.');
+            return;
+        }
+
+        var message = 'This will modify ' + items.length + ' REAL, currently-active Telegram group(s), one at a time:\n\n' +
+            items.map(function (item) {
+                return item.vendorName + ' ("' + item.chatTitle + '", chat ' + item.chatId + '):\n  - ' +
+                    describeVendorChatFix(item).join('\n  - ');
+            }).join('\n\n') +
+            '\n\nUpgrading a basic group to a supergroup cannot be undone. Continue?';
+
+        if (!confirm(message)) return;
+
+        $.ajax({
+            url: '@Url.Action("FixAllVendorChatTopics", "NotificationsManager")',
+            type: 'POST',
+            headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+            success: function () {
+                alert('Fix all enqueued - it runs in the background one group at a time, reload the page shortly to see the result.');
+            },
+            error: function () {
+                alert('Failed to enqueue Fix all, check the logs.');
+            }
+        });
     }
 
     function fixVendorChat(vendorId) {
@@ -241,6 +355,75 @@
                         }
                     }
                 });
+            }
+        });
+    }
+
+    // Loaded once on page open (cheap when the list is empty, which it usually is) and on demand via
+    // "Check group membership" - populates window.autoInviteMembershipStatus so
+    // renderAutoInviteMembership / fixAutoInviteMembership read from it without extra round trips.
+    function loadAutoInviteMembershipStatus() {
+        window.autoInviteMembershipStatus = window.autoInviteMembershipStatus || {};
+        $.ajax({
+            url: '@Url.Action("GetAutoInviteMembershipStatus", "NotificationsManager")',
+            type: 'GET',
+            success: function (result) {
+                if (!result.success) return;
+                window.autoInviteMembershipStatus = {};
+                result.statuses.forEach(function (s) {
+                    window.autoInviteMembershipStatus[s.identifier] = s;
+                });
+                updateTable('#auto-invite-user-grid');
+            }
+        });
+    }
+    loadAutoInviteMembershipStatus();
+
+    $('#btn-check-membership').on('click', loadAutoInviteMembershipStatus);
+
+    function renderAutoInviteMembership(data, type, row, meta) {
+        var status = window.autoInviteMembershipStatus && window.autoInviteMembershipStatus[row.Identifier];
+        if (!status) {
+            return '<span class="text-muted">Not checked yet</span>';
+        }
+        if (!status.found) {
+            return '<span class="text-danger">Could not re-resolve on Telegram</span>';
+        }
+        if (status.missingChatTitles.length === 0) {
+            return '<span class="text-success"><i class="fas fa-check"></i> In all groups</span>';
+        }
+        return '<span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Missing from ' + status.missingChatTitles.length + ' group(s)</span>' +
+            ' <button type="button" class="btn btn-sm btn-warning" onclick="fixAutoInviteMembership(\'' + row.Identifier + '\')">Fix</button>';
+    }
+
+    function fixAutoInviteMembership(identifier) {
+        var status = window.autoInviteMembershipStatus && window.autoInviteMembershipStatus[identifier];
+        if (!status || status.missingChatTitles.length === 0) {
+            alert('Membership status not loaded yet, or nothing to fix - try "Check group membership" again.');
+            return;
+        }
+
+        var message = 'This will re-add ' + (status.displayName || identifier) + ' to ' + status.missingChatTitles.length +
+            ' REAL, currently-active Telegram group(s) they are currently missing from, and promote them to admin in each:\n\n- ' +
+            status.missingChatTitles.join('\n- ') + '\n\nContinue?';
+
+        if (!confirm(message)) return;
+
+        $.ajax({
+            url: '@Url.Action("FixAutoInviteUserMembership", "NotificationsManager")',
+            type: 'POST',
+            data: { identifier: identifier },
+            headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+            success: function (result) {
+                if (result.success) {
+                    delete window.autoInviteMembershipStatus[identifier];
+                    loadAutoInviteMembershipStatus();
+                } else {
+                    alert(result.message || 'Failed to fix membership.');
+                }
+            },
+            error: function () {
+                alert('Request failed, check the logs.');
             }
         });
     }
