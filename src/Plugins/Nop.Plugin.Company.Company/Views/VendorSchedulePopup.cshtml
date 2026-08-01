@@ -197,7 +197,7 @@
             $.ajax({
                 url: '@Url.Action("VendorScheduleGetMonth", "Company")',
                 type: 'POST',
-                data: { companyId: companyId, vendorId: vendorId, year: currentYear, month: currentMonth + 1 }
+                data: addAntiForgeryToken({ companyId: companyId, vendorId: vendorId, year: currentYear, month: currentMonth + 1 })
             }).done(function (response) {
                 daysOffSet = {};
                 if (response.success && response.daysOff) {
@@ -271,7 +271,7 @@
                 url: '@Url.Action("VendorScheduleSaveWorkingDays", "Company")',
                 type: 'POST',
                 traditional: true,
-                data: { companyId: companyId, vendorId: vendorId, days: days }
+                data: addAntiForgeryToken({ companyId: companyId, vendorId: vendorId, days: days })
             }).done(function (response) {
                 if (response.success) {
                     $('#working-days-saved-message').show().delay(2000).fadeOut();
@@ -295,7 +295,7 @@
             $.ajax({
                 url: '@Url.Action("VendorScheduleMarkDayOff", "Company")'.replace('VendorScheduleMarkDayOff', action),
                 type: 'POST',
-                data: { companyId: companyId, vendorId: vendorId, date: date }
+                data: addAntiForgeryToken({ companyId: companyId, vendorId: vendorId, date: date })
             }).done(function (response) {
                 if (response.success) {
                     loadMonthAndRender();
