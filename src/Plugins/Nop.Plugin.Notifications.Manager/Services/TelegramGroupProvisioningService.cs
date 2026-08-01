@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Hangfire;
 using Nop.Core.Configuration;
+using Nop.Services.Companies;
 using Nop.Services.Configuration;
 using Nop.Services.Logging;
 using Nop.Services.Stores;
@@ -35,6 +36,7 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
 
     private readonly IVendorService _vendorService;
     private readonly IStoreService _storeService;
+    private readonly ICompanyService _companyService;
     private readonly IVendorTelegramChatCache _chatCache;
     private readonly ITelegramBotClient _telegramBotClient;
     private readonly ISettingService _settingService;
@@ -44,6 +46,7 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     public TelegramGroupProvisioningService(
         IVendorService vendorService,
         IStoreService storeService,
+        ICompanyService companyService,
         IVendorTelegramChatCache chatCache,
         ITelegramBotClient telegramBotClient,
         ISettingService settingService,
@@ -52,6 +55,7 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     {
         _vendorService = vendorService;
         _storeService = storeService;
+        _companyService = companyService;
         _chatCache = chatCache;
         _telegramBotClient = telegramBotClient;
         _settingService = settingService;
@@ -245,6 +249,30 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         {
             await client.Messages_EditChatAdmin(-chatId, user, is_admin: true);
         }
+    }
+
+    /// <summary>
+    /// Creates a Topic in a forum-enabled supergroup and returns its thread id (the same
+    /// MessageThreadId concept used everywhere else in this codebase - the Bot API's messageThreadId
+    /// for a forum chat is exactly a topic's id). Reads the id back via Messages_GetForumTopics
+    /// (freshest-first) rather than parsing the raw Updates from the create call, since this is
+    /// always called against a brand-new group with zero prior activity - the topic just created is
+    /// unambiguously the only/top result.
+    /// </summary>
+    private static async Task<int> CreateForumTopicAsync(WTelegram.Client client, InputPeerChannel peer, string title)
+    {
+        var randomId = Random.Shared.NextInt64();
+        await client.Messages_CreateForumTopic(peer, title, randomId, icon_color: null, send_as: null,
+            icon_emoji_id: null, title_missing: false);
+
+        var topics = await client.Messages_GetForumTopics(peer, offset_date: default, offset_id: 0,
+            offset_topic: 0, limit: 1, q: null);
+
+        var topic = topics.topics.OfType<ForumTopic>().FirstOrDefault();
+        if (topic == null)
+            throw new InvalidOperationException($"Could not read back the forum topic just created ('{title}')");
+
+        return topic.id;
     }
 
     private async Task<List<AutoInviteEntry>> GetAutoInviteEntriesInternalAsync(int storeId)
@@ -454,7 +482,6 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             var client = await GetClientAsync();
             var botInputUser = await GetBotInputUserAsync(client);
 
-            var members = new List<InputUserBase> { botInputUser };
             var autoInviteMembers = new List<InputUser>();
             foreach (var entry in await GetAutoInviteEntriesInternalAsync(storeId))
             {
@@ -468,9 +495,7 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
                         continue;
                     }
 
-                    var inputUser = new InputUser(autoInviteUser.id, autoInviteUser.access_hash);
-                    members.Add(inputUser);
-                    autoInviteMembers.Add(inputUser);
+                    autoInviteMembers.Add(new InputUser(autoInviteUser.id, autoInviteUser.access_hash));
                 }
                 catch (Exception e)
                 {
@@ -479,27 +504,62 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
                 }
             }
 
-            var invited = await client.Messages_CreateChat(members.ToArray(), title);
+            // Topics require a supergroup/channel - a plain Messages_CreateChat basic group can't
+            // have them without a later migration. Channels_CreateChannel(megagroup:true, forum:true)
+            // creates the group as a forum-enabled supergroup from the start, but (unlike
+            // Messages_CreateChat) takes no initial-members list - the bot and auto-invite users are
+            // invited afterward via the same channel-branch invite/promote logic used elsewhere.
+            var created = await client.Channels_CreateChannel(title, about: null, geo_point: null,
+                address: null, ttl_period: null, broadcast: false, megagroup: true, for_import: false, forum: true);
 
-            var newChat = invited.updates.Chats.Values.OfType<Chat>().FirstOrDefault();
-            if (newChat == null)
-                throw new InvalidOperationException($"Messages_CreateChat did not return a new basic group Chat for vendor '{vendor.Name}'");
+            var newChannel = created.Chats.Values.OfType<Channel>().FirstOrDefault();
+            if (newChannel == null)
+                throw new InvalidOperationException($"Channels_CreateChannel did not return a new Channel for vendor '{vendor.Name}'");
 
-            // Basic-group Bot-API chat IDs are the negative of the MTProto Chat.ID. If Telegram later
-            // auto-migrates this group to a supergroup, the existing MigrateFromChatId bot event handler
-            // (TelegramNotificationSenderTask.HandleMigrateFromChatId) already re-points the mapping,
-            // and Telegram itself carries existing membership across that migration automatically.
-            var chatId = new TelegramChatId(-newChat.ID, 0);
+            var chatId = new TelegramChatId(SUPERGROUP_ID_THRESHOLD - newChannel.id, 0);
+            var channelInputPeer = new InputPeerChannel(newChannel.id, newChannel.access_hash);
 
             await _chatCache.SaveVendorChatMappingAsync(vendor, storeId, chatId);
             await _chatCache.SaveVendorChatTitleAsync(vendor, storeId, title);
+
+            await AddUserToChatAsync(client, chatId.ChatId, botInputUser);
 
             // Auto-invite users get admin rights on the groups they're added to - the bot itself
             // does not, it only ever needs to send messages.
             foreach (var inputUser in autoInviteMembers)
             {
-                try { await PromoteUserToAdminAsync(client, chatId.ChatId, inputUser); }
-                catch (Exception e) { await _logger.ErrorAsync($"Failed to promote auto-invite user to admin in new group '{title}'", e); }
+                try
+                {
+                    await AddUserToChatAsync(client, chatId.ChatId, inputUser);
+                    await PromoteUserToAdminAsync(client, chatId.ChatId, inputUser);
+                }
+                catch (Exception e) { await _logger.ErrorAsync($"Failed to add/promote auto-invite user to admin in new group '{title}'", e); }
+            }
+
+            // "List" view - Telegram's "view as messages" forum display mode (flat list) rather
+            // than the default topic-tile grid.
+            await client.Channels_ToggleViewForumAsMessages(new InputChannel(newChannel.id, newChannel.access_hash), enabled: true);
+
+            // One thread per Company that has this vendor in its allowlist for this store - matches
+            // the same allowlist check the admin "missing group" warning uses. New groups only; see
+            // docs/plans/2026-08-01-telegram-forum-topics-per-company.md for why existing chats are
+            // untouched and why this doesn't (yet) route individual notifications to these threads.
+            var companies = await _companyService.GetAllCompaniesAsync(storeId: storeId, pageSize: int.MaxValue);
+            foreach (var company in companies)
+            {
+                var companyVendors = await _companyService.GetCompanyVendorsByCompanyAsync(company.Id);
+                if (!companyVendors.Any(cv => cv.VendorId == vendorId))
+                    continue;
+
+                try
+                {
+                    var threadId = await CreateForumTopicAsync(client, channelInputPeer, company.Name);
+                    await _chatCache.SaveCompanyThreadIdAsync(vendor, storeId, company.Id, threadId);
+                }
+                catch (Exception e)
+                {
+                    await _logger.ErrorAsync($"Failed to create forum topic for company '{company.Name}' in new group '{title}'", e);
+                }
             }
 
             await _telegramBotClient.SendMessage(chatId: chatId.ChatId,

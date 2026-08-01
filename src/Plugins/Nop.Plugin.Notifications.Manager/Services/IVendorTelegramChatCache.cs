@@ -57,4 +57,16 @@ public interface IVendorTelegramChatCache
     /// Saves the cached group title for a vendor+store (does not touch the chat id mapping itself).
     /// </summary>
     Task SaveVendorChatTitleAsync(Vendor vendor, int storeId, string title);
+
+    /// <summary>
+    /// Telegram forum thread id for this vendor+store's Company-specific topic (created only for
+    /// forum-enabled groups made from now on - see docs/plans/2026-08-01-telegram-forum-topics-per-company.md).
+    /// Null if no thread has been created for this company yet.
+    /// </summary>
+    Task<int?> GetCompanyThreadIdAsync(Vendor vendor, int storeId, int companyId);
+
+    /// <summary>
+    /// Saves the forum thread id for a vendor+store's Company-specific topic.
+    /// </summary>
+    Task SaveCompanyThreadIdAsync(Vendor vendor, int storeId, int companyId, int threadId);
 }
