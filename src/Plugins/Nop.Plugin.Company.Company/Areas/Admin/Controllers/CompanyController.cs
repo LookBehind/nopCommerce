@@ -69,6 +69,7 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Controllers
         private readonly IAddressService _addressService;
         private readonly IVendorService _vendorService;
         private readonly ICompanyAddressService _companyAddressService;
+        private readonly ICompanyVendorScheduleService _companyVendorScheduleService;
 
         #endregion
 
@@ -97,7 +98,8 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Controllers
             IAddressAttributeParser addressAttributeParser,
             IAddressService addressService,
             IVendorService vendorService,
-            ICompanyAddressService companyAddressService)
+            ICompanyAddressService companyAddressService,
+            ICompanyVendorScheduleService companyVendorScheduleService)
         {
             _aclService = aclService;
             _companyModelFactory = companyModelFactory;
@@ -123,6 +125,7 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Controllers
             _addressService = addressService;
             _vendorService = vendorService;
             _companyAddressService = companyAddressService;
+            _companyVendorScheduleService = companyVendorScheduleService;
         }
 
         #endregion
@@ -570,6 +573,85 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Controllers
             var model = await _companyModelFactory.PrepareAddVendorToCompanyListModelAsync(searchModel);
 
             return Json(model);
+        }
+
+        #endregion
+
+        #region vendor schedule
+
+        public virtual async Task<IActionResult> VendorSchedulePopup(int companyId, int vendorId)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return AccessDeniedView();
+
+            var model = await _companyModelFactory.PrepareCompanyVendorScheduleModelAsync(companyId, vendorId);
+
+            return View("~/Plugins/Company.Company/Views/VendorSchedulePopup.cshtml", model);
+        }
+
+        [HttpPost]
+        public virtual async Task<IActionResult> VendorScheduleSaveWorkingDays(int companyId, int vendorId, List<int> days)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return Json(new { success = false, message = "Access denied." });
+
+            var daysOfWeek = (days ?? new List<int>())
+                .Distinct()
+                .Select(d => (DayOfWeek)d)
+                .ToList();
+
+            await _companyVendorScheduleService.SetWorkingDaysAsync(companyId, vendorId, daysOfWeek);
+
+            return Json(new { success = true });
+        }
+
+        [HttpPost]
+        public virtual async Task<IActionResult> VendorScheduleGetMonth(int companyId, int vendorId, int year, int month)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return Json(new { success = false, message = "Access denied." });
+
+            var fromDate = new DateTime(year, month, 1);
+            var toDate = fromDate.AddMonths(1).AddDays(-1);
+
+            var daysOff = await _companyVendorScheduleService.GetDaysOffAsync(companyId, vendorId, fromDate, toDate);
+
+            return Json(new
+            {
+                success = true,
+                daysOff = daysOff
+                    .Where(d => d.IsOff)
+                    .Select(d => d.Date.ToString("yyyy-MM-dd"))
+                    .ToArray()
+            });
+        }
+
+        [HttpPost]
+        public virtual async Task<IActionResult> VendorScheduleMarkDayOff(int companyId, int vendorId, string date)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return Json(new { success = false, message = "Access denied." });
+
+            if (!DateTime.TryParse(date, out var parsedDate))
+                return Json(new { success = false, message = "Invalid date." });
+
+            await _companyVendorScheduleService.MarkDayOffAsync(companyId, vendorId, parsedDate);
+
+            return Json(new { success = true });
+        }
+
+        [HttpPost]
+        public virtual async Task<IActionResult> VendorScheduleRestoreDay(int companyId, int vendorId, string date)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return Json(new { success = false, message = "Access denied." });
+
+            if (!DateTime.TryParse(date, out var parsedDate))
+                return Json(new { success = false, message = "Invalid date." });
+
+            await _companyVendorScheduleService.RestoreDayAsync(companyId, vendorId, parsedDate);
+
+            return Json(new { success = true });
         }
 
         #endregion
