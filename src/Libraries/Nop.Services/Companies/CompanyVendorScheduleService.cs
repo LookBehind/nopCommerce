@@ -165,6 +165,39 @@ namespace Nop.Services.Companies
             return workingDays.Any(wd => wd.DayOfWeekId == (int)date.DayOfWeek);
         }
 
+        /// <summary>
+        /// Gets the set of vendor identifiers that are unavailable for a company on a given date
+        /// (via a day-off override, or a configured weekly pattern that excludes that weekday).
+        /// Computed in a constant number of queries regardless of how many vendors the company
+        /// has, for use on hot catalog-browsing paths.
+        /// </summary>
+        public virtual async Task<HashSet<int>> GetUnavailableVendorIdsAsync(int companyId, DateTime date)
+        {
+            var targetDate = date.Date;
+            var dayOfWeek = (int)date.DayOfWeek;
+
+            var daysOffToday = await _dayOffRepository.GetAllAsync(query =>
+            {
+                return query.Where(d => d.CompanyId == companyId && d.Date == targetDate && d.IsOff);
+            });
+
+            var unavailable = daysOffToday.Select(d => d.VendorId).ToHashSet();
+
+            var allWorkingDays = await _workingDayRepository.GetAllAsync(query =>
+            {
+                return query.Where(wd => wd.CompanyId == companyId);
+            });
+
+            var vendorsWithPatternExcludingToday = allWorkingDays
+                .GroupBy(wd => wd.VendorId)
+                .Where(g => g.All(wd => wd.DayOfWeekId != dayOfWeek))
+                .Select(g => g.Key);
+
+            unavailable.UnionWith(vendorsWithPatternExcludingToday);
+
+            return unavailable;
+        }
+
         #endregion
 
         #region Utilities

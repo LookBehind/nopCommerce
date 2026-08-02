@@ -74,5 +74,16 @@ namespace Nop.Services.Companies
         /// <param name="date">Company-local calendar date</param>
         /// <returns>True if the vendor is available on that date</returns>
         Task<bool> IsVendorAvailableAsync(int companyId, int vendorId, DateTime date);
+
+        /// <summary>
+        /// Gets the set of vendor identifiers that are unavailable for a company on a given date
+        /// (via a day-off override, or a configured weekly pattern that excludes that weekday).
+        /// Computed in a constant number of queries regardless of how many vendors the company
+        /// has, for use on hot catalog-browsing paths.
+        /// </summary>
+        /// <param name="companyId">Company identifier</param>
+        /// <param name="date">Company-local calendar date</param>
+        /// <returns>Unavailable vendor identifiers</returns>
+        Task<HashSet<int>> GetUnavailableVendorIdsAsync(int companyId, DateTime date);
     }
 }

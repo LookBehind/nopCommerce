@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -110,23 +112,28 @@ public class CheckoutController_Overriden: CheckoutController
         _shoppingCartService = shoppingCartService;
     }
 
-    public override async Task<IActionResult> OpcSaveShipping(CheckoutShippingAddressModel model, 
+    public override async Task<IActionResult> OpcSaveShipping(CheckoutShippingAddressModel model,
         IFormCollection form)
     {
         var currentCustomer = await _workContext.GetCurrentCustomerAsync();
         var currentStore = await _storeContext.GetCurrentStoreAsync();
         var deliveryTime = await _deliveryTimeStorageService.GetSelectedDeliveryTimeAsync(
-            currentCustomer, 
+            currentCustomer,
             currentStore.Id);
 
+        // Return the same { error = 1, message = ... } contract the base OPC actions use on
+        // failure (see base.OpcSaveShipping's own catch block) instead of throwing - throwing
+        // here escapes the base method's try/catch entirely (this code runs before base is ever
+        // called), which the one-page checkout JS can't render as a normal validation error and
+        // instead surfaces as a raw unhandled-exception error page.
         if (!deliveryTime.HasValue)
         {
-            throw new Exception("Please select a delivery time from the header before proceeding with checkout.");
+            return Json(new { error = 1, message = "Please select a delivery time from the header before proceeding with checkout." });
         }
 
         if (!await _deliveryTimeService.IsDeliveryTimeAvailableAsync(deliveryTime.Value))
         {
-            throw new Exception("The selected delivery time is no longer available. Please select a new delivery time.");
+            return Json(new { error = 1, message = "The selected delivery time is no longer available. Please select a new delivery time." });
         }
 
         var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
@@ -135,6 +142,7 @@ public class CheckoutController_Overriden: CheckoutController
             // deliveryTime is stored as company-local wall-clock time (see OpcConfirmOrder), so
             // its Date is already the company-local calendar date - no timezone conversion needed.
             var cart = await _shoppingCartService.GetShoppingCartAsync(currentCustomer, ShoppingCartType.ShoppingCart, currentStore.Id);
+            var unavailableProductNames = new System.Collections.Generic.List<string>();
             foreach (var item in cart)
             {
                 var product = await _productService.GetProductByIdAsync(item.ProductId);
@@ -143,8 +151,17 @@ public class CheckoutController_Overriden: CheckoutController
 
                 if (!await _companyVendorScheduleService.IsVendorAvailableAsync(company.Id, product.VendorId, deliveryTime.Value.Date))
                 {
-                    throw new Exception($"'{product.Name}' is not available for delivery on the selected date. Please remove it from your cart or choose a different delivery time.");
+                    unavailableProductNames.Add(product.Name);
                 }
+            }
+
+            if (unavailableProductNames.Any())
+            {
+                return Json(new
+                {
+                    error = 1,
+                    message = $"The following items are not available for delivery on the selected date: {string.Join(", ", unavailableProductNames)}. Please remove them from your cart or choose a different delivery time."
+                });
             }
         }
 

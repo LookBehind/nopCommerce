@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
@@ -330,13 +331,20 @@ namespace Nop.Web.Controllers
             var productNumber = _catalogSettings.ProductSearchAutoCompleteNumberOfProducts > 0 ?
                 _catalogSettings.ProductSearchAutoCompleteNumberOfProducts : 10;
 
+            // Reads the same generic attribute Nop.Plugin.Company.Company.Services.
+            // DeliveryTimeStorageService writes to - this core controller can't reference that
+            // plugin-defined service directly.
+            var selectedDeliveryDate = await _genericAttributeService.GetAttributeAsync<DateTime?>(
+                await _workContext.GetCurrentCustomerAsync(), "SELECTED_DELIVERY_TIME_KEY", (await _storeContext.GetCurrentStoreAsync()).Id);
+
             var products = await _productService.SearchProductsAsync(0,
                 storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
                 keywords: term,
                 languageId: (await _workContext.GetWorkingLanguageAsync()).Id,
                 visibleIndividuallyOnly: true,
                 pageSize: productNumber,
-                searchCustomerVendors: true);
+                searchCustomerVendors: true,
+                availabilityDate: selectedDeliveryDate);
 
             var showLinkToResultSearch = _catalogSettings.ShowLinkToAllResultInSearchAutoComplete && (products.TotalCount > productNumber);
 
