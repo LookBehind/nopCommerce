@@ -37,11 +37,15 @@ public class CheckoutController_Overriden: CheckoutController
     private readonly IDeliveryTimeService _deliveryTimeService;
     private readonly IDateTimeHelper _dateTimeHelper;
     private readonly ICompanyService _companyService;
+    private readonly ICompanyVendorScheduleService _companyVendorScheduleService;
+    private readonly IProductService _productService;
+    private readonly IShoppingCartService _shoppingCartService;
 
     public CheckoutController_Overriden(
         IDeliveryTimeStorageService deliveryTimeStorageService,
         IDeliveryTimeService deliveryTimeService,
-        
+        ICompanyVendorScheduleService companyVendorScheduleService,
+
         AddressSettings addressSettings, 
         CustomerSettings customerSettings, 
         IAddressAttributeParser addressAttributeParser, 
@@ -101,6 +105,9 @@ public class CheckoutController_Overriden: CheckoutController
         _deliveryTimeService = deliveryTimeService;
         _dateTimeHelper = dateTimeHelper;
         _companyService = companyService;
+        _companyVendorScheduleService = companyVendorScheduleService;
+        _productService = productService;
+        _shoppingCartService = shoppingCartService;
     }
 
     public override async Task<IActionResult> OpcSaveShipping(CheckoutShippingAddressModel model, 
@@ -121,7 +128,26 @@ public class CheckoutController_Overriden: CheckoutController
         {
             throw new Exception("The selected delivery time is no longer available. Please select a new delivery time.");
         }
-        
+
+        var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
+        if (company != null)
+        {
+            // deliveryTime is stored as company-local wall-clock time (see OpcConfirmOrder), so
+            // its Date is already the company-local calendar date - no timezone conversion needed.
+            var cart = await _shoppingCartService.GetShoppingCartAsync(currentCustomer, ShoppingCartType.ShoppingCart, currentStore.Id);
+            foreach (var item in cart)
+            {
+                var product = await _productService.GetProductByIdAsync(item.ProductId);
+                if (product == null)
+                    continue;
+
+                if (!await _companyVendorScheduleService.IsVendorAvailableAsync(company.Id, product.VendorId, deliveryTime.Value.Date))
+                {
+                    throw new Exception($"'{product.Name}' is not available for delivery on the selected date. Please remove it from your cart or choose a different delivery time.");
+                }
+            }
+        }
+
         return await base.OpcSaveShipping(model, form);
     }
 
