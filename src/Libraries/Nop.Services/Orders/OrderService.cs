@@ -374,13 +374,15 @@ namespace Nop.Services.Orders
 
             if (vendorId > 0)
             {
-                query = from o in query
-                        join oi in _orderItemRepository.Table on o.Id equals oi.OrderId
-                        join p in _productRepository.Table on oi.ProductId equals p.Id
-                        where p.VendorId == vendorId
-                        select o;
-
-                query = query.Distinct();
+                // EXISTS-style filter, not a join+Distinct - the join fans out to one row per
+                // matching order item before Distinct can collapse it back down, which forced SQL
+                // Server to materialize and sort the full fan-out for every vendor-scoped search
+                // (confirmed live: this is what was timing out PDF invoice export at prod-mysnacks
+                // scale - 550k+ order items). This filters in place instead, same shape as the
+                // orderNotes filter below.
+                query = query.Where(o => _orderItemRepository.Table.Any(oi =>
+                    oi.OrderId == o.Id &&
+                    _productRepository.Table.Any(p => p.Id == oi.ProductId && p.VendorId == vendorId)));
             }
 
             if (customerId > 0)
