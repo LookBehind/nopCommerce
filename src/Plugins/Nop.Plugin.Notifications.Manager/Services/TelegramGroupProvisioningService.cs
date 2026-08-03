@@ -890,13 +890,24 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
                         continue;
                     }
 
+                    // De-duped by ChatId, not one entry per vendor mapping - multiple vendors can
+                    // share one physical chat via distinct thread ids (e.g. Segafredo/Cinnabon/Square
+                    // One all in the same "Segafredo orders - MySnacks" group on different topics).
+                    // Without this, a user missing from that one chat got 3 entries here, and Fix
+                    // below retried the same chat 3 times per user - tripling Telegram RPC calls and
+                    // flood-wait exposure for no benefit (confirmed live 2026-08-03).
                     var missingFrom = new List<MissingChatEntry>();
+                    var missingChatIds = new HashSet<long>();
                     foreach (var kv in mappedForStore)
                     {
+                        if (missingChatIds.Contains(kv.Key.ChatId))
+                            continue;
+
                         if (memberIdsByChat.TryGetValue(kv.Key.ChatId, out var members) && !members.Contains(user.id))
                         {
                             var title = await _chatCache.GetVendorChatTitleAsync(kv.Value.Vendor, storeId) ?? kv.Value.Vendor.Name;
                             missingFrom.Add(new MissingChatEntry(kv.Key.ChatId, title));
+                            missingChatIds.Add(kv.Key.ChatId);
                         }
                     }
 
@@ -947,7 +958,8 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
 
         var inputUser = new InputUser(user.id, user.access_hash);
 
-        var fixedCount = 0;
+        var fixedChatIds = new HashSet<long>();
+        var notMutualContactCount = 0;
         var isFirstChat = true;
         foreach (var missing in status.MissingFrom)
         {
@@ -967,7 +979,17 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
                         $"Failed to re-promote '{status.DisplayName}' to admin after re-adding them to chat {missing.ChatId}", e);
                 }
 
-                fixedCount++;
+                fixedChatIds.Add(missing.ChatId);
+            }
+            catch (RpcException e) when (e.Message.Contains("USER_NOT_MUTUAL_CONTACT"))
+            {
+                // Telegram refuses a direct add unless the session account and the target are
+                // mutual contacts - not transient, retrying this Fix again won't help. Distinct
+                // from the generic catch below so it doesn't read as "an error occurred, try again"
+                // when the real next step is "send them an invite link instead".
+                notMutualContactCount++;
+                await _logger.ErrorAsync(
+                    $"Cannot fix membership for '{status.DisplayName}' in chat {missing.ChatId}: not a mutual contact of the Telegram session account - send them an invite link instead", e);
             }
             catch (Exception e)
             {
@@ -975,14 +997,21 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
             }
         }
 
-        await _logger.InformationAsync($"Fixed membership for '{status.DisplayName}' in {fixedCount} group(s)");
+        await _logger.InformationAsync(
+            $"Fixed membership for '{status.DisplayName}' in {fixedChatIds.Count} group(s)"
+            + (notMutualContactCount > 0 ? $"; {notMutualContactCount} need a manual invite link (not a mutual contact)" : ""));
 
-        // Reflect the fix immediately in the cache rather than waiting for the next full Check -
-        // the entries just added shouldn't still show as "missing" until an admin re-checks.
-        _membershipStatusCache[storeId] = statuses
-            .Select(s => s.Identifier == status.Identifier
-                ? s with { MissingFrom = Array.Empty<MissingChatEntry>() }
-                : s)
-            .ToList();
+        // Only clear the chats that actually succeeded - previously this cleared MissingFrom
+        // unconditionally regardless of outcome. Confirmed live 2026-08-03: every add for
+        // tam_bayadyan failed with USER_NOT_MUTUAL_CONTACT (fixedCount was 0), yet the admin grid
+        // still reported her as fixed because the cache was wiped anyway.
+        if (fixedChatIds.Count > 0)
+        {
+            _membershipStatusCache[storeId] = statuses
+                .Select(s => s.Identifier == status.Identifier
+                    ? s with { MissingFrom = s.MissingFrom.Where(m => !fixedChatIds.Contains(m.ChatId)).ToList() }
+                    : s)
+                .ToList();
+        }
     }
 }
