@@ -357,12 +357,20 @@ namespace Nop.Services.Orders
             string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue,
             bool getOnlyTotalCount = false, bool sendRateNotification = false,
             bool sortByDeliveryDate = false, DateTime? schedulDate = null, DateTime? scheduleDateTime = null,
-            string companyName = null, int deliveryHour = 0, List<int> srcIds = null)
+            string companyName = null, int deliveryHour = 0, List<int> srcIds = null, List<int> orderIds = null)
         {
             var query = _orderRepository.Table;
 
             if (storeId > 0)
                 query = query.Where(o => o.StoreId == storeId);
+
+            // Filter to specific order ids before the vendor/product joins below, not after - lets
+            // SQL Server seek on the (small) requested id set instead of materializing every order
+            // for the store/vendor first. Previously callers like PrepareDownloadedOrdersAsync
+            // fetched everything and filtered ids in memory afterward, which timed out once a
+            // vendor's order history got large enough (confirmed live: Cafe Central at 10k+ orders).
+            if (orderIds != null && orderIds.Count > 0)
+                query = query.Where(o => orderIds.Contains(o.Id));
 
             if (vendorId > 0)
             {

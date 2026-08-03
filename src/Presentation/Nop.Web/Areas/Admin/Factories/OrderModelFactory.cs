@@ -2022,6 +2022,16 @@ namespace Nop.Web.Areas.Admin.Factories
             if (product != null && (await _workContext.GetCurrentVendorAsync() == null || product.VendorId == (await _workContext.GetCurrentVendorAsync()).Id))
                 filterByProductId = model.ProductId;
 
+            // Pushed into the SQL query below instead of fetched-then-filtered in memory - with a
+            // large vendor order history, searching for everything first just to discard all but
+            // the selected ones afterward timed out (confirmed live: Cafe Central, 10k+ orders).
+            var selectedOrderIds = string.IsNullOrEmpty(selectedIds)
+                ? null
+                : selectedIds
+                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => Convert.ToInt32(x))
+                    .ToList();
+
             //load orders
             var orders = (await _orderService.SearchOrdersAsync(storeId: model.StoreId,
                 vendorId: model.VendorId,
@@ -2037,18 +2047,8 @@ namespace Nop.Web.Areas.Admin.Factories
                 //billingEmail: model.BillingEmail,
                 //billingLastName: model.BillingLastName,
                 //billingCountryId: model.BillingCountryId,
-                orderNotes: model.OrderNotes)).ToList();
-
-            if (!string.IsNullOrEmpty(selectedIds))
-            {
-
-                var ids = selectedIds
-                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(x => Convert.ToInt32(x))
-                    .ToArray();
-
-                orders = orders.Where(o => ids.Contains(o.Id)).ToList();
-            }
+                orderNotes: model.OrderNotes,
+                orderIds: selectedOrderIds)).ToList();
 
             return orders;
         }

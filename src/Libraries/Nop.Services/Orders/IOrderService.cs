@@ -100,6 +100,7 @@ namespace Nop.Services.Orders
         /// <param name="pageIndex">Page index</param>
         /// <param name="pageSize">Page size</param>
         /// <param name="getOnlyTotalCount">A value in indicating whether you want to load only total number of records. Set to "true" if you don't want to load data from database</param>
+        /// <param name="orderIds">Specific order identifiers to restrict the search to; null to not restrict by id. Applied before the vendor/product joins so a small requested set doesn't require scanning every order.</param>
         /// <returns>
         /// A task that represents the asynchronous operation
         /// The task result contains the orders
@@ -115,7 +116,7 @@ namespace Nop.Services.Orders
             int pageSize = int.MaxValue, bool getOnlyTotalCount = false,
             bool sendRateNotification = false,
             bool sortByDeliveryDate = false, DateTime? schedulDate = null, DateTime? scheduleDateTime = null,
-            string companyName = null, int deliveryHour = 0, List<int> srcIds = null);
+            string companyName = null, int deliveryHour = 0, List<int> srcIds = null, List<int> orderIds = null);
 
         /// <summary>
         /// Inserts an order
