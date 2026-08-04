@@ -25,6 +25,7 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuth.Service
         private readonly ICustomerService _customerService;
         private readonly IWorkContext _workContext;
         private readonly IAuthenticationPluginManager _authenticationPluginManager;
+        private readonly ILogger _logger;
 
         #endregion
 
@@ -49,6 +50,7 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuth.Service
         /// <param name="workContext">Work context</param>
         /// <param name="workflowMessageService">Workflow message service</param>
         /// <param name="localizationSettings">Localization settings</param>
+        /// <param name="logger">Logger</param>
         public ExternalAuthenticationService_Override(
             CustomerSettings customerSettings,
             ExternalAuthenticationSettings externalAuthenticationSettings,
@@ -62,7 +64,8 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuth.Service
             IStoreContext storeContext,
             IWorkContext workContext,
             IWorkflowMessageService workflowMessageService,
-            LocalizationSettings localizationSettings
+            LocalizationSettings localizationSettings,
+            ILogger logger
             ) : base(
             customerSettings,
             externalAuthenticationSettings,
@@ -76,11 +79,13 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuth.Service
             storeContext,
             workContext,
             workflowMessageService,
-            localizationSettings)
+            localizationSettings,
+            logger)
         {
             this._customerService = customerService;
             this._workContext = workContext;
             this._authenticationPluginManager = authenticationPluginManager;
+            this._logger = logger;
         }
 
         #endregion
@@ -102,28 +107,44 @@ namespace Nop.Plugin.ExternalAuth.ExtendedAuth.Service
                 return ErrorAuthentication(new[] { "External authentication method cannot be loaded" }, returnUrl);
 
             //get current logged-in user
-            var currentLoggedInUser = await _customerService.IsRegisteredAsync(
-                await _workContext.GetCurrentCustomerAsync()) ? 
-                    await _workContext.GetCurrentCustomerAsync() : 
-                    null;
+            var ambientCustomer = await _workContext.GetCurrentCustomerAsync();
+            var ambientIsRegistered = await _customerService.IsRegisteredAsync(ambientCustomer);
+            var currentLoggedInUser = ambientIsRegistered ? ambientCustomer : null;
 
             //authenticate associated user if already exists
             var associatedUser = await GetUserByExternalAuthenticationParametersAsync(parameters);
+
+            //user is already exists or not
+            var customerByEmail = await _customerService.GetCustomerByEmailAsync(parameters.Email);
+
+            await _logger.InformationAsync($"ExternalAuth.Override.AuthenticateAsync: provider={parameters.ProviderSystemName} externalEmail='{parameters.Email}' externalId='{parameters.ExternalIdentifier}' -> ambientCustomerId={ambientCustomer?.Id} ambientEmail='{ambientCustomer?.Email}' ambientIsRegistered={ambientIsRegistered} associatedUserId={associatedUser?.Id} associatedUserEmail='{associatedUser?.Email}' customerByEmailId={customerByEmail?.Id} customerByEmailActive={customerByEmail?.Active}");
+
             if (associatedUser != null)
                 return await AuthenticateExistingUserAsync(associatedUser, currentLoggedInUser, returnUrl);
 
-            //user is already exists or not
-            var customer = await _customerService.GetCustomerByEmailAsync(parameters.Email);
-            if (customer != null)
-                return await AuthenticateExistingUserAsync(customer, currentLoggedInUser, returnUrl);
+            if (customerByEmail != null)
+            {
+                // A customer with this email already exists but has NO ExternalAuthenticationRecord
+                // for this provider/sub yet - this branch signs them in WITHOUT ever creating that
+                // association (no AssociateExternalAccountWithUserAsync call here), which is why a
+                // customer can end up permanently missing an ExternalAuthenticationRecord despite
+                // logging in via Google successfully.
+                await _logger.InformationAsync($"ExternalAuth.Override.AuthenticateAsync: found existing customer Id={customerByEmail.Id} by email '{parameters.Email}' with NO matching ExternalAuthenticationRecord - signing in without creating association (provider={parameters.ProviderSystemName}).");
+                return await AuthenticateExistingUserAsync(customerByEmail, currentLoggedInUser, returnUrl);
+            }
 
             //or associate and authenticate new user
             if (returnUrl == "/")
                 returnUrl += "customer/info";
             else if (string.IsNullOrEmpty(returnUrl))
                 returnUrl = "/customer/info";
-            
+
             //Save a new record
+            // NOTE: currentLoggedInUser is deliberately discarded here (always passes null) even
+            // though it was computed above - AuthenticateNewUserAsync's "associate with logged-in
+            // user" branch (base class) can never fire from this override; every truly-new external
+            // login always goes through RegisterNewUserAsync.
+            await _logger.InformationAsync($"ExternalAuth.Override.AuthenticateAsync: no associatedUser, no customerByEmail for '{parameters.Email}' - registering as new user (provider={parameters.ProviderSystemName}, ambientCustomerId={ambientCustomer?.Id}, ambientIsRegistered={ambientIsRegistered}).");
             return await AuthenticateNewUserAsync(null, parameters, returnUrl);
         }
 

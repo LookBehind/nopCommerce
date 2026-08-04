@@ -175,10 +175,14 @@ namespace Nop.Web.Controllers.Api.Security
 
                     try
                     {
-                        // Authenticate using external service (handles user creation/association)
+                        // Authenticate using external service (handles user creation/association).
+                        // authResult is an IActionResult meant for web redirects - not usable here,
+                        // but its concrete type at least tells us which branch AuthenticateAsync took
+                        // (see ExternalAuthenticationService.AuthenticateAsync/AuthenticateNewUserAsync
+                        // for the actual per-branch logging of *why*).
                         var authResult = await _externalAuthenticationService.AuthenticateAsync(authParameters);
-                        
-                        // External auth service returns IActionResult for web redirects, 
+
+                        // External auth service returns IActionResult for web redirects,
                         // but we need to extract the user and continue with API response
                         var customer = await _customerService.GetCustomerByEmailAsync(deserializedGoogleToken.email);
                         if (customer != null)
@@ -188,9 +192,12 @@ namespace Nop.Web.Controllers.Api.Security
 
                             if (!customer.Active)
                                 loginResult = CustomerLoginResults.NotActive;
+
+                            await _logger.InformationAsync($"AccountApiController.Login (google): resolved customer Id={customer.Id} Email='{customer.Email}' Active={customer.Active} for external email '{deserializedGoogleToken.email}' (authResult={authResult?.GetType().Name})");
                         }
                         else
                         {
+                            await _logger.WarningAsync($"AccountApiController.Login (google): NO customer found by email '{deserializedGoogleToken.email}' after AuthenticateAsync (authResult={authResult?.GetType().Name}) - returning CustomerNotExist. See ExternalAuth.* log entries just above this one for why registration/association did not produce this customer.");
                             return Ok(new
                             {
                                 success = false,
@@ -200,7 +207,7 @@ namespace Nop.Web.Controllers.Api.Security
                     }
                     catch (Exception ex)
                     {
-                        _logger.ErrorAsync("Google authentication failed", ex);
+                        await _logger.ErrorAsync($"AccountApiController.Login (google): AuthenticateAsync threw for external email '{deserializedGoogleToken.email}'", ex);
                         return Ok(new
                         {
                             success = false,
