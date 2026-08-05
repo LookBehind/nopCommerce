@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Net.Http.Headers;
 using Newtonsoft.Json;
 using Nop.Core;
 using Nop.Core.Domain.Companies;
@@ -129,11 +130,31 @@ namespace Nop.Web.Controllers.Api.Security
             if (!ModelState.IsValid)
                 return Ok(new { success = false, message = GetModelErrors(ModelState) });
 
+            // Someone POSTing real credentials (password or a Google token) has already proven
+            // they're not a crawler - IUserAgentHelper.IsSearchEngine()'s Browscap-based check is a
+            // heuristic meant for anonymous browsing traffic, not a login attempt, and its false
+            // positives were silently killing external-auth registration ("Search engine can't be
+            // registered") with zero customer created and a generic "account not found" response.
+            // Swap the ambient WorkContext customer for a real guest before it's used anywhere below.
+            var ambientCustomer = await _workContext.GetCurrentCustomerAsync();
+            if (ambientCustomer.IsSearchEngineAccount() || ambientCustomer.IsBackgroundTaskAccount())
+            {
+                await _logger.InformationAsync($"AccountApiController.Login: ambient customer Id={ambientCustomer.Id} SystemName='{ambientCustomer.SystemName}' was a bot/system account despite real login credentials being POSTed - replacing with a fresh guest customer.");
+                await _workContext.SetCurrentCustomerAsync(await _customerService.InsertGuestCustomerAsync());
+            }
+
             var loginResult = await _customerRegistrationService.ValidateCustomerAsync(model.Email, model.Password);
 
             //checking if customer comes from google
             if (!string.IsNullOrWhiteSpace(model.GoogleToken))
             {
+                // Captured to correlate with IUserAgentHelper.IsSearchEngine() false positives -
+                // that check (Browscap-backed) resolves the ambient WorkContext customer to the
+                // built-in search-engine account for certain User-Agent strings, which silently
+                // blocks RegisterCustomerAsync ("Search engine can't be registered") with no
+                // other trace of the header value anywhere.
+                var requestUserAgent = _httpContextAccessor.HttpContext?.Request?.Headers[HeaderNames.UserAgent].ToString();
+
                 //get json from the token url
                 var json = new WebClient().DownloadString("https://oauth2.googleapis.com/tokeninfo?id_token=" + model.GoogleToken);
                 if (!string.IsNullOrWhiteSpace(json))
@@ -193,11 +214,11 @@ namespace Nop.Web.Controllers.Api.Security
                             if (!customer.Active)
                                 loginResult = CustomerLoginResults.NotActive;
 
-                            await _logger.InformationAsync($"AccountApiController.Login (google): resolved customer Id={customer.Id} Email='{customer.Email}' Active={customer.Active} for external email '{deserializedGoogleToken.email}' (authResult={authResult?.GetType().Name})");
+                            await _logger.InformationAsync($"AccountApiController.Login (google): resolved customer Id={customer.Id} Email='{customer.Email}' Active={customer.Active} for external email '{deserializedGoogleToken.email}' (authResult={authResult?.GetType().Name}, userAgent='{requestUserAgent}')");
                         }
                         else
                         {
-                            await _logger.WarningAsync($"AccountApiController.Login (google): NO customer found by email '{deserializedGoogleToken.email}' after AuthenticateAsync (authResult={authResult?.GetType().Name}) - returning CustomerNotExist. See ExternalAuth.* log entries just above this one for why registration/association did not produce this customer.");
+                            await _logger.WarningAsync($"AccountApiController.Login (google): NO customer found by email '{deserializedGoogleToken.email}' after AuthenticateAsync (authResult={authResult?.GetType().Name}, userAgent='{requestUserAgent}') - returning CustomerNotExist. See ExternalAuth.* log entries just above this one for why registration/association did not produce this customer.");
                             return Ok(new
                             {
                                 success = false,
@@ -207,7 +228,7 @@ namespace Nop.Web.Controllers.Api.Security
                     }
                     catch (Exception ex)
                     {
-                        await _logger.ErrorAsync($"AccountApiController.Login (google): AuthenticateAsync threw for external email '{deserializedGoogleToken.email}'", ex);
+                        await _logger.ErrorAsync($"AccountApiController.Login (google): AuthenticateAsync threw for external email '{deserializedGoogleToken.email}' (userAgent='{requestUserAgent}')", ex);
                         return Ok(new
                         {
                             success = false,
