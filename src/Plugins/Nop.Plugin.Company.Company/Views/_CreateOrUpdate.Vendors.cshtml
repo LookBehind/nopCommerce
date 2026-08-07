@@ -29,6 +29,16 @@
                         ClassName = NopColumnClassDefaults.Button,
                         Render = new RenderButtonView(new DataUrl("~/Admin/Vendor/Edit/", nameof(CompanyVendorModel.VendorId)))
                     },
+                    new ColumnProperty(nameof(CompanyVendorModel.VendorId))
+                    {
+                        Title = T("Admin.Companies.Company.Vendors.Schedule").Text,
+                        Width = "150",
+                        ClassName = NopColumnClassDefaults.Button,
+                        Render = new RenderButtonCustom(NopButtonClassDefaults.Default, T("Admin.Companies.Company.Vendors.Schedule").Text)
+                        {
+                            OnClickFunctionName = "openVendorSchedulePopup"
+                        }
+                    },
                     new ColumnProperty(nameof(CompanyVendorModel.Id))
                     {
                         Title = T("Admin.Common.Delete").Text,
@@ -56,6 +66,11 @@
                     return false;
                 });
             });
+
+            function openVendorSchedulePopup(vendorId) {
+                OpenWindow('@(Url.Action("VendorSchedulePopup", "Company"))?companyId=@(Model.Id)&vendorId=' + vendorId, 900, 800, true);
+                return false;
+            }
         </script>
     </div>
 }

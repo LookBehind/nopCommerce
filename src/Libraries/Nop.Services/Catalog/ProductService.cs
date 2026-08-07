@@ -65,6 +65,7 @@ namespace Nop.Services.Catalog
         protected readonly IWorkContext _workContext;
         protected readonly LocalizationSettings _localizationSettings;
         private readonly ICompanyService _companyService;
+        private readonly ICompanyVendorScheduleService _companyVendorScheduleService;
 
         #endregion
 
@@ -104,7 +105,8 @@ namespace Nop.Services.Catalog
             IStoreMappingService storeMappingService,
             IWorkContext workContext,
             LocalizationSettings localizationSettings,
-            ICompanyService companyService)
+            ICompanyService companyService,
+            ICompanyVendorScheduleService companyVendorScheduleService)
         {
             _catalogSettings = catalogSettings;
             _commonSettings = commonSettings;
@@ -141,6 +143,7 @@ namespace Nop.Services.Catalog
             _workContext = workContext;
             _localizationSettings = localizationSettings;
             _companyService = companyService;
+            _companyVendorScheduleService = companyVendorScheduleService;
         }
 
         #endregion
@@ -807,7 +810,8 @@ namespace Nop.Services.Catalog
             bool showHidden = false,
             bool? overridePublished = null,
             bool searchCustomerVendors = false,
-            bool? onlyDiscounted = false)
+            bool? onlyDiscounted = false,
+            DateTime? availabilityDate = null)
         {
             //some databases don't support int.MaxValue
             if (pageSize == int.MaxValue)
@@ -856,6 +860,18 @@ namespace Nop.Services.Catalog
                 if (vendors.Length > 0)
                 {
                     productsQuery = productsQuery.Where(p => vendors.Contains(p.VendorId));
+                }
+
+                // Hide products whose vendor is off/non-working for the customer's currently
+                // selected delivery date (weekly schedule + day-off overrides). Only applied when
+                // the caller passes a date - existing callers (admin pickers, etc.) are unaffected.
+                if (availabilityDate.HasValue && company != null)
+                {
+                    var unavailableVendorIds = await _companyVendorScheduleService.GetUnavailableVendorIdsAsync(company.Id, availabilityDate.Value);
+                    if (unavailableVendorIds.Count > 0)
+                    {
+                        productsQuery = productsQuery.Where(p => !unavailableVendorIds.Contains(p.VendorId));
+                    }
                 }
             }
 
