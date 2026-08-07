@@ -176,7 +176,8 @@ namespace Nop.Services.Catalog
             bool showHidden = false,
             bool? overridePublished = null,
             bool searchCustomerVendors = false,
-            bool? onlyDiscounted = false);
+            bool? onlyDiscounted = false,
+            DateTime? availabilityDate = null);
 
         /// <summary>
         /// Gets products by product attribute

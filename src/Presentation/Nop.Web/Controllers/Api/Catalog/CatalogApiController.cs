@@ -697,6 +697,10 @@ namespace Nop.Web.Controllers.Api.Security
                 .Where(id => id != 0)
                 .ToList();
 
+            DateTime? availabilityDate = DateTime.TryParse(searchModel.DeliveryDate, out var parsedDeliveryDate)
+                ? parsedDeliveryDate
+                : null;
+
             var products = (await _productService.SearchProductsAsync(
                 pageIndex: searchModel.Page ?? 0,
                 pageSize: searchModel.PageSize ?? int.MaxValue,
@@ -706,7 +710,8 @@ namespace Nop.Web.Controllers.Api.Security
                 searchCustomerVendors: true,
                 vendorId: searchModel.VendorId ?? 0,
                 onlyDiscounted: searchModel.BestDeals,
-                orderBy: searchModel.PriceLow == true ? ProductSortingEnum.PriceAsc : searchModel.PriceHigh == true ? ProductSortingEnum.PriceDesc : ProductSortingEnum.Position));
+                orderBy: searchModel.PriceLow == true ? ProductSortingEnum.PriceAsc : searchModel.PriceHigh == true ? ProductSortingEnum.PriceDesc : ProductSortingEnum.Position,
+                availabilityDate: availabilityDate));
 
             if (!products.Any())
             {
@@ -1040,6 +1045,13 @@ namespace Nop.Web.Controllers.Api.Security
             public int? CategoryId { get; set; }
             public int? VendorId { get; set; }
             public int? ProductId { get; set; }
+
+            /// <summary>
+            /// The customer's selected delivery date ("yyyy-MM-dd"), used to hide products from
+            /// vendors that are off/non-working that day. Optional and additive - omitting it
+            /// (older app builds) simply skips this filtering, same as before.
+            /// </summary>
+            public string DeliveryDate { get; set; }
         }
         public partial class ProductReviewsApiModel : BaseEntity
         {

@@ -65,6 +65,7 @@ namespace Nop.Web.Factories
         private readonly ISpecificationAttributeService _specificationAttributeService;
         private readonly IStaticCacheManager _staticCacheManager;
         private readonly IStoreContext _storeContext;
+        private readonly IGenericAttributeService _genericAttributeService;
         private readonly ITopicService _topicService;
         private readonly IUrlHelperFactory _urlHelperFactory;
         private readonly IUrlRecordService _urlRecordService;
@@ -110,8 +111,10 @@ namespace Nop.Web.Factories
             IWorkContext workContext,
             MediaSettings mediaSettings,
             VendorSettings vendorSettings,
-            ISettingService settingService)
+            ISettingService settingService,
+            IGenericAttributeService genericAttributeService)
         {
+            _genericAttributeService = genericAttributeService;
             _blogSettings = blogSettings;
             _catalogSettings = catalogSettings;
             _displayDefaultMenuItemSettings = displayDefaultMenuItemSettings;
@@ -149,6 +152,22 @@ namespace Nop.Web.Factories
         #endregion
 
         #region Utilities
+
+        /// <summary>
+        /// Gets the customer's currently selected delivery date, for filtering out products from
+        /// vendors that are off/non-working that day. Reads the same generic attribute the
+        /// Company plugin's IDeliveryTimeStorageService uses (this core factory can't reference
+        /// that plugin-defined service directly - see Nop.Plugin.Company.Company.Services.
+        /// DeliveryTimeStorageService for the counterpart write path). Returns null if the
+        /// customer hasn't selected a delivery time yet, in which case callers should not filter.
+        /// </summary>
+        protected virtual async Task<DateTime?> GetSelectedDeliveryDateAsync()
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
+
+            return await _genericAttributeService.GetAttributeAsync<DateTime?>(customer, "SELECTED_DELIVERY_TIME_KEY", storeId);
+        }
 
         protected virtual CategorySimpleModel GetCategorySimpleModel(XElement elem)
         {
@@ -788,7 +807,8 @@ namespace Nop.Web.Factories
                 manufacturerIds: command.ManufacturerIds,
                 filteredSpecOptions: filteredSpecs,
                 orderBy: (ProductSortingEnum)command.OrderBy,
-                searchCustomerVendors: true);
+                searchCustomerVendors: true,
+                availabilityDate: await GetSelectedDeliveryDateAsync());
 
             var isFiltering = filterableOptions.Any() || selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -837,7 +857,7 @@ namespace Nop.Web.Factories
             var allCategories = await _categoryService.GetAllCategoriesAsync(storeId: (await _storeContext.GetCurrentStoreAsync()).Id);
             if (filterVendorCategories)
             {
-                var productIds = (await _productService.SearchProductsAsync(searchCustomerVendors: true))
+                var productIds = (await _productService.SearchProductsAsync(searchCustomerVendors: true, availabilityDate: await GetSelectedDeliveryDateAsync()))
                     .Select(p => p.Id).ToArray();
                 var categoryIds = (await _categoryService.GetProductCategoryIdsAsync(productIds))
                     .SelectMany(pc => pc.Value).Distinct().ToArray();
@@ -1057,7 +1077,8 @@ namespace Nop.Web.Factories
                 priceMax: selectedPriceRange?.To,
                 filteredSpecOptions: filteredSpecs,
                 orderBy: (ProductSortingEnum)command.OrderBy,
-                searchCustomerVendors: true);
+                searchCustomerVendors: true,
+                availabilityDate: await GetSelectedDeliveryDateAsync());
 
             var isFiltering = filterableOptions.Any() || selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -1301,7 +1322,8 @@ namespace Nop.Web.Factories
                 storeId: (await _storeContext.GetCurrentStoreAsync()).Id,
                 visibleIndividuallyOnly: true,
                 orderBy: (ProductSortingEnum)command.OrderBy,
-                searchCustomerVendors: true);
+                searchCustomerVendors: true,
+                availabilityDate: await GetSelectedDeliveryDateAsync());
 
             var isFiltering = selectedPriceRange?.From is not null;
             await PrepareCatalogProductsAsync(model, products, isFiltering);
@@ -1798,7 +1820,8 @@ namespace Nop.Web.Factories
                         languageId: workingLanguage.Id,
                         orderBy: (ProductSortingEnum)command.OrderBy,
                         vendorId: vendorId,
-                        searchCustomerVendors: true);
+                        searchCustomerVendors: true,
+                        availabilityDate: await GetSelectedDeliveryDateAsync());
 
                     //search term statistics
                     if (!string.IsNullOrEmpty(searchTerms))

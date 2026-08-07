@@ -62,6 +62,7 @@ namespace Nop.Web.Controllers.Api.Order
         private readonly IOrderTotalCalculationService _orderTotalCalculationService;
         private readonly ICustomerActivityService _customerActivityService;
         private readonly ICompanyService _companyService;
+        private readonly ICompanyVendorScheduleService _companyVendorScheduleService;
         private readonly IProductAttributeParser _productAttributeParser;
         private readonly IProductAttributeService _productAttributeService;
         private readonly ShoppingCartSettings _shoppingCartSettings;
@@ -97,6 +98,7 @@ namespace Nop.Web.Controllers.Api.Order
             IOrderTotalCalculationService orderTotalCalculationService,
             ICustomerActivityService customerActivityService,
             ICompanyService companyService,
+            ICompanyVendorScheduleService companyVendorScheduleService,
             IProductAttributeParser productAttributeParser,
             ShoppingCartSettings shoppingCartSettings, 
             IProductAttributeService productAttributeService, 
@@ -127,6 +129,7 @@ namespace Nop.Web.Controllers.Api.Order
             _orderTotalCalculationService = orderTotalCalculationService;
             _customerActivityService = customerActivityService;
             _companyService = companyService;
+            _companyVendorScheduleService = companyVendorScheduleService;
             _productAttributeParser = productAttributeParser;
             _shoppingCartSettings = shoppingCartSettings;
             _productAttributeService = productAttributeService;
@@ -278,7 +281,13 @@ namespace Nop.Web.Controllers.Api.Order
                 var scheduledDateUTC = await ConvertCustomerLocalTimeToUTCAsync(
                     customer,
                     productOrderRequestApiModel.ScheduleDate);
-                
+
+                var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+                var companyLocalScheduledDate = company == null
+                    ? scheduledDateUTC.Date
+                    : _dateTimeHelper.ConvertToUserTime(scheduledDateUTC, TimeZoneInfo.Utc,
+                        TZConvert.GetTimeZoneInfo(company.TimeZone)).Date;
+
                 foreach (var currentProductOrder in productOrderRequestApiModel.Products)
                 {
                     try
@@ -288,11 +297,24 @@ namespace Nop.Web.Controllers.Api.Order
                         {
                             errorList.Add(new CartErrorModel
                             {
-                                Success = false, 
+                                Success = false,
                                 Id = currentProductOrder.ProductId,
                                 Message = "No product found"
                             });
-                        
+
+                            continue;
+                        }
+
+                        if (company != null &&
+                            !await _companyVendorScheduleService.IsVendorAvailableAsync(company.Id, product.VendorId, companyLocalScheduledDate))
+                        {
+                            errorList.Add(new CartErrorModel
+                            {
+                                Success = false,
+                                Id = currentProductOrder.ProductId,
+                                Message = await _localizationService.GetResourceAsync("Order.VendorNotAvailableOnScheduledDate")
+                            });
+
                             continue;
                         }
 

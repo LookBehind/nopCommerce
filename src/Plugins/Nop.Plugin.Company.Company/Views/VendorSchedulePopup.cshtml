@@ -1,0 +1,308 @@
+@using Nop.Plugin.Company.Company.Areas.Admin.Models
+@model CompanyVendorScheduleModel
+
+@{
+    Layout = "_AdminPopupLayout";
+
+    ViewBag.PageTitle = T("Admin.Companies.Company.Vendors.Schedule").Text;
+}
+
+<div class="content-header clearfix">
+    <h1 class="float-left">
+        @T("Admin.Companies.Company.Vendors.Schedule") - @Model.VendorName
+    </h1>
+    <div class="float-right">
+        &nbsp;
+    </div>
+</div>
+<section class="content">
+    <div class="container-fluid">
+        <div class="form-horizontal">
+            <div class="cards-group">
+                <div class="card card-default card-popup">
+                    <div class="card-body">
+                        <p>@T("Admin.Companies.Company.Vendors.Schedule.WorkingDays.Hint")</p>
+                        <div class="form-group row" id="working-days-checkboxes">
+                            @{
+                                var dayLabels = new[] { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+                            }
+                            @for (var i = 0; i < 7; i++)
+                            {
+                                var isChecked = Model.WorkingDays.Contains(i);
+                                <div class="col-auto">
+                                    <label class="working-day-checkbox">
+                                        <input type="checkbox" class="working-day-input" value="@i" checked="@(isChecked ? "checked" : null)" />
+                                        @dayLabels[i]
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                        <div class="form-group row">
+                            <div class="col-12">
+                                <button type="button" id="save-working-days" class="btn btn-primary">
+                                    <i class="far fa-save"></i>
+                                    @T("Admin.Common.Save")
+                                </button>
+                                <span id="working-days-saved-message" class="text-success" style="display:none; margin-left: 10px;">
+                                    @T("Admin.Companies.Company.Vendors.Schedule.Saved")
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card card-default">
+                    <div class="card-body">
+                        <div class="schedule-calendar-header">
+                            <button type="button" class="btn btn-secondary" id="schedule-prev-month">&lt;</button>
+                            <h4 id="schedule-calendar-title"></h4>
+                            <button type="button" class="btn btn-secondary" id="schedule-next-month">&gt;</button>
+                        </div>
+                        <div class="schedule-calendar-weekdays">
+                            <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+                        </div>
+                        <div class="schedule-calendar-days" id="schedule-calendar-days"></div>
+                        <div class="schedule-calendar-legend">
+                            <span><i class="schedule-legend-swatch working"></i> Working day</span>
+                            <span><i class="schedule-legend-swatch non-working"></i> Non-working day</span>
+                            <span><i class="schedule-legend-swatch off"></i> Marked off</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<style>
+    .working-day-checkbox {
+        font-weight: normal;
+        margin-right: 4px;
+    }
+
+    .schedule-calendar-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+
+    .schedule-calendar-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 2px;
+        margin-bottom: 4px;
+        text-align: center;
+        font-weight: 600;
+    }
+
+    .schedule-calendar-days {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 2px;
+    }
+
+    .schedule-calendar-day {
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        font-size: 14px;
+        position: relative;
+    }
+
+    .schedule-calendar-day.other-month {
+        color: #dee2e6;
+    }
+
+    .schedule-calendar-day.past {
+        color: #dee2e6;
+    }
+
+    .schedule-calendar-day.working {
+        background: #d4edda;
+        cursor: pointer;
+    }
+
+    .schedule-calendar-day.non-working {
+        background: #f8f9fa;
+    }
+
+    .schedule-calendar-day.off {
+        background: #f8d7da;
+        cursor: pointer;
+    }
+
+    .schedule-calendar-day.working:hover,
+    .schedule-calendar-day.off:hover {
+        opacity: 0.8;
+    }
+
+    .schedule-calendar-legend {
+        margin-top: 15px;
+        display: flex;
+        gap: 15px;
+        font-size: 13px;
+    }
+
+    .schedule-legend-swatch {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 4px;
+    }
+
+    .schedule-legend-swatch.working {
+        background: #d4edda;
+    }
+
+    .schedule-legend-swatch.non-working {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+    }
+
+    .schedule-legend-swatch.off {
+        background: #f8d7da;
+    }
+</style>
+
+<script>
+    $(document).ready(function () {
+        var companyId = @Model.CompanyId;
+        var vendorId = @Model.VendorId;
+        var currentMonth = new Date().getMonth();
+        var currentYear = new Date().getFullYear();
+        var daysOffSet = {}; // "yyyy-MM-dd" -> true
+
+        var monthNames = ["January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"];
+
+        function getWorkingDaySet() {
+            var set = {};
+            $('.working-day-input:checked').each(function () {
+                set[$(this).val()] = true;
+            });
+            return set;
+        }
+
+        function formatDate(date) {
+            return date.getFullYear() + '-' +
+                String(date.getMonth() + 1).padStart(2, '0') + '-' +
+                String(date.getDate()).padStart(2, '0');
+        }
+
+        function loadMonthAndRender() {
+            $.ajax({
+                url: '@Url.Action("VendorScheduleGetMonth", "Company")',
+                type: 'POST',
+                data: addAntiForgeryToken({ companyId: companyId, vendorId: vendorId, year: currentYear, month: currentMonth + 1 })
+            }).done(function (response) {
+                daysOffSet = {};
+                if (response.success && response.daysOff) {
+                    response.daysOff.forEach(function (d) { daysOffSet[d] = true; });
+                }
+                renderCalendar();
+            });
+        }
+
+        function renderCalendar() {
+            $('#schedule-calendar-title').text(monthNames[currentMonth] + ' ' + currentYear);
+
+            var workingDaySet = getWorkingDaySet();
+            var noPatternConfigured = Object.keys(workingDaySet).length === 0;
+
+            var firstDay = new Date(currentYear, currentMonth, 1);
+            var startDate = new Date(firstDay);
+            startDate.setDate(startDate.getDate() - firstDay.getDay());
+
+            var today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            var html = '';
+            var date = new Date(startDate);
+            for (var i = 0; i < 42; i++) {
+                var dateStr = formatDate(date);
+                var isCurrentMonth = date.getMonth() === currentMonth;
+                var isPast = date < today;
+                var isWorkingDay = noPatternConfigured || !!workingDaySet[date.getDay()];
+                var isOff = !!daysOffSet[dateStr];
+
+                var cls = 'schedule-calendar-day';
+                if (!isCurrentMonth) cls += ' other-month';
+                else if (isPast) cls += ' past';
+                else if (isOff) cls += ' off';
+                else if (isWorkingDay) cls += ' working';
+                else cls += ' non-working';
+
+                var clickable = isCurrentMonth && !isPast && (isOff || isWorkingDay);
+
+                html += '<div class="' + cls + '"' +
+                    (clickable ? ' data-date="' + dateStr + '" data-off="' + (isOff ? '1' : '0')  + '"' : '') +
+                    '>' + date.getDate() + '</div>';
+
+                date.setDate(date.getDate() + 1);
+            }
+
+            $('#schedule-calendar-days').html(html);
+        }
+
+        $('#schedule-prev-month').click(function () {
+            currentMonth--;
+            if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+            loadMonthAndRender();
+        });
+
+        $('#schedule-next-month').click(function () {
+            currentMonth++;
+            if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+            loadMonthAndRender();
+        });
+
+        $('.working-day-input').change(function () {
+            renderCalendar();
+        });
+
+        $('#save-working-days').click(function () {
+            var days = $('.working-day-input:checked').map(function () { return $(this).val(); }).get();
+
+            $.ajax({
+                url: '@Url.Action("VendorScheduleSaveWorkingDays", "Company")',
+                type: 'POST',
+                traditional: true,
+                data: addAntiForgeryToken({ companyId: companyId, vendorId: vendorId, days: days })
+            }).done(function (response) {
+                if (response.success) {
+                    $('#working-days-saved-message').show().delay(2000).fadeOut();
+                    renderCalendar();
+                }
+            });
+        });
+
+        $(document).on('click', '.schedule-calendar-day[data-date]', function () {
+            var date = $(this).data('date');
+            var isOff = $(this).data('off') === 1 || $(this).data('off') === '1';
+
+            var action = isOff ? 'VendorScheduleRestoreDay' : 'VendorScheduleMarkDayOff';
+            var confirmMessage = isOff
+                ? 'Restore ' + date + ' for this vendor?'
+                : 'Mark ' + date + ' off for this vendor?';
+
+            if (!confirm(confirmMessage))
+                return;
+
+            $.ajax({
+                url: '@Url.Action("VendorScheduleMarkDayOff", "Company")'.replace('VendorScheduleMarkDayOff', action),
+                type: 'POST',
+                data: addAntiForgeryToken({ companyId: companyId, vendorId: vendorId, date: date })
+            }).done(function (response) {
+                if (response.success) {
+                    loadMonthAndRender();
+                }
+            });
+        });
+
+        loadMonthAndRender();
+    });
+</script>

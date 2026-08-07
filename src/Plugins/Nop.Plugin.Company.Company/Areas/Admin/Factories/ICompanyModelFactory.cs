@@ -23,5 +23,6 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Factories
         Task<CompanyAddressListModel> PrepareCompanyAddressListModelAsync(CompanyAddressSearchModel searchModel, Core.Domain.Companies.Company company);
         Task<CompanyAddressModel> PrepareCompanyAddressModelAsync(CompanyAddressModel model,
            Core.Domain.Companies.Company company, Address address, bool excludeProperties = false);
+        Task<CompanyVendorScheduleModel> PrepareCompanyVendorScheduleModelAsync(int companyId, int vendorId);
     }
 }

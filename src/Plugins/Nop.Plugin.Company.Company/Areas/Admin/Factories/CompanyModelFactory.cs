@@ -54,6 +54,7 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Factories
         private readonly IAddressModelFactory _addressModelFactory;
         private readonly ICompanyAddressService _companyAddressService;
         private readonly IAddressService _addressService;
+        private readonly ICompanyVendorScheduleService _companyVendorScheduleService;
 
         #endregion
 
@@ -71,7 +72,8 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Factories
             IAddressModelFactory addressModelFactory,
             IVendorService vendorService,
             ICompanyAddressService companyAddressService,
-            IAddressService addressService)
+            IAddressService addressService,
+            ICompanyVendorScheduleService companyVendorScheduleService)
         {
             _companyService = companyService;
             _localizationService = localizationService;
@@ -86,6 +88,7 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Factories
             _vendorService = vendorService;
             _companyAddressService = companyAddressService;
             _addressService = addressService;
+            _companyVendorScheduleService = companyVendorScheduleService;
         }
 
         #endregion
@@ -338,6 +341,20 @@ namespace Nop.Plugin.Company.Company.Areas.Admin.Factories
             });
 
             return model;
+        }
+
+        public virtual async Task<CompanyVendorScheduleModel> PrepareCompanyVendorScheduleModelAsync(int companyId, int vendorId)
+        {
+            var vendor = await _vendorService.GetVendorByIdAsync(vendorId);
+            var workingDays = await _companyVendorScheduleService.GetWorkingDaysAsync(companyId, vendorId);
+
+            return new CompanyVendorScheduleModel
+            {
+                CompanyId = companyId,
+                VendorId = vendorId,
+                VendorName = vendor?.Name,
+                WorkingDays = workingDays.Select(wd => wd.DayOfWeekId).ToList()
+            };
         }
 
         public virtual async Task<CustomerAddressListModel> PrepareCompanyCustomerAddressListModelAsync(CustomerAddressSearchModel searchModel, Core.Domain.Companies.Company company)
