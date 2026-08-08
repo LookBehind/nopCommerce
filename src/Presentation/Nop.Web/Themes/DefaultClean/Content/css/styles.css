@@ -1232,6 +1232,31 @@ label, label + * {
   background-position: -152px 0;
 }
 
+.footer-contact-info {
+  margin: 0 0 30px;
+  padding: 0 0 30px;
+  border-bottom: 1px solid #ddd;
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.footer-contact-address {
+  color: #777;
+  font-style: italic;
+}
+
+.footer-contact-phone a,
+.footer-contact-email a {
+  color: #4ab2f1;
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+.footer-contact-phone a:hover,
+.footer-contact-email a:hover {
+  color: #2f97da;
+}
+
 .newsletter-email {
   display: inline-block;
   overflow: hidden;
