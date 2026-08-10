@@ -11,6 +11,7 @@ using Nop.Data;
 using Nop.Services.Common;
 using Nop.Services.Customers;
 using Nop.Services.Localization;
+using Nop.Services.Logging;
 using Nop.Services.Messages;
 
 namespace Nop.Services.Authentication.External
@@ -35,6 +36,7 @@ namespace Nop.Services.Authentication.External
         private readonly IWorkContext _workContext;
         private readonly IWorkflowMessageService _workflowMessageService;
         private readonly LocalizationSettings _localizationSettings;
+        private readonly ILogger _logger;
 
         #endregion
 
@@ -52,7 +54,8 @@ namespace Nop.Services.Authentication.External
             IStoreContext storeContext,
             IWorkContext workContext,
             IWorkflowMessageService workflowMessageService,
-            LocalizationSettings localizationSettings)
+            LocalizationSettings localizationSettings,
+            ILogger logger)
         {
             _customerSettings = customerSettings;
             _externalAuthenticationSettings = externalAuthenticationSettings;
@@ -67,6 +70,7 @@ namespace Nop.Services.Authentication.External
             _workContext = workContext;
             _workflowMessageService = workflowMessageService;
             _localizationSettings = localizationSettings;
+            _logger = logger;
         }
 
         #endregion
@@ -91,7 +95,10 @@ namespace Nop.Services.Authentication.External
 
             //account is already assigned to another user
             if (currentLoggedInUser.Id != associatedUser.Id)
+            {
+                await _logger.WarningAsync($"ExternalAuth.AuthenticateExistingUserAsync: external account already assigned to customer Id={associatedUser.Id} Email='{associatedUser.Email}' but ambient logged-in customer is Id={currentLoggedInUser.Id} Email='{currentLoggedInUser.Email}' - authentication rejected as AccountAlreadyAssigned.");
                 return ErrorAuthentication(new[] { await _localizationService.GetResourceAsync("Account.AssociatedExternalAuth.AccountAlreadyAssigned") }, returnUrl);
+            }
 
             //or the user try to log in as himself. bit weird
             return SuccessfulAuthentication(returnUrl);
@@ -112,6 +119,13 @@ namespace Nop.Services.Authentication.External
             //associate external account with logged-in user
             if (currentLoggedInUser != null)
             {
+                // If currentLoggedInUser's email doesn't match the external provider's email, the
+                // ambient WorkContext customer (resolved from a forms-auth/guest cookie, NOT the
+                // provider identity) is being associated instead of registering the real new user -
+                // this is the "wrong customer hijacked by a stale cookie" failure mode. Logged so it's
+                // provable from the Log table instead of inferred from telemetry after the fact.
+                await _logger.WarningAsync($"ExternalAuth.AuthenticateNewUserAsync: associating provider email '{parameters.Email}' with ALREADY-LOGGED-IN ambient customer Id={currentLoggedInUser.Id} Email='{currentLoggedInUser.Email}' (provider={parameters.ProviderSystemName}). New customer registration was skipped.");
+
                 await AssociateExternalAccountWithUserAsync(currentLoggedInUser, parameters);
 
                 return SuccessfulAuthentication(returnUrl);
@@ -122,6 +136,7 @@ namespace Nop.Services.Authentication.External
                 return await RegisterNewUserAsync(parameters, returnUrl);
 
             //registration is disabled
+            await _logger.WarningAsync($"ExternalAuth.AuthenticateNewUserAsync: registration is Disabled for email '{parameters.Email}' (provider={parameters.ProviderSystemName}) - no customer created.");
             return ErrorAuthentication(new[] { "Registration is disabled" }, returnUrl);
         }
 
@@ -139,18 +154,21 @@ namespace Nop.Services.Authentication.External
             //check whether the specified email has been already registered
             if (await _customerService.GetCustomerByEmailAsync(parameters.Email) != null)
             {
+                await _logger.WarningAsync($"ExternalAuth.RegisterNewUserAsync: email '{parameters.Email}' (provider={parameters.ProviderSystemName}) already belongs to another customer - registration aborted, no association created for this attempt.");
+
                 var alreadyExistsError = string.Format(await _localizationService.GetResourceAsync("Account.AssociatedExternalAuth.EmailAlreadyExists"),
                     !string.IsNullOrEmpty(parameters.ExternalDisplayIdentifier) ? parameters.ExternalDisplayIdentifier : parameters.ExternalIdentifier);
                 return ErrorAuthentication(new[] { alreadyExistsError }, returnUrl);
             }
 
             //registration is approved if validation isn't required
-            var registrationIsApproved = parameters.IsApproved ?? 
+            var registrationIsApproved = parameters.IsApproved ??
                 _customerSettings.UserRegistrationType == UserRegistrationType.Standard ||
                 (_customerSettings.UserRegistrationType == UserRegistrationType.EmailValidation && !_externalAuthenticationSettings.RequireEmailValidation);
 
             //create registration request
-            var registrationRequest = new CustomerRegistrationRequest(await _workContext.GetCurrentCustomerAsync(),
+            var ambientCustomer = await _workContext.GetCurrentCustomerAsync();
+            var registrationRequest = new CustomerRegistrationRequest(ambientCustomer,
                 parameters.Email, parameters.Email,
                 CommonHelper.GenerateRandomDigitCode(20),
                 PasswordFormat.Hashed,
@@ -160,7 +178,16 @@ namespace Nop.Services.Authentication.External
             //whether registration request has been completed successfully
             var registrationResult = await _customerRegistrationService.RegisterCustomerAsync(registrationRequest);
             if (!registrationResult.Success)
+            {
+                // ambientCustomer.Id is the WorkContext-resolved "current customer" (guest cookie,
+                // stale auth cookie, etc.) that RegisterCustomerAsync tried to turn into the new
+                // account - this is the identity to check first when a brand-new external-auth
+                // registration fails with no exception.
+                await _logger.WarningAsync($"ExternalAuth.RegisterNewUserAsync: RegisterCustomerAsync FAILED for email '{parameters.Email}' (provider={parameters.ProviderSystemName}) against ambient customer Id={ambientCustomer?.Id} Email='{ambientCustomer?.Email}' IsRegistered={await _customerService.IsRegisteredAsync(ambientCustomer)}. Errors: {string.Join(" | ", registrationResult.Errors)}");
                 return ErrorAuthentication(registrationResult.Errors, returnUrl);
+            }
+
+            await _logger.InformationAsync($"ExternalAuth.RegisterNewUserAsync: registered new customer Id={(await _workContext.GetCurrentCustomerAsync())?.Id} for email '{parameters.Email}' (provider={parameters.ProviderSystemName}), approved={registrationIsApproved}");
 
             //allow to save other customer values by consuming this event
             await _eventPublisher.PublishAsync(new CustomerAutoRegisteredByExternalMethodEvent(await _workContext.GetCurrentCustomerAsync(), parameters));
@@ -255,10 +282,15 @@ namespace Nop.Services.Authentication.External
                 return ErrorAuthentication(new[] { "External authentication method cannot be loaded" }, returnUrl);
 
             //get current logged-in user
-            var currentLoggedInUser = await _customerService.IsRegisteredAsync(await _workContext.GetCurrentCustomerAsync()) ? await _workContext.GetCurrentCustomerAsync() : null;
+            var ambientCustomer = await _workContext.GetCurrentCustomerAsync();
+            var ambientIsRegistered = await _customerService.IsRegisteredAsync(ambientCustomer);
+            var currentLoggedInUser = ambientIsRegistered ? ambientCustomer : null;
 
             //authenticate associated user if already exists
             var associatedUser = await GetUserByExternalAuthenticationParametersAsync(parameters);
+
+            await _logger.InformationAsync($"ExternalAuth.AuthenticateAsync: provider={parameters.ProviderSystemName} externalEmail='{parameters.Email}' externalId='{parameters.ExternalIdentifier}' -> ambientCustomerId={ambientCustomer?.Id} ambientEmail='{ambientCustomer?.Email}' ambientIsRegistered={ambientIsRegistered} associatedUserId={associatedUser?.Id} associatedUserEmail='{associatedUser?.Email}'");
+
             if (associatedUser != null)
                 return await AuthenticateExistingUserAsync(associatedUser, currentLoggedInUser, returnUrl);
 

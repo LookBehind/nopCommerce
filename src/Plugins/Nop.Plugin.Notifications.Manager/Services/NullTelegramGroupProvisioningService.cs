@@ -38,4 +38,25 @@ public class NullTelegramGroupProvisioningService : ITelegramGroupProvisioningSe
 
     public Task<IReadOnlyList<AutoInviteCandidate>> GetTelegramContactsAsync() =>
         throw new NotImplementedException(ERROR_MESSAGE);
+
+    public Task<IReadOnlyList<VendorChatFixPreview>> GetVendorChatFixPreviewsAsync(int storeId) =>
+        throw new NotImplementedException(ERROR_MESSAGE);
+
+    public Task FixVendorChatTopicsAsync(int vendorId, int storeId) =>
+        throw new NotImplementedException(ERROR_MESSAGE);
+
+    public Task FixAllVendorChatTopicsAsync(int storeId) =>
+        throw new NotImplementedException(ERROR_MESSAGE);
+
+    public Task<IReadOnlyList<AutoInviteMembershipStatus>> GetAutoInviteMembershipStatusAsync(int storeId) =>
+        throw new NotImplementedException(ERROR_MESSAGE);
+
+    public bool IsAutoInviteMembershipRefreshInProgress(int storeId) =>
+        throw new NotImplementedException(ERROR_MESSAGE);
+
+    public Task RefreshAutoInviteMembershipStatusAsync(int storeId) =>
+        throw new NotImplementedException(ERROR_MESSAGE);
+
+    public Task FixAutoInviteUserMembershipAsync(int storeId, string identifier) =>
+        throw new NotImplementedException(ERROR_MESSAGE);
 }

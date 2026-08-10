@@ -67,4 +67,65 @@ public interface ITelegramGroupProvisioningService
     /// not a general Telegram-wide directory search (MTProto doesn't expose one).
     /// </summary>
     Task<IReadOnlyList<AutoInviteCandidate>> GetTelegramContactsAsync();
+
+    /// <summary>
+    /// Every already-mapped, real vendor group in this store that needs a topics/threads fix right
+    /// now - either it's still a basic group (never forum-enabled), or a company allowed for that
+    /// vendor has no forum thread yet. A single batched Telegram call covers every group's forum
+    /// status; only vendors actually needing something are returned.
+    /// </summary>
+    Task<IReadOnlyList<VendorChatFixPreview>> GetVendorChatFixPreviewsAsync(int storeId);
+
+    /// <summary>
+    /// Upgrades an existing, real vendor group to a forum-enabled supergroup with "List" view if it
+    /// isn't one already (this migration cannot be undone), then creates a forum thread for every
+    /// company allowed for this vendor that doesn't have one yet. No-ops on whatever's already done -
+    /// safe to call repeatedly, including via <see cref="GetVendorChatFixPreviewsAsync"/> having
+    /// already flagged it.
+    /// </summary>
+    Task FixVendorChatTopicsAsync(int vendorId, int storeId);
+
+    /// <summary>
+    /// Runs <see cref="FixVendorChatTopicsAsync"/> for every vendor group in this store that
+    /// currently needs it (best-effort per vendor - one failure doesn't stop the rest).
+    /// </summary>
+    Task FixAllVendorChatTopicsAsync(int storeId);
+
+    /// <summary>
+    /// Last computed result of <see cref="RefreshAutoInviteMembershipStatusAsync"/> for this store -
+    /// reads an in-memory cache only, never talks to Telegram itself, so it's always fast regardless
+    /// of how many groups exist. Empty (not null) if a refresh has never run in this process.
+    /// </summary>
+    Task<IReadOnlyList<AutoInviteMembershipStatus>> GetAutoInviteMembershipStatusAsync(int storeId);
+
+    /// <summary>
+    /// True while a <see cref="RefreshAutoInviteMembershipStatusAsync"/> run is already in flight for
+    /// this store - lets the admin UI tell "already checking, wait for it" apart from silently
+    /// enqueueing another one. Confirmed live on prod (19 real groups): clicking "Check group
+    /// membership" repeatedly before the first run finished queued that many concurrent runs, all
+    /// competing for the same shared Telegram account's rate limit at once - each took 4+ minutes
+    /// instead of the ~30-45s a single paced run should take.
+    /// </summary>
+    bool IsAutoInviteMembershipRefreshInProgress(int storeId);
+
+    /// <summary>
+    /// Actually checks every configured auto-invite user's current membership across every real,
+    /// mapped vendor group in this store - one membership fetch per group (not per user), paced ~1.5s
+    /// apart to stay under Telegram's flood-control burst limit (confirmed live: unpaced calls
+    /// tripped repeated FLOOD_WAIT_30s and the resulting multi-minute request 524'd through
+    /// Cloudflare). Meant to be run as a background job (see the admin controller's use of
+    /// <c>IBackgroundJobClient</c>), not awaited inline in a request - caches its result for
+    /// <see cref="GetAutoInviteMembershipStatusAsync"/> to read. No-ops (doesn't queue a second
+    /// concurrent run) if one is already in progress for this store.
+    /// </summary>
+    Task RefreshAutoInviteMembershipStatusAsync(int storeId);
+
+    /// <summary>
+    /// Re-adds (and re-promotes to admin) an auto-invite user to every real vendor group in this
+    /// store they're currently missing from - a targeted repair for exactly the gap
+    /// <see cref="GetAutoInviteMembershipStatusAsync"/> found, not a full re-sweep. Same per-chat
+    /// pacing as <see cref="RefreshAutoInviteMembershipStatusAsync"/> and meant to be run the same
+    /// way, as a background job rather than awaited inline.
+    /// </summary>
+    Task FixAutoInviteUserMembershipAsync(int storeId, string identifier);
 }

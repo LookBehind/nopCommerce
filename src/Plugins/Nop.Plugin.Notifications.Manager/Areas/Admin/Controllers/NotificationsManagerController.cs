@@ -125,6 +125,176 @@ public class NotificationsManagerController : BaseAdminController
         return Json(new { success = true });
     }
 
+    /// <summary>
+    /// Every real vendor group in this store that currently needs a topics/threads fix - used both
+    /// to drive the per-row "needs fix" indicator (client-side, no per-row round trip) and to build
+    /// the "Fix all" confirmation's full breakdown.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetVendorChatFixSummary()
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        try
+        {
+            var previews = await _provisioningService.GetVendorChatFixPreviewsAsync(storeId);
+            return Json(new
+            {
+                success = true,
+                items = previews.Select(p => new
+                {
+                    vendorId = p.VendorId,
+                    vendorName = p.VendorName,
+                    chatTitle = p.ChatTitle,
+                    chatId = p.ChatId,
+                    needsMigration = p.NeedsMigration,
+                    alreadyForumEnabled = p.AlreadyForumEnabled,
+                    missingCompanyNames = p.MissingCompanyNames
+                })
+            });
+        }
+        catch (Exception e)
+        {
+            await _logger.ErrorAsync("Failed to build vendor chat fix summary", e);
+            return Json(new { success = false, message = e.Message });
+        }
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> FixVendorChatTopics(int vendorId)
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        var backgroundJobClient = _serviceProvider.GetRequiredService<IBackgroundJobClient>();
+        backgroundJobClient.Enqueue<ITelegramGroupProvisioningService>(
+            s => s.FixVendorChatTopicsAsync(vendorId, storeId));
+
+        return Json(new { success = true });
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> FixAllVendorChatTopics()
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        var backgroundJobClient = _serviceProvider.GetRequiredService<IBackgroundJobClient>();
+        backgroundJobClient.Enqueue<ITelegramGroupProvisioningService>(
+            s => s.FixAllVendorChatTopicsAsync(storeId));
+
+        return Json(new { success = true });
+    }
+
+    /// <summary>
+    /// Last computed group membership for every configured auto-invite user - reads an in-memory
+    /// cache only (never talks to Telegram itself), so it's always fast. Call
+    /// <see cref="RefreshAutoInviteMembershipStatus"/> first (or again) to get fresher data - the two
+    /// are separate actions specifically so this one can never 524.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetAutoInviteMembershipStatus()
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        try
+        {
+            var statuses = await _provisioningService.GetAutoInviteMembershipStatusAsync(storeId);
+            return Json(new
+            {
+                success = true,
+                statuses = statuses.Select(s => new
+                {
+                    identifier = s.Identifier,
+                    displayName = s.DisplayName,
+                    found = s.Found,
+                    missingChatTitles = s.MissingFrom.Select(m => m.ChatTitle)
+                })
+            });
+        }
+        catch (Exception e)
+        {
+            await _logger.ErrorAsync("Failed to read auto-invite membership status", e);
+            return Json(new { success = false, message = e.Message });
+        }
+    }
+
+    /// <summary>
+    /// Actually checks every configured auto-invite user's current membership across every real,
+    /// mapped vendor group - one membership fetch per group, paced ~1.5s apart (Telegram's flood
+    /// control). For any real number of groups this is too slow to await inline in a request (a
+    /// prod run of this 524'd through Cloudflare before this was split out), so it only ever runs as
+    /// a background job; poll <see cref="GetAutoInviteMembershipStatus"/> afterward for the result.
+    /// </summary>
+    [HttpPost]
+    public async Task<IActionResult> RefreshAutoInviteMembershipStatus()
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        // Clicking this repeatedly before the first run finishes used to queue that many concurrent
+        // runs, all competing for the same shared Telegram account's rate limit - confirmed live,
+        // each run took 4+ minutes instead of ~30-45s. Tell the admin it's already checking instead.
+        if (_provisioningService.IsAutoInviteMembershipRefreshInProgress(storeId))
+            return Json(new { success = true, alreadyInProgress = true });
+
+        var backgroundJobClient = _serviceProvider.GetRequiredService<IBackgroundJobClient>();
+        backgroundJobClient.Enqueue<ITelegramGroupProvisioningService>(
+            s => s.RefreshAutoInviteMembershipStatusAsync(storeId));
+
+        return Json(new { success = true, alreadyInProgress = false });
+    }
+
+    /// <summary>
+    /// Re-adds (and re-promotes) an auto-invite user to every real group they're currently missing
+    /// from - same per-chat pacing as <see cref="RefreshAutoInviteMembershipStatus"/> and same
+    /// reason it only ever runs as a background job rather than being awaited inline.
+    /// </summary>
+    [HttpPost]
+    public async Task<IActionResult> FixAutoInviteUserMembership(string identifier)
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        if (!_provisioningService.IsConfigured)
+            return Json(new { success = false, message = NOT_CONFIGURED_MESSAGE });
+
+        var storeId = await GetActiveStoreIdAsync();
+
+        var backgroundJobClient = _serviceProvider.GetRequiredService<IBackgroundJobClient>();
+        backgroundJobClient.Enqueue<ITelegramGroupProvisioningService>(
+            s => s.FixAutoInviteUserMembershipAsync(storeId, identifier));
+
+        return Json(new { success = true });
+    }
+
     [HttpPost]
     public async Task<IActionResult> RefreshChatNames()
     {

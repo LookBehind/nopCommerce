@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -6,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Hangfire;
 using Nop.Core.Configuration;
+using Nop.Core.Domain.Companies;
 using Nop.Services.Companies;
 using Nop.Services.Configuration;
 using Nop.Services.Logging;
@@ -33,6 +35,19 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     private static readonly SemaphoreSlim _clientInitLock = new(1, 1);
     private static WTelegram.Client _client;
     private static InputUser _cachedBotInputUser;
+
+    // Last computed auto-invite membership status per store - checking membership is a paced,
+    // multi-second-per-chat Telegram sweep (see RefreshAutoInviteMembershipStatusAsync) that's too
+    // slow to run inline in an HTTP request (confirmed live: it 524'd through Cloudflare), so it only
+    // ever runs as a background job and writes here; GetAutoInviteMembershipStatusAsync just reads it.
+    private static readonly ConcurrentDictionary<int, IReadOnlyList<AutoInviteMembershipStatus>> _membershipStatusCache = new();
+
+    // Guards against overlapping refreshes for the same store. Confirmed live on prod (19 real
+    // groups): clicking "Check group membership" a few times in a row before the first run finished
+    // enqueued that many concurrent RefreshAutoInviteMembershipStatusAsync jobs, all hammering the
+    // same shared lkbhnd Telegram account's rate limit at once - each run took 4+ minutes instead of
+    // the ~30-45s a single paced run should take. A later click now just no-ops instead of piling on.
+    private static readonly ConcurrentDictionary<int, bool> _membershipRefreshInProgress = new();
 
     private readonly IVendorService _vendorService;
     private readonly IStoreService _storeService;
@@ -154,29 +169,38 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
     /// Resolves a "@username" or a phone number to a Telegram <see cref="User"/> (access_hash
     /// included), or null if Telegram has no match / the target's privacy settings block discovery.
     /// Phone-number resolution goes through Contacts_ImportContacts (the only MTProto path that
-    /// starts from a phone number), and the temporary contact it creates on the lkbhnd account is
-    /// deleted again immediately after - this shouldn't leave every invited person as a permanent
-    /// contact of the ops account.
+    /// starts from a phone number) - the only way to actually run it: not a passive lookup, it's a
+    /// write that sets the phone as a contact using whatever first_name/last_name it's given.
+    /// Previously it always ran with a fake "MySnacks"/"AutoInvite" name and unconditionally deleted
+    /// the contact afterward as "cleanup" - both bought nothing (a group invite never required
+    /// contact status) while causing real harm on every Check/Fix re-run for every phone-based
+    /// entry: it wiped out real, pre-existing contacts once (fixed), then it turned out the import
+    /// itself also silently RENAMED real, pre-existing contacts to "MySnacks AutoInvite" (Telegram
+    /// overwrites a contact's stored name to match the import call, even for someone already a
+    /// contact) - confirmed live both times, not hypothetical. So this now checks the existing
+    /// contact list first and only imports (with the placeholder name, harmless for someone with no
+    /// prior name to clobber) when the phone genuinely isn't a contact yet.
     /// </summary>
     private static async Task<User> ResolveUserAsync(WTelegram.Client client, string identifier)
     {
         if (LooksLikePhoneNumber(identifier))
         {
             var phone = identifier.StartsWith('+') ? identifier : $"+{identifier}";
+            var normalizedPhone = phone.TrimStart('+');
+
+            var existingContacts = await client.Contacts_GetContacts(0);
+            var alreadyContact = existingContacts.contacts
+                .Select(c => existingContacts.users.TryGetValue(c.user_id, out var u) ? u : null)
+                .FirstOrDefault(u => u != null && u.phone == normalizedPhone);
+            if (alreadyContact != null)
+                return alreadyContact;
+
             var contact = new InputPhoneContact { client_id = 1, phone = phone, first_name = "MySnacks", last_name = "AutoInvite" };
             var imported = await client.Contacts_ImportContacts(new[] { contact });
 
             User user = null;
             if (imported.imported.Length > 0)
                 imported.users.TryGetValue(imported.imported[0].user_id, out user);
-
-            if (user != null)
-            {
-                // Best-effort cleanup - a failure here shouldn't fail the resolution itself. Uses the
-                // real access_hash we just received, not a guessed/zero one.
-                try { await client.Contacts_DeleteContacts(new InputUserBase[] { new InputUser(user.id, user.access_hash) }); }
-                catch { /* ignore */ }
-            }
 
             return user;
         }
@@ -185,15 +209,47 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         return resolved.User;
     }
 
-    private static async Task<InputChannel> ResolveInputChannelAsync(WTelegram.Client client, long chatId)
+    /// <summary>
+    /// Full channel object (access_hash + flags, incl. whether it's already forum-enabled) - not
+    /// just the id+access_hash pair <see cref="ResolveInputChannelAsync"/> needs, since fixing an
+    /// existing group's topics has to inspect its current forum flag first.
+    /// </summary>
+    private static async Task<Channel> ResolveChannelAsync(WTelegram.Client client, long chatId)
     {
         var channelId = SUPERGROUP_ID_THRESHOLD - chatId;
         var allChats = await client.Messages_GetAllChats();
         if (allChats.chats.TryGetValue(channelId, out var chatBase) && chatBase is Channel channel)
-            return new InputChannel(channel.id, channel.access_hash);
+            return channel;
 
         throw new InvalidOperationException(
             $"Unable to resolve channel {channelId} (chat {chatId}) - the Telegram user account may not be a member of it");
+    }
+
+    private static async Task<InputChannel> ResolveInputChannelAsync(WTelegram.Client client, long chatId)
+    {
+        var channel = await ResolveChannelAsync(client, chatId);
+        return new InputChannel(channel.id, channel.access_hash);
+    }
+
+    /// <summary>
+    /// Current member user ids of a chat (basic group or supergroup) - one call per chat, reused
+    /// across every auto-invite user rather than one call per (user, chat) pair. A basic group's
+    /// full participant list comes back inline with Messages_GetFullChat; a supergroup needs the
+    /// separate Channels_GetParticipants call (capped at 200 - real vendor groups are nowhere near
+    /// that size, just the vendor's own staff + the bot + auto-invite admins).
+    /// </summary>
+    private static async Task<HashSet<long>> GetChatMemberUserIdsAsync(WTelegram.Client client, long chatId)
+    {
+        if (chatId <= SUPERGROUP_ID_THRESHOLD)
+        {
+            var channel = await ResolveInputChannelAsync(client, chatId);
+            var result = await client.Channels_GetParticipants(channel, new ChannelParticipantsRecent(), 0, 200, 0);
+            return result.participants.Select(p => p.UserId).ToHashSet();
+        }
+
+        var full = await client.Messages_GetFullChat(-chatId);
+        var participants = (full.full_chat as ChatFull)?.participants?.Participants;
+        return participants?.Select(p => p.UserId).ToHashSet() ?? new HashSet<long>();
     }
 
     private static async Task AddUserToChatAsync(WTelegram.Client client, long chatId, InputUser user)
@@ -572,6 +628,390 @@ public class TelegramGroupProvisioningService : ITelegramGroupProvisioningServic
         {
             await _logger.ErrorAsync($"Error auto-creating Telegram group '{title}' for vendor '{vendor.Name}'", e);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Every Company allowed for each vendor in this store, keyed by vendor id - the same allowlist
+    /// check <see cref="ProvisionVendorGroupAsync"/> and the admin "missing group" warning use.
+    /// </summary>
+    private async Task<Dictionary<int, List<Company>>> GetVendorAllowedCompaniesAsync(int storeId)
+    {
+        var companies = await _companyService.GetAllCompaniesAsync(storeId: storeId, pageSize: int.MaxValue);
+
+        var map = new Dictionary<int, List<Company>>();
+        foreach (var company in companies)
+        {
+            var companyVendors = await _companyService.GetCompanyVendorsByCompanyAsync(company.Id);
+            foreach (var companyVendor in companyVendors)
+            {
+                if (!map.TryGetValue(companyVendor.VendorId, out var list))
+                    map[companyVendor.VendorId] = list = new List<Company>();
+
+                list.Add(company);
+            }
+        }
+
+        return map;
+    }
+
+    public async Task<IReadOnlyList<VendorChatFixPreview>> GetVendorChatFixPreviewsAsync(int storeId)
+    {
+        await _chatCache.EnsureLoadedAsync();
+        var mappedForStore = _chatCache.Snapshot.Where(kv => kv.Value.StoreId == storeId).ToList();
+        if (mappedForStore.Count == 0)
+            return Array.Empty<VendorChatFixPreview>();
+
+        var client = await GetClientAsync();
+
+        // One batched call covers every mapped chat's current forum status - far cheaper than
+        // resolving each chat individually.
+        var allChats = await client.Messages_GetAllChats();
+        var allowedCompaniesByVendor = await GetVendorAllowedCompaniesAsync(storeId);
+
+        var previews = new List<VendorChatFixPreview>();
+        foreach (var kv in mappedForStore)
+        {
+            var vendor = kv.Value.Vendor;
+            var chatId = kv.Key.ChatId;
+            var isSupergroup = chatId <= SUPERGROUP_ID_THRESHOLD;
+            var alreadyForum = false;
+
+            if (isSupergroup)
+            {
+                var channelId = SUPERGROUP_ID_THRESHOLD - chatId;
+                if (allChats.chats.TryGetValue(channelId, out var chatBase) && chatBase is Channel channel)
+                    alreadyForum = (channel.flags & Channel.Flags.forum) != 0;
+                else
+                {
+                    await _logger.WarningAsync(
+                        $"Could not resolve channel for vendor '{vendor.Name}' chat {chatId} while checking topics status, skipping");
+                    continue;
+                }
+            }
+
+            var missingCompanyNames = allowedCompaniesByVendor.TryGetValue(vendor.Id, out var allowedCompanies)
+                ? new List<string>()
+                : null;
+
+            if (allowedCompanies != null)
+            {
+                foreach (var company in allowedCompanies)
+                {
+                    if (await _chatCache.GetCompanyThreadIdAsync(vendor, storeId, company.Id) == null)
+                        missingCompanyNames.Add(company.Name);
+                }
+            }
+
+            var needsMigration = !isSupergroup;
+            if (!needsMigration && alreadyForum && (missingCompanyNames == null || missingCompanyNames.Count == 0))
+                continue;
+
+            var chatTitle = await _chatCache.GetVendorChatTitleAsync(vendor, storeId) ?? vendor.Name;
+            previews.Add(new VendorChatFixPreview(vendor.Id, vendor.Name, storeId, chatTitle, chatId,
+                needsMigration, alreadyForum, missingCompanyNames ?? new List<string>()));
+        }
+
+        return previews;
+    }
+
+    [AutomaticRetry(Attempts = 3)]
+    public async Task FixVendorChatTopicsAsync(int vendorId, int storeId)
+    {
+        var vendor = await _vendorService.GetVendorByIdAsync(vendorId);
+        if (vendor == null)
+        {
+            await _logger.ErrorAsync($"Cannot fix Telegram group topics: vendor {vendorId} not found");
+            return;
+        }
+
+        await _chatCache.EnsureLoadedAsync();
+        var mappings = _chatCache.Snapshot
+            .Where(kv => kv.Value.Vendor.Id == vendorId && kv.Value.StoreId == storeId)
+            .ToList();
+        if (mappings.Count == 0)
+        {
+            await _logger.ErrorAsync(
+                $"Cannot fix Telegram group topics for vendor '{vendor.Name}': no chat mapping exists for store {storeId}");
+            return;
+        }
+
+        var chatId = mappings[0].Key.ChatId;
+        var messageThreadId = mappings[0].Key.MessageThreadId;
+
+        try
+        {
+            var client = await GetClientAsync();
+
+            if (chatId > SUPERGROUP_ID_THRESHOLD)
+            {
+                // Still a basic group - upgrade to a supergroup first. Telegram carries over
+                // membership/history automatically and posts a migrate-from-chat-id service message
+                // into the new supergroup; TelegramNotificationSenderTask.HandleMigrateFromChatId
+                // independently reacts to that and re-saves the very same mapping this call is about
+                // to save directly, so the two paths just agree rather than conflict.
+                var migrated = await client.Messages_MigrateChat(-chatId);
+                var newChannel = migrated.Chats.Values.OfType<Channel>().FirstOrDefault();
+                if (newChannel == null)
+                    throw new InvalidOperationException(
+                        $"Messages_MigrateChat did not return a new Channel for vendor '{vendor.Name}'");
+
+                chatId = SUPERGROUP_ID_THRESHOLD - newChannel.id;
+                await _chatCache.SaveVendorChatMappingAsync(vendor, storeId, new TelegramChatId(chatId, messageThreadId));
+            }
+
+            var channel = await ResolveChannelAsync(client, chatId);
+            var inputChannel = new InputChannel(channel.id, channel.access_hash);
+
+            if ((channel.flags & Channel.Flags.forum) == 0)
+            {
+                await client.Channels_ToggleForum(inputChannel, enabled: true, tabs: false);
+                await client.Channels_ToggleViewForumAsMessages(inputChannel, enabled: true);
+            }
+
+            var channelInputPeer = new InputPeerChannel(channel.id, channel.access_hash);
+            var allowedCompaniesByVendor = await GetVendorAllowedCompaniesAsync(storeId);
+            var allowedCompanies = allowedCompaniesByVendor.TryGetValue(vendorId, out var companies)
+                ? companies
+                : new List<Company>();
+
+            foreach (var company in allowedCompanies)
+            {
+                if (await _chatCache.GetCompanyThreadIdAsync(vendor, storeId, company.Id) != null)
+                    continue;
+
+                try
+                {
+                    var threadId = await CreateForumTopicAsync(client, channelInputPeer, company.Name);
+                    await _chatCache.SaveCompanyThreadIdAsync(vendor, storeId, company.Id, threadId);
+                }
+                catch (Exception e)
+                {
+                    await _logger.ErrorAsync(
+                        $"Failed to create forum topic for company '{company.Name}' while fixing group for vendor '{vendor.Name}'", e);
+                }
+            }
+
+            await _logger.InformationAsync($"Fixed Telegram group topics for vendor '{vendor.Name}' (chat {chatId})");
+        }
+        catch (Exception e)
+        {
+            await _logger.ErrorAsync($"Error fixing Telegram group topics for vendor '{vendor.Name}'", e);
+            throw;
+        }
+    }
+
+    [AutomaticRetry(Attempts = 3)]
+    public async Task FixAllVendorChatTopicsAsync(int storeId)
+    {
+        var previews = await GetVendorChatFixPreviewsAsync(storeId);
+        foreach (var preview in previews)
+        {
+            try
+            {
+                await FixVendorChatTopicsAsync(preview.VendorId, storeId);
+            }
+            catch (Exception e)
+            {
+                await _logger.ErrorAsync(
+                    $"Fix all: failed to fix Telegram group topics for vendor '{preview.VendorName}', continuing with the rest", e);
+            }
+        }
+    }
+
+    public Task<IReadOnlyList<AutoInviteMembershipStatus>> GetAutoInviteMembershipStatusAsync(int storeId) =>
+        Task.FromResult(_membershipStatusCache.TryGetValue(storeId, out var cached)
+            ? cached
+            : (IReadOnlyList<AutoInviteMembershipStatus>)Array.Empty<AutoInviteMembershipStatus>());
+
+    public bool IsAutoInviteMembershipRefreshInProgress(int storeId) =>
+        _membershipRefreshInProgress.ContainsKey(storeId);
+
+    [AutomaticRetry(Attempts = 1)]
+    public async Task RefreshAutoInviteMembershipStatusAsync(int storeId)
+    {
+        if (!_membershipRefreshInProgress.TryAdd(storeId, true))
+        {
+            await _logger.InformationAsync(
+                $"Skipping auto-invite membership refresh for store {storeId}: one is already in progress");
+            return;
+        }
+
+        try
+        {
+            var entries = await GetAutoInviteEntriesInternalAsync(storeId);
+            if (entries.Count == 0)
+            {
+                _membershipStatusCache[storeId] = Array.Empty<AutoInviteMembershipStatus>();
+                return;
+            }
+
+            var client = await GetClientAsync();
+
+            await _chatCache.EnsureLoadedAsync();
+            var mappedForStore = _chatCache.Snapshot.Where(kv => kv.Value.StoreId == storeId).ToList();
+
+            // One membership fetch per real chat, reused across every auto-invite user below - not
+            // one per (user, chat) pair. Still one Channels_GetParticipants/Messages_GetFullChat call
+            // per chat though, and Telegram's flood control on those methods triggers almost
+            // immediately once fired back-to-back with no pacing (confirmed in prod: a burst of ~15
+            // calls produced repeated FLOOD_WAIT_30 errors that WTelegramClient silently waits out and
+            // retries, turning one page load into several minutes of the browser just sitting there).
+            // A small delay between chats keeps this under Telegram's burst threshold instead of
+            // tripping it - but only holds if a single run isn't also competing with another
+            // concurrent one for the same account's rate limit, which is what the guard above prevents.
+            var memberIdsByChat = new Dictionary<long, HashSet<long>>();
+            var isFirstChat = true;
+            foreach (var chatId in mappedForStore.Select(kv => kv.Key.ChatId).Distinct())
+            {
+                if (!isFirstChat)
+                    await Task.Delay(1500);
+                isFirstChat = false;
+
+                try
+                {
+                    memberIdsByChat[chatId] = await GetChatMemberUserIdsAsync(client, chatId);
+                }
+                catch (Exception e)
+                {
+                    await _logger.ErrorAsync($"Failed to read membership for chat {chatId} while checking auto-invite status", e);
+                }
+            }
+
+            var results = new List<AutoInviteMembershipStatus>();
+            foreach (var entry in entries)
+            {
+                try
+                {
+                    var user = await ResolveUserAsync(client, entry.Identifier);
+                    if (user == null)
+                    {
+                        results.Add(new AutoInviteMembershipStatus(entry.Identifier, entry.DisplayName, false, Array.Empty<MissingChatEntry>()));
+                        continue;
+                    }
+
+                    // De-duped by ChatId, not one entry per vendor mapping - multiple vendors can
+                    // share one physical chat via distinct thread ids (e.g. Segafredo/Cinnabon/Square
+                    // One all in the same "Segafredo orders - MySnacks" group on different topics).
+                    // Without this, a user missing from that one chat got 3 entries here, and Fix
+                    // below retried the same chat 3 times per user - tripling Telegram RPC calls and
+                    // flood-wait exposure for no benefit (confirmed live 2026-08-03).
+                    var missingFrom = new List<MissingChatEntry>();
+                    var missingChatIds = new HashSet<long>();
+                    foreach (var kv in mappedForStore)
+                    {
+                        if (missingChatIds.Contains(kv.Key.ChatId))
+                            continue;
+
+                        if (memberIdsByChat.TryGetValue(kv.Key.ChatId, out var members) && !members.Contains(user.id))
+                        {
+                            var title = await _chatCache.GetVendorChatTitleAsync(kv.Value.Vendor, storeId) ?? kv.Value.Vendor.Name;
+                            missingFrom.Add(new MissingChatEntry(kv.Key.ChatId, title));
+                            missingChatIds.Add(kv.Key.ChatId);
+                        }
+                    }
+
+                    results.Add(new AutoInviteMembershipStatus(entry.Identifier, entry.DisplayName, true, missingFrom));
+                }
+                catch (Exception e)
+                {
+                    await _logger.ErrorAsync($"Failed to check membership for auto-invite user '{entry.DisplayName}'", e);
+                }
+            }
+
+            _membershipStatusCache[storeId] = results;
+        }
+        finally
+        {
+            _membershipRefreshInProgress.TryRemove(storeId, out _);
+        }
+    }
+
+    [AutomaticRetry(Attempts = 1)]
+    public async Task FixAutoInviteUserMembershipAsync(int storeId, string identifier)
+    {
+        identifier = identifier.Trim();
+
+        // Acts directly on the gap RefreshAutoInviteMembershipStatusAsync already found and cached -
+        // no point re-checking membership for every chat again, we already know exactly which ones
+        // this person is missing from. Requires a Check to have run first (the admin UI only shows a
+        // Fix button once it has); if the cache is empty or stale enough that this entry isn't in it,
+        // there's nothing safe to act on without a fresh Check.
+        if (!_membershipStatusCache.TryGetValue(storeId, out var statuses))
+        {
+            await _logger.ErrorAsync(
+                $"Cannot fix membership for '{identifier}': no cached membership status for store {storeId} - run 'Check group membership' first");
+            return;
+        }
+
+        var status = statuses.FirstOrDefault(s => string.Equals(s.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
+        if (status == null || status.MissingFrom.Count == 0)
+            return;
+
+        var client = await GetClientAsync();
+        var user = await ResolveUserAsync(client, identifier);
+        if (user == null)
+        {
+            await _logger.ErrorAsync($"Could not re-resolve '{status.DisplayName}' ({identifier}) to fix their group membership");
+            return;
+        }
+
+        var inputUser = new InputUser(user.id, user.access_hash);
+
+        var fixedChatIds = new HashSet<long>();
+        var notMutualContactCount = 0;
+        var isFirstChat = true;
+        foreach (var missing in status.MissingFrom)
+        {
+            // Pacing between the add/promote calls themselves - lighter risk than the membership
+            // fetches this skips entirely, but still real Telegram traffic per chat.
+            if (!isFirstChat)
+                await Task.Delay(1500);
+            isFirstChat = false;
+
+            try
+            {
+                await AddUserToChatAsync(client, missing.ChatId, inputUser);
+                try { await PromoteUserToAdminAsync(client, missing.ChatId, inputUser); }
+                catch (Exception e)
+                {
+                    await _logger.ErrorAsync(
+                        $"Failed to re-promote '{status.DisplayName}' to admin after re-adding them to chat {missing.ChatId}", e);
+                }
+
+                fixedChatIds.Add(missing.ChatId);
+            }
+            catch (RpcException e) when (e.Message.Contains("USER_NOT_MUTUAL_CONTACT"))
+            {
+                // Telegram refuses a direct add unless the session account and the target are
+                // mutual contacts - not transient, retrying this Fix again won't help. Distinct
+                // from the generic catch below so it doesn't read as "an error occurred, try again"
+                // when the real next step is "send them an invite link instead".
+                notMutualContactCount++;
+                await _logger.ErrorAsync(
+                    $"Cannot fix membership for '{status.DisplayName}' in chat {missing.ChatId}: not a mutual contact of the Telegram session account - send them an invite link instead", e);
+            }
+            catch (Exception e)
+            {
+                await _logger.ErrorAsync($"Failed to fix membership for '{status.DisplayName}' in chat {missing.ChatId}", e);
+            }
+        }
+
+        await _logger.InformationAsync(
+            $"Fixed membership for '{status.DisplayName}' in {fixedChatIds.Count} group(s)"
+            + (notMutualContactCount > 0 ? $"; {notMutualContactCount} need a manual invite link (not a mutual contact)" : ""));
+
+        // Only clear the chats that actually succeeded - previously this cleared MissingFrom
+        // unconditionally regardless of outcome. Confirmed live 2026-08-03: every add for
+        // tam_bayadyan failed with USER_NOT_MUTUAL_CONTACT (fixedCount was 0), yet the admin grid
+        // still reported her as fixed because the cache was wiped anyway.
+        if (fixedChatIds.Count > 0)
+        {
+            _membershipStatusCache[storeId] = statuses
+                .Select(s => s.Identifier == status.Identifier
+                    ? s with { MissingFrom = s.MissingFrom.Where(m => !fixedChatIds.Contains(m.ChatId)).ToList() }
+                    : s)
+                .ToList();
         }
     }
 }

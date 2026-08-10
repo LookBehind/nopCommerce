@@ -357,22 +357,32 @@ namespace Nop.Services.Orders
             string orderNotes = null, int pageIndex = 0, int pageSize = int.MaxValue,
             bool getOnlyTotalCount = false, bool sendRateNotification = false,
             bool sortByDeliveryDate = false, DateTime? schedulDate = null, DateTime? scheduleDateTime = null,
-            string companyName = null, int deliveryHour = 0, List<int> srcIds = null)
+            string companyName = null, int deliveryHour = 0, List<int> srcIds = null, List<int> orderIds = null)
         {
             var query = _orderRepository.Table;
 
             if (storeId > 0)
                 query = query.Where(o => o.StoreId == storeId);
 
+            // Filter to specific order ids before the vendor/product joins below, not after - lets
+            // SQL Server seek on the (small) requested id set instead of materializing every order
+            // for the store/vendor first. Previously callers like PrepareDownloadedOrdersAsync
+            // fetched everything and filtered ids in memory afterward, which timed out once a
+            // vendor's order history got large enough (confirmed live: Cafe Central at 10k+ orders).
+            if (orderIds != null && orderIds.Count > 0)
+                query = query.Where(o => orderIds.Contains(o.Id));
+
             if (vendorId > 0)
             {
-                query = from o in query
-                        join oi in _orderItemRepository.Table on o.Id equals oi.OrderId
-                        join p in _productRepository.Table on oi.ProductId equals p.Id
-                        where p.VendorId == vendorId
-                        select o;
-
-                query = query.Distinct();
+                // EXISTS-style filter, not a join+Distinct - the join fans out to one row per
+                // matching order item before Distinct can collapse it back down, which forced SQL
+                // Server to materialize and sort the full fan-out for every vendor-scoped search
+                // (confirmed live: this is what was timing out PDF invoice export at prod-mysnacks
+                // scale - 550k+ order items). This filters in place instead, same shape as the
+                // orderNotes filter below.
+                query = query.Where(o => _orderItemRepository.Table.Any(oi =>
+                    oi.OrderId == o.Id &&
+                    _productRepository.Table.Any(p => p.Id == oi.ProductId && p.VendorId == vendorId)));
             }
 
             if (customerId > 0)
