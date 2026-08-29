@@ -72,6 +72,7 @@ namespace Nop.Web.Controllers.Api.Order
         private readonly ICheckoutAttributeParser _checkoutAttributeParser;
         private readonly IAmeriaVPosPaymentService _ameriaVPosPaymentService;
         private readonly IPaymentPluginManager _paymentPluginManager;
+        private readonly ICompanyAllowancePaymentMethod _companyAllowancePaymentMethod;
 
         private readonly OrderSettings _orderSettings;
 
@@ -108,6 +109,7 @@ namespace Nop.Web.Controllers.Api.Order
             ICheckoutAttributeParser checkoutAttributeParser,
             IAmeriaVPosPaymentService ameriaVPosPaymentService,
             IPaymentPluginManager paymentPluginManager,
+            ICompanyAllowancePaymentMethod companyAllowancePaymentMethod,
             OrderSettings orderSettings)
         {
             _orderService = orderService;
@@ -139,6 +141,7 @@ namespace Nop.Web.Controllers.Api.Order
             _checkoutAttributeParser = checkoutAttributeParser;
             _ameriaVPosPaymentService = ameriaVPosPaymentService;
             _paymentPluginManager = paymentPluginManager;
+            _companyAllowancePaymentMethod = companyAllowancePaymentMethod;
             _orderSettings = orderSettings;
         }
 
@@ -454,21 +457,94 @@ namespace Nop.Web.Controllers.Api.Order
             var cartTotal = await _orderTotalCalculationService.GetShoppingCartTotalAsync(
                 cart, false);
 
+            //Server decides whether to show a checkout warning and what to say - the
+            //client must not re-derive it. Today the only case is an over-allowance
+            //order (the client can't know whether card self-pay is an active payment
+            //method, and the wording differs when it isn't), but the field is a generic
+            //carrier so future non-allowance warnings can reuse it. Null when there's
+            //nothing to warn about. Best-effort: never let it break cart validation.
+            var checkoutWarning = await BuildCheckoutWarningAsync(
+                customer, currentStoreId, orderRequest.ScheduleDate, cartTotal.shoppingCartTotal);
+
             if (cartErrorModel.Any(error => !error.Success))
             {
                 return Ok(new
                 {
                     success = false,
                     errorList = cartErrorModel.Where(x => !x.Success),
-                    cartTotal = cartTotal.shoppingCartTotal
+                    cartTotal = cartTotal.shoppingCartTotal,
+                    checkoutWarning
                 });
             }
 
-            return Ok(new { 
-                success = true, 
-                message = "All products are fine", 
-                cartTotal = cartTotal.shoppingCartTotal 
+            return Ok(new {
+                success = true,
+                message = "All products are fine",
+                cartTotal = cartTotal.shoppingCartTotal,
+                checkoutWarning
             });
+        }
+
+        /// <summary>
+        /// Builds the checkout warning shown on the mobile order-confirmation sheet, or null
+        /// when there's nothing to warn about. Currently the only case is an over-allowance
+        /// order; the wording depends on whether card self-pay (AmeriaVPos) is an active
+        /// payment method: if it is, the shortfall is collected by card (a redirect); if not,
+        /// checkout falls back to allowance-only and an over-allowance order can't be placed -
+        /// so we must not promise a payment redirect. Kept server-side so the client renders
+        /// the text/decision rather than re-deriving it.
+        /// </summary>
+        [NonAction]
+        private async Task<object> BuildCheckoutWarningAsync(
+            Core.Domain.Customers.Customer customer, int storeId, string scheduleDate, decimal? cartTotal)
+        {
+            //A null total (e.g. total couldn't be computed) - nothing to compare against.
+            if (cartTotal == null)
+                return null;
+
+            try
+            {
+                //Allowance is a per-day cap keyed on the delivery date (see
+                //CompanyBalanceApiController); use the same date the order will use.
+                DateTime orderDateUtc;
+                try
+                {
+                    orderDateUtc = await ConvertCustomerLocalTimeToUTCAsync(customer, scheduleDate);
+                }
+                catch
+                {
+                    orderDateUtc = DateTime.UtcNow;
+                }
+
+                var balance = await _companyAllowancePaymentMethod.GetCustomerRemainingAllowance(
+                    new CustomerBalanceRequest { Customer = customer, OrderDateUtc = orderDateUtc });
+
+                //No company allowance, or the order is fully covered - nothing to warn about.
+                if (balance == null || cartTotal.Value <= balance.RemainingAllowance)
+                    return null;
+
+                var selfPayAvailable = await _paymentPluginManager.IsPluginActiveAsync(
+                    "Payments.AmeriaVPos", customer, storeId);
+
+                var message = await _localizationService.GetResourceAsync(selfPayAvailable
+                    ? "Mobile.Checkout.OverAllowance.WithSelfPay"
+                    : "Mobile.Checkout.OverAllowance.NoSelfPay");
+
+                return new
+                {
+                    exceedsAllowance = true,
+                    requiresPayment = selfPayAvailable,
+                    //An order is never split between allowance and card, so the full
+                    //cart total goes to card when self-pay handles the shortfall.
+                    amountDue = selfPayAvailable ? cartTotal.Value : decimal.Zero,
+                    message
+                };
+            }
+            catch
+            {
+                //A warning must never fail cart validation - degrade to "no warning".
+                return null;
+            }
         }
         
         private async Task<DateTime> ConvertCustomerLocalTimeToUTCAsync(
