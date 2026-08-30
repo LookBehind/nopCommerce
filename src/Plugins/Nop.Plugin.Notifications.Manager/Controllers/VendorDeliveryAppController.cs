@@ -39,6 +39,7 @@ public class VendorDeliveryAppController : BaseApiController
     private readonly IProductService _productService;
     private readonly PushNotificationService _pushNotificationService;
     private readonly ISettingService _settingService;
+    private readonly IVendorOrderDeliveryService _vendorOrderDeliveryService;
 
     public VendorDeliveryAppController(
         ITelegramMiniAppAuthService telegramMiniAppAuthService,
@@ -48,7 +49,8 @@ public class VendorDeliveryAppController : BaseApiController
         ICustomerService customerService,
         IProductService productService,
         PushNotificationService pushNotificationService,
-        ISettingService settingService)
+        ISettingService settingService,
+        IVendorOrderDeliveryService vendorOrderDeliveryService)
     {
         _telegramMiniAppAuthService = telegramMiniAppAuthService;
         _orderService = orderService;
@@ -58,6 +60,7 @@ public class VendorDeliveryAppController : BaseApiController
         _productService = productService;
         _pushNotificationService = pushNotificationService;
         _settingService = settingService;
+        _vendorOrderDeliveryService = vendorOrderDeliveryService;
     }
 
     public record OrderCardModel(int Id, string Slot, string Addr, string Addr2, List<string> Items, bool Delivered);
@@ -118,13 +121,18 @@ public class VendorDeliveryAppController : BaseApiController
                 ? await _addressService.GetAddressByIdAsync(order.ShippingAddressId.Value)
                 : null;
 
+            // Order.OrderStatus only reaches Complete once every vendor's portion is
+            // delivered, so an order can still show here (Processing/Pending) after THIS
+            // vendor already marked their own portion done - check per-vendor, not order-level.
+            var delivered = await _vendorOrderDeliveryService.IsVendorPortionDeliveredAsync(order, vendor);
+
             cards.Add(new OrderCardModel(
                 order.Id,
                 slot,
                 address?.Address1 ?? "Unknown location",
                 address?.Address2,
                 itemLabels,
-                Delivered: false));
+                Delivered: delivered));
         }
 
         return Ok(new BoardResponse(vendor.Name, cards.OrderBy(c => c.Slot).ToList()));
@@ -148,10 +156,12 @@ public class VendorDeliveryAppController : BaseApiController
 
         var vendor = await _vendorService.GetVendorByIdAsync(vendorId);
 
-        // Deliberately duplicates TelegramNotificationSenderTask.HandleBotCommandDeliveredEvent's
-        // marking logic rather than sharing it - see design §6 decision 4.
-        order.OrderStatus = OrderStatus.Complete;
-        await _orderService.UpdateOrderAsync(order);
+        // Shares MarkVendorDeliveredAsync with TelegramNotificationSenderTask's /delivered
+        // handler - both used to duplicate a raw order.OrderStatus = Complete here, which
+        // silently dropped every notification but the first vendor's on a multi-vendor order.
+        var newlyDelivered = await _vendorOrderDeliveryService.MarkVendorDeliveredAsync(order, vendor);
+        if (!newlyDelivered)
+            return Ok(); // this vendor already marked their portion delivered - idempotent
 
         await _pushNotificationService.SendNotificationAsync(order.CustomerId,
             NotificationType.OrderStatusChange,
