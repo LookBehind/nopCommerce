@@ -51,6 +51,8 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
 
             services.AddScoped<IVendorTelegramChatCache, VendorTelegramChatCache>();
 
+            services.AddScoped<IVendorOrderDeliveryService, VendorOrderDeliveryService>();
+
             services.AddScoped<INotificationsManagerModelFactory, NotificationsManagerModelFactory>();
 
             var telegramUserAuthConfigured =

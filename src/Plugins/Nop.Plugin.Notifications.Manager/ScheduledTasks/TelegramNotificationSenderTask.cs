@@ -66,6 +66,7 @@ public class TelegramNotificationSenderTask : IScheduledTask
     private readonly PushNotificationService _pushNotificationService;
     private readonly ITelegramMiniAppAuthService _telegramMiniAppAuthService;
     private readonly IVendorTelegramChatCache _chatCache;
+    private readonly IVendorOrderDeliveryService _vendorOrderDeliveryService;
 
     private static string _cachedBotUsername;
 
@@ -278,11 +279,21 @@ public class TelegramNotificationSenderTask : IScheduledTask
 
             await _logger.InformationAsync($"Found {orders.Count} orders to notify about delivery");
 
+            // A multi-vendor order only reaches OrderStatus.Complete once every vendor's
+            // portion is delivered (see MarkVendorDeliveredAsync) - so the same order can
+            // legitimately still be "pending" for this vendor on a later /delivered run even
+            // after another vendor already delivered theirs. Skip (idempotent, no duplicate
+            // notification) only if THIS vendor already marked their own portion delivered -
+            // e.g. a retried/duplicate command.
+            var newlyDeliveredCount = 0;
             foreach (var order in qualifyingOrders)
             {
-                order.OrderStatus = OrderStatus.Complete;
-                await _orderService.UpdateOrderAsync(order);
+                var newlyDelivered = await _vendorOrderDeliveryService.MarkVendorDeliveredAsync(
+                    order, vendorAssociation.Vendor);
+                if (!newlyDelivered)
+                    continue;
 
+                newlyDeliveredCount++;
                 await _pushNotificationService.SendNotificationAsync(order.CustomerId,
                     NotificationType.OrderStatusChange,
                     "Order delivered",
@@ -297,7 +308,7 @@ public class TelegramNotificationSenderTask : IScheduledTask
 
             await _telegramBotClient.SendMessage(chatId: botEvent.Chat,
                 messageThreadId: botEvent.MessageThreadId,
-                text: $"Marked {qualifyingOrders.Count} as delivered");
+                text: $"Marked {newlyDeliveredCount} as delivered");
         }
         catch (Exception e)
         {
@@ -491,7 +502,8 @@ public class TelegramNotificationSenderTask : IScheduledTask
         IStoreService storeService,
         PushNotificationService pushNotificationService,
         ITelegramMiniAppAuthService telegramMiniAppAuthService,
-        IVendorTelegramChatCache chatCache)
+        IVendorTelegramChatCache chatCache,
+        IVendorOrderDeliveryService vendorOrderDeliveryService)
     {
         _queuedEmail = queuedEmail;
         _vendor = vendor;
@@ -507,6 +519,7 @@ public class TelegramNotificationSenderTask : IScheduledTask
         _pushNotificationService = pushNotificationService;
         _telegramMiniAppAuthService = telegramMiniAppAuthService;
         _chatCache = chatCache;
+        _vendorOrderDeliveryService = vendorOrderDeliveryService;
 
         _botCommandHandlers = new()
         {
