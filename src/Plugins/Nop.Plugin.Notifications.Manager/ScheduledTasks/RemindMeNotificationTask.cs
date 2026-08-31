@@ -172,6 +172,23 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
                     continue;
                 }
 
+                // If customer has no order on this weekday in the last 14 days - we're not going to notify.
+                // Reuses customerOrdersData (loadLastOrders, default 40) instead of a new query; that many
+                // recent orders comfortably covers a 14-day lookback for this business's order cadence.
+                var today = DateTime.UtcNow.Date;
+                var lookbackStart = today.AddDays(-14);
+                var hasRecentSameWeekdayOrder = customerOrdersData.Any(o =>
+                    o.order.ScheduleDate.DayOfWeek == DateTime.UtcNow.DayOfWeek &&
+                    o.order.ScheduleDate.Date >= lookbackStart &&
+                    o.order.ScheduleDate.Date < today);
+
+                if (!hasRecentSameWeekdayOrder)
+                {
+                    await _logger.InformationAsync($"Customer {customer.Email} has no order on this weekday in the last 14 days, skipping notification",
+                        customer: customer);
+                    continue;
+                }
+
                 // Prefer the customer's COMPANY time zone (resolved via the CompanyCustomer mapping), else fall
                 // back to the customer/store time zone. Previously this indexed a companies-by-Id dictionary
                 // with the CUSTOMER id, so it never matched and the company zone was silently ignored - every
