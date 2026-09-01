@@ -234,10 +234,30 @@ namespace Nop.Services.Shipping
 
             var shipments = _shipmentRepository.Table;
 
-            if (shipped.HasValue) 
+            if (shipped.HasValue)
                 shipments = shipments.Where(s => s.ShippedDateUtc.HasValue == shipped);
 
-            return await shipments.Where(shipment => shipment.OrderId == orderId).ToListAsync();
+            shipments = shipments.Where(shipment => shipment.OrderId == orderId);
+
+            // The vendorId parameter used to be silently ignored here (unlike the equivalent
+            // filter in GetAllShipmentsAsync) - a shipment on a multi-vendor order was returned
+            // for every vendor on that order, not just the one whose items it actually contains.
+            if (vendorId > 0)
+            {
+                var queryVendorOrderItems = from orderItem in _orderItemRepository.Table
+                    join p in _productRepository.Table on orderItem.ProductId equals p.Id
+                    where p.VendorId == vendorId
+                    select orderItem.Id;
+
+                shipments = from s in shipments
+                    join si in _siRepository.Table on s.Id equals si.ShipmentId
+                    where queryVendorOrderItems.Contains(si.OrderItemId)
+                    select s;
+
+                shipments = shipments.Distinct();
+            }
+
+            return await shipments.ToListAsync();
         }
 
         /// <summary>
