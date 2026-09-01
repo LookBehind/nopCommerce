@@ -761,6 +761,126 @@ namespace Nop.Web.Controllers.Api.Security
         [HttpPost("add-product-reviews")]
         public virtual async Task<IActionResult> ProductReviewsAdd([FromBody] AddProductReviewApiModel model)
         {
+            var product = await _productService.GetProductByIdAsync(model.Id);
+            var curCus = await _workContext.GetCurrentCustomerAsync();
+            if (product == null || product.Deleted ||
+                !product.AllowCustomerReviews) // TODO: associate review with existing order
+            {
+                return Ok(new
+                {
+                    success = false,
+                    message = await _localizationService.GetResourceAsync("Product.Not.Found")
+                });
+            }
+
+            if (await _customerService.IsGuestAsync(curCus) && !_catalogSettings.AllowAnonymousUsersToReviewProduct)
+            {
+                return Ok(new
+                {
+                    success = false,
+                    message = await _localizationService.GetResourceAsync("Reviews.OnlyRegisteredUsersCanWriteReviews")
+                });
+            }
+
+            if (_catalogSettings.ProductReviewPossibleOnlyAfterPurchasing)
+            {
+                //allow reviewing a product the customer ordered in any non-cancelled order
+                //(Pending/Processing/Complete), not only Complete ones
+                var eligibleOrders = await _orderService.SearchOrdersAsync(customerId: curCus.Id,
+                    productId: model.Id,
+                    osIds: new List<int>
+                    {
+                        (int)OrderStatus.Pending,
+                        (int)OrderStatus.Processing,
+                        (int)OrderStatus.Complete
+                    },
+                    pageSize: 1);
+
+                if (!eligibleOrders.Any())
+                {
+                    return Ok(new
+                    {
+                        success = false,
+                        message = await _localizationService.GetResourceAsync(
+                            "Reviews.ProductReviewPossibleOnlyAfterPurchasing")
+                    });
+                }
+            }
+
+            if (ModelState.IsValid)
+            {
+                //save review
+                var rating = model.Rating;
+                if (rating < 1 || rating > 5)
+                    rating = _catalogSettings.DefaultProductRatingValue;
+                var isApproved = !_catalogSettings.ProductReviewsMustBeApproved;
+
+                var productReview = new ProductReview
+                {
+                    ProductId = product.Id,
+                    CustomerId = curCus.Id,
+                    Title = model.Title,
+                    ReviewText = model.ReviewText,
+                    Rating = rating,
+                    HelpfulYesTotal = 0,
+                    HelpfulNoTotal = 0,
+                    IsApproved = isApproved,
+                    CreatedOnUtc = DateTime.UtcNow,
+                    StoreId = (await _storeContext.GetCurrentStoreAsync()).Id,
+                };
+
+                await _productService.InsertProductReviewAsync(productReview);
+
+                //update product totals
+                await _productService.UpdateProductReviewTotalsAsync(product);
+
+                //notify store owner
+                if (_catalogSettings.NotifyStoreOwnerAboutNewProductReviews)
+                {
+                    await _workflowMessageService.SendProductReviewNotificationMessageAsync(
+                        productReview, _localizationSettings.DefaultAdminLanguageId);
+                }
+
+                //activity log
+                await _customerActivityService.InsertActivityAsync("PublicStore.AddProductReview",
+                    string.Format(
+                         await _localizationService.GetResourceAsync("ActivityLog.PublicStore.AddProductReview"),
+                         product.Name),
+                    product);
+
+                //raise event
+                if (productReview.IsApproved)
+                {
+                    await _eventPublisher.PublishAsync(new ProductReviewApprovedEvent(productReview));
+                }
+
+                return Ok(new
+                {
+                    success = true,
+                    message = isApproved ?
+                        await _localizationService.GetResourceAsync("Reviews.SuccessfullyAdded") :
+                        await _localizationService.GetResourceAsync("Reviews.SeeAfterApproving")
+                });
+            }
+
+            return Ok(new
+            {
+                success = false,
+                message = "Invalid parameters"
+            });
+        }
+
+        /// <summary>
+        /// V2: reviews are scoped per order item instead of per product, so the same product
+        /// ordered in two different orders can be reviewed independently in each. Kept as a
+        /// separate action from the legacy <see cref="ProductReviewsAdd"/> (rather than changing
+        /// its contract) so mobile app builds that predate this - which POST {Id, ReviewText,
+        /// Rating} with no OrderItemId - keep working exactly as before until they update to call
+        /// this endpoint; the old endpoint's behavior must not change under them.
+        /// </summary>
+        [HttpPost("v2/add-product-reviews")]
+        public virtual async Task<IActionResult> ProductReviewsAddV2([FromBody] AddProductReviewApiModel model)
+        {
             var curCus = await _workContext.GetCurrentCustomerAsync();
 
             // Reviews are scoped per order item, not per product - this order item is the
