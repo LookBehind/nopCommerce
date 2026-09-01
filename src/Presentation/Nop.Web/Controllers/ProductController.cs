@@ -135,21 +135,56 @@ namespace Nop.Web.Controllers
             if (!_catalogSettings.ProductReviewPossibleOnlyAfterPurchasing)
                 return;
 
-            var hasCompletedOrders = product.ProductType == ProductType.SimpleProduct
-                ? await HasCompletedOrdersAsync(product)
-                : await (await _productService.GetAssociatedProductsAsync(product.Id)).AnyAwaitAsync(HasCompletedOrdersAsync);
+            var hasPurchased = product.ProductType == ProductType.SimpleProduct
+                ? await HasPurchasedAsync(product)
+                : await (await _productService.GetAssociatedProductsAsync(product.Id)).AnyAwaitAsync(HasPurchasedAsync);
 
-            if (!hasCompletedOrders)
+            if (!hasPurchased)
                 ModelState.AddModelError(string.Empty, await _localizationService.GetResourceAsync("Reviews.ProductReviewPossibleOnlyAfterPurchasing"));
         }
 
-        protected virtual async ValueTask<bool> HasCompletedOrdersAsync(Product product)
+        //allow reviewing a product the customer ordered in any non-cancelled order
+        //(Pending/Processing/Complete), not only Complete ones
+        protected virtual async ValueTask<bool> HasPurchasedAsync(Product product)
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
-            return (await _orderService.SearchOrdersAsync(customerId: customer.Id,
-                productId: product.Id,
-                osIds: new List<int> { (int)OrderStatus.Complete },
-                pageSize: 1)).Any();
+            return await _orderService.HasPurchasedProductAsync(customer.Id, product.Id);
+        }
+
+        /// <summary>
+        /// Resolves and validates the order item a review submission claims to be for: it must
+        /// belong to the current customer, be for this product, and not already have a review
+        /// attached. Adds a ModelState error and returns null when any of that doesn't hold -
+        /// the posted value is never trusted as-is, since it round-trips through a hidden/select
+        /// form field.
+        /// </summary>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        protected virtual async Task<OrderItem> ValidateAndResolveOrderItemForReviewAsync(Product product, int? postedOrderItemId)
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var eligibleOrderItems = await _orderService.GetReviewableOrderItemsAsync(customer.Id, product.Id);
+
+            var orderItem = eligibleOrderItems.FirstOrDefault(oi => oi.Id == postedOrderItemId);
+            if (orderItem != null)
+                return orderItem;
+
+            if (await _orderService.HasPurchasedProductAsync(customer.Id, product.Id))
+            {
+                //has purchased, but every purchase is already reviewed (or the posted id was
+                //stale/tampered/for someone else's order)
+                ModelState.AddModelError(string.Empty, await _localizationService.GetResourceAsync("Reviews.OrderItemAlreadyReviewed"));
+            }
+            else if (!_catalogSettings.ProductReviewPossibleOnlyAfterPurchasing)
+            {
+                //never purchased, and ValidateProductReviewAvailabilityAsync only checks this when
+                //the setting above is on - but a review must always be attached to a real order
+                //item now, so without one we still can't proceed regardless of the setting
+                ModelState.AddModelError(string.Empty, await _localizationService.GetResourceAsync("Reviews.ProductReviewPossibleOnlyAfterPurchasing"));
+            }
+            //else: never purchased and the setting is on - ValidateProductReviewAvailabilityAsync
+            //already added this same message, don't duplicate it
+
+            return null;
         }
 
         #endregion
@@ -382,14 +417,14 @@ namespace Nop.Web.Controllers
 
         #region Product reviews
 
-        public virtual async Task<IActionResult> ProductReviews(int productId)
+        public virtual async Task<IActionResult> ProductReviews(int productId, int? orderItemId = null)
         {
             var product = await _productService.GetProductByIdAsync(productId);
             if (product == null || product.Deleted || !product.Published || !product.AllowCustomerReviews)
                 return RedirectToRoute("Homepage");
 
             var model = new ProductReviewsModel();
-            model = await _productModelFactory.PrepareProductReviewsModelAsync(model, product);
+            model = await _productModelFactory.PrepareProductReviewsModelAsync(model, product, orderItemId);
 
             await ValidateProductReviewAvailabilityAsync(product);
 
@@ -413,8 +448,7 @@ namespace Nop.Web.Controllers
         {
             var product = await _productService.GetProductByIdAsync(productId);
 
-            if (product == null || product.Deleted || !product.Published || !product.AllowCustomerReviews ||
-                !await _productService.CanAddReviewAsync(product.Id, (await _storeContext.GetCurrentStoreAsync()).Id))
+            if (product == null || product.Deleted || !product.Published || !product.AllowCustomerReviews)
                 return RedirectToRoute("Homepage");
 
             //validate CAPTCHA
@@ -425,7 +459,25 @@ namespace Nop.Web.Controllers
 
             await ValidateProductReviewAvailabilityAsync(product);
 
-            if (ModelState.IsValid)
+            //never trust the posted OrderItemId as-is - re-resolve/validate it server-side
+            var orderItem = await ValidateAndResolveOrderItemForReviewAsync(product, model.AddProductReview.OrderItemId);
+
+            //an order can be cancelled after the item was added to it - never allow reviewing an
+            //item from a cancelled order, regardless of ProductReviewPossibleOnlyAfterPurchasing
+            //(that setting only toggles whether a purchase is required at all; here a resolved,
+            //eligible order item on the customer's own order already proves a purchase happened,
+            //so the only remaining question is whether that purchase still stands)
+            if (orderItem != null)
+            {
+                var order = await _orderService.GetOrderByIdAsync(orderItem.OrderId);
+                if (order.OrderStatus == OrderStatus.Cancelled)
+                {
+                    ModelState.AddModelError(string.Empty, await _localizationService.GetResourceAsync("Reviews.CannotReviewCancelledOrder"));
+                    orderItem = null;
+                }
+            }
+
+            if (ModelState.IsValid && orderItem != null)
             {
                 //save review
                 var rating = model.AddProductReview.Rating;
@@ -436,6 +488,7 @@ namespace Nop.Web.Controllers
                 var productReview = new ProductReview
                 {
                     ProductId = product.Id,
+                    OrderItemId = orderItem.Id,
                     CustomerId = (await _workContext.GetCurrentCustomerAsync()).Id,
                     Title = model.AddProductReview.Title,
                     ReviewText = model.AddProductReview.ReviewText,
@@ -491,7 +544,8 @@ namespace Nop.Web.Controllers
             }
 
             //if we got this far, something failed, redisplay form
-            model = await _productModelFactory.PrepareProductReviewsModelAsync(model, product);
+            var preferredOrderItemId = model.AddProductReview.OrderItemId;
+            model = await _productModelFactory.PrepareProductReviewsModelAsync(model, product, preferredOrderItemId);
             return View(model);
         }
 

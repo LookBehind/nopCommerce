@@ -31,6 +31,13 @@ namespace Nop.Services.Orders
     {
         #region Fields
 
+        // Pending/Processing/Complete - reviews are allowed against any order that hasn't been
+        // cancelled, not only fully completed ones
+        private static readonly int[] NonCancelledOrderStatusIds =
+        {
+            (int)OrderStatus.Pending, (int)OrderStatus.Processing, (int)OrderStatus.Complete
+        };
+
         private readonly IProductService _productService;
         private readonly IRepository<Address> _addressRepository;
         private readonly IRepository<Customer> _customerRepository;
@@ -702,6 +709,62 @@ namespace Nop.Services.Orders
                           (!isNotReturnable.HasValue || (p.NotReturnable == isNotReturnable)) &&
                           (vendorId <= 0 || (p.VendorId == vendorId))
                           select oi).ToListAsync();
+        }
+
+        /// <summary>
+        /// Gets whether the customer has purchased a product at all, in any non-cancelled order
+        /// (Pending/Processing/Complete) - regardless of whether it has since been reviewed
+        /// </summary>
+        /// <param name="customerId">Customer identifier</param>
+        /// <param name="productId">Product identifier</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains true if the customer has purchased the product
+        /// </returns>
+        public virtual async Task<bool> HasPurchasedProductAsync(int customerId, int productId)
+        {
+            if (customerId == 0 || productId == 0)
+                return false;
+
+            var matches = await (from oi in _orderItemRepository.Table
+                                join o in _orderRepository.Table on oi.OrderId equals o.Id
+                                where o.CustomerId == customerId && oi.ProductId == productId &&
+                                NonCancelledOrderStatusIds.Contains(o.OrderStatusId)
+                                select oi.Id).Take(1).ToListAsync();
+            return matches.Any();
+        }
+
+        /// <summary>
+        /// Gets the customer's order items for a product, across non-cancelled orders
+        /// (Pending/Processing/Complete), that don't already have a product review attached -
+        /// i.e. still eligible to be reviewed. Ordered newest order first
+        /// </summary>
+        /// <param name="customerId">Customer identifier</param>
+        /// <param name="productId">Product identifier</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the reviewable order items
+        /// </returns>
+        public virtual async Task<IList<OrderItem>> GetReviewableOrderItemsAsync(int customerId, int productId)
+        {
+            if (customerId == 0 || productId == 0)
+                return new List<OrderItem>();
+
+            var candidates = await (from oi in _orderItemRepository.Table
+                                    join o in _orderRepository.Table on oi.OrderId equals o.Id
+                                    where o.CustomerId == customerId && oi.ProductId == productId &&
+                                    NonCancelledOrderStatusIds.Contains(o.OrderStatusId)
+                                    orderby o.CreatedOnUtc descending
+                                    select oi).ToListAsync();
+
+            var reviewable = new List<OrderItem>();
+            foreach (var orderItem in candidates)
+            {
+                if (await _productService.GetProductReviewByOrderItemIdAsync(orderItem.Id) == null)
+                    reviewable.Add(orderItem);
+            }
+
+            return reviewable;
         }
 
         /// <summary>

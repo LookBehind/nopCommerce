@@ -2406,6 +2406,22 @@ namespace Nop.Services.Catalog
         }
 
         /// <summary>
+        /// Gets the review scoped to a specific order item, if one has been left
+        /// </summary>
+        /// <param name="orderItemId">Order item identifier</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the product review, or null if this order item hasn't been reviewed
+        /// </returns>
+        public virtual async Task<ProductReview> GetProductReviewByOrderItemIdAsync(int orderItemId)
+        {
+            return (await _productReviewRepository.Table
+                .Where(r => r.OrderItemId == orderItemId)
+                .ToListAsync())
+                .FirstOrDefault();
+        }
+
+        /// <summary>
         /// Inserts a product review
         /// </summary>
         /// <param name="productReview">Product review</param>

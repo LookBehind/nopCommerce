@@ -434,6 +434,8 @@ namespace Nop.Web.Factories
             {
                 var product = await _productService.GetProductByIdAsync(orderItem.ProductId);
 
+                var existingReview = await _productService.GetProductReviewByOrderItemIdAsync(orderItem.Id);
+
                 var orderItemModel = new OrderDetailsModel.OrderItemModel
                 {
                     Id = orderItem.Id,
@@ -445,6 +447,8 @@ namespace Nop.Web.Factories
                     ProductSeName = await _urlRecordService.GetSeNameAsync(product),
                     Quantity = orderItem.Quantity,
                     AttributeInfo = orderItem.AttributeDescription,
+                    UserRating = existingReview?.Rating,
+                    CanReview = existingReview == null && product.AllowCustomerReviews && order.OrderStatus != OrderStatus.Cancelled,
                 };
                 //rental info
                 if (product.IsRental)

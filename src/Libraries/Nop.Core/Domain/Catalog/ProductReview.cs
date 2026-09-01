@@ -18,6 +18,15 @@ namespace Nop.Core.Domain.Catalog
         public int ProductId { get; set; }
 
         /// <summary>
+        /// Gets or sets the order item this review is scoped to. Null for reviews created before
+        /// order-item-scoped reviews existed - those stay product-only and are not attributable to
+        /// a specific order. New reviews always set this: one review per order item, not per
+        /// (customer, product), so the same product ordered in two different orders can be
+        /// reviewed independently in each.
+        /// </summary>
+        public int? OrderItemId { get; set; }
+
+        /// <summary>
         /// Gets or sets the store identifier
         /// </summary>
         public int StoreId { get; set; }

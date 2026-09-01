@@ -68,11 +68,16 @@ namespace Nop.Web.Factories
         /// </summary>
         /// <param name="model">Product reviews model</param>
         /// <param name="product">Product</param>
+        /// <param name="preferredOrderItemId">
+        /// Order item to preselect when the customer has more than one eligible order item for
+        /// this product (e.g. arriving from the order details "write a review" link); ignored if
+        /// it isn't one of the customer's eligible order items for this product
+        /// </param>
         /// <returns>
         /// A task that represents the asynchronous operation
         /// The task result contains the product reviews model
         /// </returns>
-        Task<ProductReviewsModel> PrepareProductReviewsModelAsync(ProductReviewsModel model, Product product);
+        Task<ProductReviewsModel> PrepareProductReviewsModelAsync(ProductReviewsModel model, Product product, int? preferredOrderItemId = null);
 
         /// <summary>
         /// Prepare the customer product reviews model

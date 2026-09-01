@@ -776,6 +776,16 @@ namespace Nop.Services.Catalog
         Task<IList<ProductReview>> GetProductReviewsByIdsAsync(int[] productReviewIds);
 
         /// <summary>
+        /// Gets the review scoped to a specific order item, if one has been left
+        /// </summary>
+        /// <param name="orderItemId">Order item identifier</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the product review, or null if this order item hasn't been reviewed
+        /// </returns>
+        Task<ProductReview> GetProductReviewByOrderItemIdAsync(int orderItemId);
+
+        /// <summary>
         /// Inserts a product review
         /// </summary>
         /// <param name="productReview">Product review</param>

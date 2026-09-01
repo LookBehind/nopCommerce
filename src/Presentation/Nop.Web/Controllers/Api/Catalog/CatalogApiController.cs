@@ -761,15 +761,35 @@ namespace Nop.Web.Controllers.Api.Security
         [HttpPost("add-product-reviews")]
         public virtual async Task<IActionResult> ProductReviewsAdd([FromBody] AddProductReviewApiModel model)
         {
-            var product = await _productService.GetProductByIdAsync(model.Id);
             var curCus = await _workContext.GetCurrentCustomerAsync();
-            if (product == null || product.Deleted ||
-                !product.AllowCustomerReviews) // TODO: associate review with existing order 
+
+            // Reviews are scoped per order item, not per product - this order item is the
+            // source of truth for which product is being reviewed and who is allowed to.
+            var orderItem = await _orderService.GetOrderItemByIdAsync(model.OrderItemId);
+            var order = orderItem == null ? null : await _orderService.GetOrderByIdAsync(orderItem.OrderId);
+            var product = orderItem == null ? null : await _productService.GetProductByIdAsync(orderItem.ProductId);
+
+            if (orderItem == null || order == null || order.CustomerId != curCus.Id ||
+                product == null || product.Deleted || !product.AllowCustomerReviews)
             {
                 return Ok(new
                 {
                     success = false,
                     message = await _localizationService.GetResourceAsync("Product.Not.Found")
+                });
+            }
+
+            // An order can be cancelled after the item was added to it - never allow reviewing an
+            // item from a cancelled order, regardless of ProductReviewPossibleOnlyAfterPurchasing
+            // (that setting only toggles whether a purchase is required at all; here a valid
+            // OrderItemId on the customer's own order already proves a purchase happened, so the
+            // only remaining question is whether that purchase still stands).
+            if (order.OrderStatus == OrderStatus.Cancelled)
+            {
+                return Ok(new
+                {
+                    success = false,
+                    message = await _localizationService.GetResourceAsync("Reviews.CannotReviewCancelledOrder")
                 });
             }
 
@@ -782,29 +802,13 @@ namespace Nop.Web.Controllers.Api.Security
                 });
             }
 
-            if (_catalogSettings.ProductReviewPossibleOnlyAfterPurchasing)
+            if (await _productService.GetProductReviewByOrderItemIdAsync(orderItem.Id) != null)
             {
-                //allow reviewing a product the customer ordered in any non-cancelled order
-                //(Pending/Processing/Complete), not only Complete ones
-                var eligibleOrders = await _orderService.SearchOrdersAsync(customerId: curCus.Id,
-                    productId: model.Id,
-                    osIds: new List<int>
-                    {
-                        (int)OrderStatus.Pending,
-                        (int)OrderStatus.Processing,
-                        (int)OrderStatus.Complete
-                    },
-                    pageSize: 1);
-
-                if (!eligibleOrders.Any())
+                return Ok(new
                 {
-                    return Ok(new
-                    {
-                        success = false,
-                        message = await _localizationService.GetResourceAsync(
-                            "Reviews.ProductReviewPossibleOnlyAfterPurchasing")
-                    });
-                }
+                    success = false,
+                    message = await _localizationService.GetResourceAsync("Reviews.OrderItemAlreadyReviewed")
+                });
             }
 
             if (ModelState.IsValid)
@@ -818,6 +822,7 @@ namespace Nop.Web.Controllers.Api.Security
                 var productReview = new ProductReview
                 {
                     ProductId = product.Id,
+                    OrderItemId = orderItem.Id,
                     CustomerId = curCus.Id,
                     Title = model.Title,
                     ReviewText = model.ReviewText,
@@ -1069,6 +1074,12 @@ namespace Nop.Web.Controllers.Api.Security
         }
         public partial class AddProductReviewApiModel : BaseEntity
         {
+            /// <summary>
+            /// The order item being reviewed - reviews are scoped per order item, not per
+            /// product, so the same product ordered in two different orders can be reviewed
+            /// independently in each. The product is derived server-side from this order item.
+            /// </summary>
+            public int OrderItemId { get; set; }
             public string Title { get; set; }
             public string ReviewText { get; set; }
             public int Rating { get; set; }

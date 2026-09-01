@@ -208,6 +208,31 @@ namespace Nop.Services.Orders
         Task<IList<OrderItem>> GetOrderItemsAsync(int orderId, bool? isNotReturnable = null, bool? isShipEnabled = null, int vendorId = 0);
 
         /// <summary>
+        /// Gets whether the customer has purchased a product at all, in any non-cancelled order
+        /// (Pending/Processing/Complete) - regardless of whether it has since been reviewed
+        /// </summary>
+        /// <param name="customerId">Customer identifier</param>
+        /// <param name="productId">Product identifier</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains true if the customer has purchased the product
+        /// </returns>
+        Task<bool> HasPurchasedProductAsync(int customerId, int productId);
+
+        /// <summary>
+        /// Gets the customer's order items for a product, across non-cancelled orders
+        /// (Pending/Processing/Complete), that don't already have a product review attached -
+        /// i.e. still eligible to be reviewed. Ordered newest order first
+        /// </summary>
+        /// <param name="customerId">Customer identifier</param>
+        /// <param name="productId">Product identifier</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the reviewable order items
+        /// </returns>
+        Task<IList<OrderItem>> GetReviewableOrderItemsAsync(int customerId, int productId);
+
+        /// <summary>
         /// Gets an order item
         /// </summary>
         /// <param name="orderItemGuid">Order item identifier</param>
