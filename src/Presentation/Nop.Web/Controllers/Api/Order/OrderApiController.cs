@@ -963,10 +963,10 @@ namespace Nop.Web.Controllers.Api.Order
             {
                 var languageId = _workContext.GetWorkingLanguageAsync().Id;
                 var model = new CustomerOrderListModel();
-                //the current customer's own review rating per product (latest review wins; 0 when not reviewed)
+                //the current customer's own review rating per order item (0 when not reviewed)
                 var customerReviews = (await _productService.GetAllProductReviewsAsync(customerId: customer.Id))
-                    .GroupBy(pr => pr.ProductId)
-                    .ToDictionary(g => g.Key, g => g.OrderByDescending(pr => pr.CreatedOnUtc).First().Rating);
+                    .Where(pr => pr.OrderItemId.HasValue)
+                    .ToDictionary(pr => pr.OrderItemId.Value, pr => pr.Rating);
                 foreach (var order in perviousOrders)
                 {
                     var orderModel = new CustomerOrderListModel.OrderDetailsModel
@@ -1014,7 +1014,7 @@ namespace Nop.Web.Controllers.Api.Order
                             Quantity = orderItem.Quantity,
                             AttributeInfo = orderItem.AttributeDescription,
                             ProductAttributes = await GetOrderItemProductAttributesAsync(orderItem),
-                            UserRating = customerReviews.TryGetValue(product.Id, out var userRating) ? userRating : null,
+                            UserRating = customerReviews.TryGetValue(orderItem.Id, out var userRating) ? userRating : null,
                             Vendor = vendorBriefModel
                         };
                         //rental info
@@ -1074,10 +1074,10 @@ namespace Nop.Web.Controllers.Api.Order
             {
                 var languageId = _workContext.GetWorkingLanguageAsync().Id;
                 var model = new CustomerOrderListModel();
-                //the current customer's own review rating per product (latest review wins; 0 when not reviewed)
+                //the current customer's own review rating per order item (0 when not reviewed)
                 var customerReviews = (await _productService.GetAllProductReviewsAsync(customerId: customer.Id))
-                    .GroupBy(pr => pr.ProductId)
-                    .ToDictionary(g => g.Key, g => g.OrderByDescending(pr => pr.CreatedOnUtc).First().Rating);
+                    .Where(pr => pr.OrderItemId.HasValue)
+                    .ToDictionary(pr => pr.OrderItemId.Value, pr => pr.Rating);
                 foreach (var order in perviousOrders)
                 {
                     var orderModel = new CustomerOrderListModel.OrderDetailsModel
@@ -1127,7 +1127,7 @@ namespace Nop.Web.Controllers.Api.Order
                             Quantity = orderItem.Quantity,
                             AttributeInfo = orderItem.AttributeDescription,
                             ProductAttributes = await GetOrderItemProductAttributesAsync(orderItem),
-                            UserRating = customerReviews.TryGetValue(product.Id, out var userRating) ? userRating : null,
+                            UserRating = customerReviews.TryGetValue(orderItem.Id, out var userRating) ? userRating : null,
                             Vendor = vendorBriefModel
                         };
                         //rental info
@@ -1187,10 +1187,10 @@ namespace Nop.Web.Controllers.Api.Order
             {
                 var languageId = (await _workContext.GetWorkingLanguageAsync()).Id;
                 var model = new CustomerOrderListModel();
-                //the current customer's own review rating per product (latest review wins; null when not reviewed)
+                //the current customer's own review rating per order item (null when not reviewed)
                 var customerReviews = (await _productService.GetAllProductReviewsAsync(customerId: customer.Id))
-                    .GroupBy(pr => pr.ProductId)
-                    .ToDictionary(g => g.Key, g => g.OrderByDescending(pr => pr.CreatedOnUtc).First().Rating);
+                    .Where(pr => pr.OrderItemId.HasValue)
+                    .ToDictionary(pr => pr.OrderItemId.Value, pr => pr.Rating);
                 foreach (var order in perviousOrders)
                 {
                     var orderModel = new CustomerOrderListModel.OrderDetailsModel
@@ -1238,7 +1238,7 @@ namespace Nop.Web.Controllers.Api.Order
                             Quantity = orderItem.Quantity,
                             AttributeInfo = orderItem.AttributeDescription,
                             ProductAttributes = await GetOrderItemProductAttributesAsync(orderItem),
-                            UserRating = customerReviews.TryGetValue(product.Id, out var userRating) ? userRating : null,
+                            UserRating = customerReviews.TryGetValue(orderItem.Id, out var userRating) ? userRating : null,
                             Vendor = vendorBriefModel
                         };
                         //rental info
@@ -1291,10 +1291,10 @@ namespace Nop.Web.Controllers.Api.Order
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
             var languageId = (await _workContext.GetWorkingLanguageAsync()).Id;
-            //the current customer's own review rating per product (latest review wins; null when not reviewed)
+            //the current customer's own review rating per order item (null when not reviewed)
             var customerReviews = (await _productService.GetAllProductReviewsAsync(customerId: customer.Id))
-                .GroupBy(pr => pr.ProductId)
-                .ToDictionary(g => g.Key, g => g.OrderByDescending(pr => pr.CreatedOnUtc).First().Rating);
+                .Where(pr => pr.OrderItemId.HasValue)
+                .ToDictionary(pr => pr.OrderItemId.Value, pr => pr.Rating);
 
             //single-order lookup (deep-link / load-by-id)
             if (orderId.HasValue)
@@ -1450,7 +1450,7 @@ namespace Nop.Web.Controllers.Api.Order
                     Quantity = orderItem.Quantity,
                     AttributeInfo = orderItem.AttributeDescription,
                     ProductAttributes = await GetOrderItemProductAttributesAsync(orderItem),
-                    UserRating = customerReviews.TryGetValue(product.Id, out var userRating) ? userRating : null,
+                    UserRating = customerReviews.TryGetValue(orderItem.Id, out var userRating) ? userRating : null,
                     TotalReviews = product.ApprovedTotalReviews,
                     RatingSum = product.ApprovedRatingSum,
                     Vendor = vendorBriefModel
