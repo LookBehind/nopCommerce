@@ -22,6 +22,7 @@ using Nop.Services.Directory;
 using Nop.Services.Helpers;
 using Nop.Services.Localization;
 using Nop.Services.Media;
+using Nop.Services.Orders;
 using Nop.Services.Security;
 using Nop.Services.Seo;
 using Nop.Services.Shipping.Date;
@@ -53,6 +54,7 @@ namespace Nop.Web.Factories
         private readonly IGenericAttributeService _genericAttributeService;
         private readonly ILocalizationService _localizationService;
         private readonly IManufacturerService _manufacturerService;
+        private readonly IOrderService _orderService;
         private readonly IPermissionService _permissionService;
         private readonly IPictureService _pictureService;
         private readonly IPriceCalculationService _priceCalculationService;
@@ -94,6 +96,7 @@ namespace Nop.Web.Factories
             IGenericAttributeService genericAttributeService,
             ILocalizationService localizationService,
             IManufacturerService manufacturerService,
+            IOrderService orderService,
             IPermissionService permissionService,
             IPictureService pictureService,
             IPriceCalculationService priceCalculationService,
@@ -131,6 +134,7 @@ namespace Nop.Web.Factories
             _genericAttributeService = genericAttributeService;
             _localizationService = localizationService;
             _manufacturerService = manufacturerService;
+            _orderService = orderService;
             _permissionService = permissionService;
             _pictureService = pictureService;
             _priceCalculationService = priceCalculationService;
@@ -218,6 +222,29 @@ namespace Nop.Web.Factories
         }
 
         /// <summary>
+        /// Gets whether the current customer is allowed to start a new review for a product.
+        /// True when the customer has never purchased the product (the purchase-required
+        /// messaging, if any, is handled separately by <c>ValidateProductReviewAvailabilityAsync</c>
+        /// so the form still shows), or when they've purchased it but still have at least one
+        /// order item that hasn't been reviewed yet. False only once every non-cancelled order
+        /// item for this product has already been reviewed.
+        /// </summary>
+        /// <param name="product">Product</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains true if a new review can be started
+        /// </returns>
+        protected virtual async Task<bool> CanCustomerAddNewReviewAsync(Product product)
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+
+            if (!await _orderService.HasPurchasedProductAsync(customer.Id, product.Id))
+                return true;
+
+            return (await _orderService.GetReviewableOrderItemsAsync(customer.Id, product.Id)).Any();
+        }
+
+        /// <summary>
         /// Prepare the product review overview model
         /// </summary>
         /// <param name="product">Product</param>
@@ -257,7 +284,7 @@ namespace Nop.Web.Factories
             {
                 productReview.ProductId = product.Id;
                 productReview.AllowCustomerReviews = product.AllowCustomerReviews;
-                productReview.CanAddNewReview = await _productService.CanAddReviewAsync(product.Id, (await _storeContext.GetCurrentStoreAsync()).Id);
+                productReview.CanAddNewReview = await CanCustomerAddNewReviewAsync(product);
             }
 
             return productReview;
@@ -1557,11 +1584,16 @@ namespace Nop.Web.Factories
         /// </summary>
         /// <param name="model">Product reviews model</param>
         /// <param name="product">Product</param>
+        /// <param name="preferredOrderItemId">
+        /// Order item to preselect when the customer has more than one eligible order item for
+        /// this product (e.g. arriving from the order details "write a review" link); ignored if
+        /// it isn't one of the customer's eligible order items for this product
+        /// </param>
         /// <returns>
         /// A task that represents the asynchronous operation
         /// The task result contains the product reviews model
         /// </returns>
-        public virtual async Task<ProductReviewsModel> PrepareProductReviewsModelAsync(ProductReviewsModel model, Product product)
+        public virtual async Task<ProductReviewsModel> PrepareProductReviewsModelAsync(ProductReviewsModel model, Product product, int? preferredOrderItemId = null)
         {
             if (model == null)
                 throw new ArgumentNullException(nameof(model));
@@ -1680,7 +1712,38 @@ namespace Nop.Web.Factories
 
             model.AddProductReview.CanCurrentCustomerLeaveReview = _catalogSettings.AllowAnonymousUsersToReviewProduct || !await _customerService.IsGuestAsync(await _workContext.GetCurrentCustomerAsync());
             model.AddProductReview.DisplayCaptcha = _captchaSettings.Enabled && _captchaSettings.ShowOnProductReviewPage;
-            model.AddProductReview.CanAddNewReview = await _productService.CanAddReviewAsync(product.Id, (await _storeContext.GetCurrentStoreAsync()).Id);
+            model.AddProductReview.CanAddNewReview = await CanCustomerAddNewReviewAsync(product);
+
+            //resolve which order item this review will be attached to: transparently when there's
+            //exactly one eligible order item, via a picker when there's more than one
+            var currentCustomer = await _workContext.GetCurrentCustomerAsync();
+            var eligibleOrderItems = await _orderService.GetReviewableOrderItemsAsync(currentCustomer.Id, product.Id);
+
+            if (eligibleOrderItems.Count == 1)
+            {
+                model.AddProductReview.OrderItemId = eligibleOrderItems[0].Id;
+            }
+            else if (eligibleOrderItems.Count > 1)
+            {
+                var selectedOrderItemId = eligibleOrderItems.Any(oi => oi.Id == preferredOrderItemId)
+                    ? preferredOrderItemId.Value
+                    : eligibleOrderItems[0].Id;
+
+                foreach (var orderItem in eligibleOrderItems)
+                {
+                    var order = await _orderService.GetOrderByIdAsync(orderItem.OrderId);
+                    var orderDate = (await _dateTimeHelper.ConvertToUserTimeAsync(order.CreatedOnUtc, DateTimeKind.Utc)).ToString("d");
+
+                    model.AddProductReview.OrderItemOptions.Add(new SelectListItem
+                    {
+                        Value = orderItem.Id.ToString(),
+                        Text = string.Format(await _localizationService.GetResourceAsync("Reviews.SelectOrderOption"), order.CustomOrderNumber, orderDate),
+                        Selected = orderItem.Id == selectedOrderItemId
+                    });
+                }
+
+                model.AddProductReview.OrderItemId = selectedOrderItemId;
+            }
 
             return model;
         }

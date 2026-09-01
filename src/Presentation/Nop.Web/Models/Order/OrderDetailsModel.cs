@@ -106,8 +106,12 @@ namespace Nop.Web.Models.Order
             public IList<OrderItemProductAttributeModel> ProductAttributes { get; set; }
             public string RentalInfo { get; set; }
 
-            //current customer's own review rating for this product (null = not yet reviewed)
+            //current customer's own review rating for this order item (null = not yet reviewed)
             public int? UserRating { get; set; }
+
+            //whether the "write a review" entry point should be shown for this order item -
+            //order not cancelled, product still allows reviews, and not already reviewed
+            public bool CanReview { get; set; }
 
             //product-wide approved review aggregates, so the mobile app can show the
             //real rating/count on a reordered cart item (it has no other source for these)

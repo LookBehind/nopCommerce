@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using Nop.Web.Framework.Models;
 using Nop.Web.Framework.Mvc.ModelBinding;
 
@@ -98,9 +99,14 @@ namespace Nop.Web.Models.Catalog
 
     public partial record AddProductReviewModel : BaseNopModel
     {
+        public AddProductReviewModel()
+        {
+            OrderItemOptions = new List<SelectListItem>();
+        }
+
         [NopResourceDisplayName("Reviews.Fields.Title")]
         public string Title { get; set; }
-        
+
         [NopResourceDisplayName("Reviews.Fields.ReviewText")]
         public string ReviewText { get; set; }
 
@@ -116,6 +122,20 @@ namespace Nop.Web.Models.Catalog
         public bool CanAddNewReview { get; set; }
 
         public string Result { get; set; }
+
+        /// <summary>
+        /// The order item being reviewed - resolved server-side when the customer has exactly one
+        /// eligible (non-cancelled, unreviewed) order item for this product, otherwise bound from
+        /// the picker below. Re-validated server-side on submit regardless of the value posted.
+        /// </summary>
+        [NopResourceDisplayName("Reviews.SelectOrderToReview")]
+        public int? OrderItemId { get; set; }
+
+        /// <summary>
+        /// Populated only when the customer has more than one eligible order item for this
+        /// product, so the storefront can show a "which order?" picker.
+        /// </summary>
+        public IList<SelectListItem> OrderItemOptions { get; set; }
     }
 
     public partial record AddProductReviewReviewTypeMappingModel : BaseNopEntityModel

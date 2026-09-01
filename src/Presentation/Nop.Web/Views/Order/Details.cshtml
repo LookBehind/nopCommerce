@@ -616,6 +616,12 @@
                                                 <a href="@Url.RouteUrl("GetLicense", new {orderItemId = item.OrderItemGuid})">@T("DownloadableProducts.Fields.DownloadLicense")</a>
                                             </div>
                                         }
+                                        @if (item.CanReview)
+                                        {
+                                            <div class="write-review">
+                                                <a href="@Url.RouteUrl("ProductReviews", new { productId = item.ProductId, orderItemId = item.Id })">@T("Order.Product(s).WriteAReview")</a>
+                                            </div>
+                                        }
                                         @await Component.InvokeAsync("Widget", new { widgetZone = PublicWidgetZones.OrderDetailsProductLine, additionalData = item })
                                     </td>
                                     @if (Model.ShowVendorName)
