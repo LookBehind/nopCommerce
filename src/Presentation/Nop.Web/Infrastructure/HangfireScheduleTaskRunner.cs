@@ -30,8 +30,6 @@ namespace Nop.Web.Infrastructure
             _logger = logger;
         }
 
-        // Prevent a slow run from overlapping the next CRON tick for the same task (per task type + args).
-        [DisableConcurrentExecution(timeoutInSeconds: 60)]
         // Do NOT retry-storm a failing recurring task: fail once (visible on the dashboard) and let the next
         // CRON tick try again - matching the legacy timer's "log and move on" behavior. Without this, Hangfire's
         // default 10-attempt retry piles up Scheduled retries for any task that fails every run.
@@ -40,6 +38,18 @@ namespace Nop.Web.Infrastructure
         {
             if (string.IsNullOrWhiteSpace(taskType))
                 return;
+
+            // Scoped per taskType, not [DisableConcurrentExecution] - that attribute's resource key
+            // is just DeclaringType.FullName + MethodName, it does NOT include the taskType argument,
+            // so every distinct schedule task (RemindMe, RateReminder, PreDeliveryNudge, ...) was
+            // serialized behind one shared lock. Right after a restart several recurring jobs come
+            // due at once; whichever one runs long (RemindMe is documented to need up to 15 minutes
+            // for LLM calls) held that single lock and made every OTHER task's run fail with
+            // DistributedLockTimeoutException for as long as it ran - observed in prod as a ~46-minute
+            // burst of failures across unrelated tasks right after a pod restart. This still prevents
+            // a slow run from overlapping the next CRON tick for the SAME task, just not for others.
+            using var taskLock = JobStorage.Current.GetConnection()
+                .AcquireDistributedLock($"schedule-task:{taskType}", TimeSpan.FromSeconds(60));
 
             var scheduleTask = await _scheduleTaskService.GetTaskByTypeAsync(taskType);
             if (scheduleTask == null || !scheduleTask.Enabled)
