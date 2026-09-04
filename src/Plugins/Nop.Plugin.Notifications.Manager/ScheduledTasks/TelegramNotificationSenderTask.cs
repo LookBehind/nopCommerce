@@ -337,16 +337,33 @@ public class TelegramNotificationSenderTask : IScheduledTask
                     if (update.Type == UpdateType.Message &&
                         update.Message!.Entities?.Any(me => me.Type == MessageEntityType.BotCommand) == true)
                     {
-                        var commandHandler = _botCommandHandlers.FirstOrDefault(p =>
-                            update.Message.Text?.StartsWith(p.Item1, StringComparison.OrdinalIgnoreCase) == true);
-                        
-                        if(commandHandler.Item2 != null)
+                        // Shared multi-tenant groups host more than one tenant's bot; a command explicitly
+                        // @-mentioning a different bot's username must not be processed here (each tenant's
+                        // bot otherwise receives the same update and would apply it to its own DB).
+                        var commandEntity = update.Message.Entities.First(me => me.Type == MessageEntityType.BotCommand);
+                        var commandToken = update.Message.Text!.Substring(commandEntity.Offset, commandEntity.Length);
+                        var mentionAtIndex = commandToken.IndexOf('@');
+                        var mentionedBotUsername = mentionAtIndex >= 0 ? commandToken[(mentionAtIndex + 1)..] : null;
+
+                        if (mentionedBotUsername != null &&
+                            !string.Equals(mentionedBotUsername, await GetBotUsernameAsync(_telegramBotClient),
+                                StringComparison.OrdinalIgnoreCase))
                         {
-                            await commandHandler.Item2.Invoke(update.Message);
+                            // Addressed to another bot - not ours to handle.
                         }
                         else
                         {
-                            await _logger.WarningAsync($"No handler found for bot command {update.Message.Text}");
+                            var commandHandler = _botCommandHandlers.FirstOrDefault(p =>
+                                update.Message.Text?.StartsWith(p.Item1, StringComparison.OrdinalIgnoreCase) == true);
+
+                            if(commandHandler.Item2 != null)
+                            {
+                                await commandHandler.Item2.Invoke(update.Message);
+                            }
+                            else
+                            {
+                                await _logger.WarningAsync($"No handler found for bot command {update.Message.Text}");
+                            }
                         }
                     }
                     else if (update.Type == UpdateType.Message &&
@@ -355,7 +372,13 @@ public class TelegramNotificationSenderTask : IScheduledTask
                         await HandleMigrateFromChatId(update.Message);
                     }
 
-                    lastSeenUpdateId = Math.Max(lastSeenUpdateId, update.Id + 1);
+                    // Per-bot update_ids are strictly monotonic, so this must always advance - never
+                    // clamp with Math.Max. If the stored offset is ever corrupted to a value ahead of
+                    // Telegram's real update_ids (e.g. after a bot-token swap), Math.Max would wedge it
+                    // there forever: Telegram ignores an out-of-range offset and keeps replaying the same
+                    // backlog, which then gets reprocessed on every poll (see the 2026-06/2026-08/2026-09
+                    // fxpro incidents). Unconditionally advancing self-heals on the very next update.
+                    lastSeenUpdateId = update.Id + 1;
                 }
                 catch (Exception e)
                 {
