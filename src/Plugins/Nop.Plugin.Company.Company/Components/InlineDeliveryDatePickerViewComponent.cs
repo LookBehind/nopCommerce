@@ -37,7 +37,7 @@ namespace Nop.Plugin.Company.Company.Components
                 MaxDaysAhead = await deliveryTimeService.GetMaxDaysAheadAsync()
             };
 
-            return View("~/Plugins/Company.Company/Views/Shared/Components/InlineDeliveryDatePicker/Default.cshtml", model);
+            return View("~/Plugins/Company.Company/Views/Shared/Components/GlobalDeliveryDatePicker/Inline.cshtml", model);
         }
     }
 }

@@ -42,7 +42,7 @@
     <None Remove="Views\VendorAddPopup.cshtml" />
     <None Remove="Views\VendorSchedulePopup.cshtml" />
     <None Remove="Views\Shared\Components\GlobalDeliveryDatePicker\Default.cshtml" />
-    <None Remove="Views\Shared\Components\InlineDeliveryDatePicker\Default.cshtml" />
+    <None Remove="Views\Shared\Components\GlobalDeliveryDatePicker\Inline.cshtml" />
     <None Remove="Areas\Admin\Views\Company\**\*.cshtml" />
     <None Remove="Areas\Admin\Views\_ViewImports.cshtml" />
   </ItemGroup>
@@ -106,9 +106,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>Views\Shared\Components\GlobalDeliveryDatePicker\Default.cshtml</Link>
     </Content>
-    <Content Include="Views\Shared\Components\InlineDeliveryDatePicker\Default.cshtml">
+    <Content Include="Views\Shared\Components\GlobalDeliveryDatePicker\Inline.cshtml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>Views\Shared\Components\InlineDeliveryDatePicker\Default.cshtml</Link>
+      <Link>Views\Shared\Components\GlobalDeliveryDatePicker\Inline.cshtml</Link>
     </Content>
     <!-- Areas/Admin views will use wildcard since they are in a separate area -->
     <Content Include="Areas\Admin\Views\Company\**\*.cshtml">
