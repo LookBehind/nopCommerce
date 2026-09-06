@@ -1,7 +1,7 @@
 @model DeliveryDatePickerModel
 @using Nop.Plugin.Company.Company.Models
 
-<div class="global-delivery-picker" id="global-delivery-picker">
+<div class="global-delivery-picker@(Model.IsCheckoutContext ? " checkout-context" : "")" id="global-delivery-picker">
     <div class="delivery-display" id="delivery-display">
         <span class="delivery-icon">📅</span>
         <span class="delivery-text">Select delivery time</span>
@@ -529,6 +529,27 @@
             opacity: 0.7;
             transform: scale(1.1);
         }
+    }
+
+    /* Checkout-only: match the header's compact scale instead of the larger
+       standalone look the button gets when it has a page section to itself */
+    .global-delivery-picker.checkout-context {
+        display: inline-block !important;
+        margin-bottom: 16px;
+    }
+
+    .global-delivery-picker.checkout-context .delivery-display {
+        font-size: 13px;
+        padding: 5px 10px;
+    }
+
+    .global-delivery-picker.checkout-context .delivery-icon {
+        font-size: 14px;
+        margin-right: 6px;
+    }
+
+    .global-delivery-picker.checkout-context .delivery-arrow {
+        font-size: 11px;
     }
 
     /* Checkout-only: live availability panel */
