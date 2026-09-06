@@ -68,6 +68,19 @@
     </div>
 </div>
 
+@if (Model.IsCheckoutContext)
+{
+    <!-- Live vendor/product availability check for the picked date, checkout-only -->
+    <div class="unavailable-items-panel" id="unavailable-items-panel" style="display: none;">
+        <p class="unavailable-items-title" id="unavailable-items-title"></p>
+        <ul class="unavailable-items-list" id="unavailable-items-list"></ul>
+        <div class="unavailable-items-actions">
+            <button type="button" class="btn btn-primary" id="remove-unavailable-btn">Remove these items and continue</button>
+            <a href="@Url.RouteUrl("ShoppingCart")" class="btn btn-secondary">Go back to cart</a>
+        </div>
+    </div>
+}
+
 <style>
     .global-delivery-picker {
         position: relative;
@@ -517,6 +530,53 @@
             transform: scale(1.1);
         }
     }
+
+    /* Checkout-only: live availability panel */
+    .unavailable-items-panel {
+        margin: 12px 0;
+        padding: 14px 16px;
+        border: 1px solid #f5c2c7;
+        border-radius: 8px;
+        background: #f8d7da;
+    }
+
+    .unavailable-items-title {
+        margin: 0 0 8px;
+        font-weight: 600;
+        color: #842029;
+    }
+
+    .unavailable-items-list {
+        margin: 0 0 12px;
+        padding-left: 20px;
+        color: #842029;
+    }
+
+    .unavailable-items-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .unavailable-items-actions .btn {
+        display: inline-block;
+        padding: 8px 16px;
+        border-radius: 4px;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        text-decoration: none;
+    }
+
+    .unavailable-items-actions .btn-primary {
+        background: #007bff;
+        color: #fff;
+    }
+
+    .unavailable-items-actions .btn-secondary {
+        background: #6c757d;
+        color: #fff;
+    }
 </style>
 
 <script asp-location="Footer">
@@ -539,36 +599,6 @@
                 $display.addClass('needs-attention');
             }
         }
-
-        // Re-fetches and redraws the header's own display. Used after another delivery-time
-        // picker on the page (e.g. the inline checkout picker) changes the selection, via the
-        // 'deliveryTimeUpdated' event below - this replaces the old 30s polling validator with
-        // an on-demand, one-shot refresh instead.
-        function refreshDeliveryDisplay() {
-            $.ajax({
-                url: '@Url.Action("GetDeliveryTime", "DeliveryTime", new { area = "" })',
-                type: 'GET',
-                timeout: 10000,
-                dataType: 'json'
-            })
-            .done(function(response) {
-                if (response.success && response.selectedDeliveryTime) {
-                    var selectedDt = new Date(response.selectedDeliveryTime);
-                    selectedDateTime = response.selectedDeliveryTime;
-                    selectedDate = selectedDt.getFullYear() + '-' +
-                                  String(selectedDt.getMonth() + 1).padStart(2, '0') + '-' +
-                                  String(selectedDt.getDate()).padStart(2, '0');
-                    $('#delivery-display .delivery-text').text(formatDeliveryTimeDisplay(selectedDt));
-                    $('#delivery-display .delivery-icon').text('🕐');
-                    hasValidSelection = true;
-                }
-                updateDisplayClasses(response);
-            });
-        }
-
-        window.addEventListener('deliveryTimeUpdated', function() {
-            refreshDeliveryDisplay();
-        });
 
         // Calendar Picker Logic
         var modal = $('#delivery-modal');
@@ -977,9 +1007,9 @@
                 hasValidSelection = true;
                 updateDisplayClasses({ stateClass: 'has-selection', shouldPrompt: false });
 
-                // Let any other delivery-time picker on the page (e.g. the inline
-                // checkout picker) know the selection changed
-                window.dispatchEvent(new CustomEvent('deliveryTimeUpdated'));
+                if (isCheckoutContext) {
+                    checkCartAvailability(datetime);
+                }
             })
             .fail(function() {
                 alert('Failed to save delivery time. Please try again.');
@@ -993,5 +1023,75 @@
 
         // Load initial data
         loadAvailableTimesFromAjax();
+
+        // Checkout-only: live vendor/product availability check for the picked date
+        var isCheckoutContext = @(Model.IsCheckoutContext.ToString().ToLower());
+
+        function checkCartAvailability(datetime) {
+            $.ajax({
+                url: '@Url.Action("CheckCartAvailability", "DeliveryTime", new { area = "" })',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ deliveryTime: datetime })
+            })
+            .done(function(response) {
+                if (response.available) {
+                    $('#unavailable-items-panel').hide();
+                    return;
+                }
+
+                var selectedDt = new Date(datetime);
+                $('#unavailable-items-title').text(
+                    'These items aren\'t available on ' + formatDeliveryTimeDisplay(selectedDt) + ':'
+                );
+
+                var listHtml = '';
+                var cartItemIds = [];
+                response.unavailableItems.forEach(function(item) {
+                    listHtml += '<li data-cart-item-id="' + item.cartItemId + '">' + item.message + '</li>';
+                    cartItemIds.push(item.cartItemId);
+                });
+                $('#unavailable-items-list').html(listHtml);
+                $('#remove-unavailable-btn').data('cart-item-ids', cartItemIds);
+                $('#unavailable-items-panel').show();
+            })
+            .fail(function() {
+                console.error('Failed to check cart availability');
+            });
+        }
+
+        if (isCheckoutContext) {
+            $('#remove-unavailable-btn').click(function() {
+                var cartItemIds = $(this).data('cart-item-ids') || [];
+                if (cartItemIds.length === 0) return;
+
+                $.ajax({
+                    url: '@Url.Action("RemoveUnavailableCartItems", "DeliveryTime", new { area = "" })',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ cartItemIds: cartItemIds })
+                })
+                .done(function(response) {
+                    if (response.success && selectedDateTime) {
+                        checkCartAvailability(selectedDateTime);
+                    }
+                })
+                .fail(function() {
+                    alert('Failed to remove unavailable items. Please try again from your cart.');
+                });
+            });
+
+            // If a valid time is already selected (e.g. picked earlier in this session),
+            // check availability against it as soon as the checkout picker loads
+            $.ajax({
+                url: '@Url.Action("GetDeliveryTime", "DeliveryTime", new { area = "" })',
+                type: 'GET',
+                dataType: 'json'
+            }).done(function(response) {
+                if (response.success && response.selectedDeliveryTime) {
+                    checkCartAvailability(response.selectedDeliveryTime);
+                }
+            });
+        }
     });
 </script>

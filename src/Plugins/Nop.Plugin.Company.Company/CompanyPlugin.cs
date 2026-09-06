@@ -72,9 +72,7 @@ namespace Nop.Plugin.Company.Company
         /// <returns>View component name</returns>
         public string GetWidgetViewComponentName(string widgetZone)
         {
-            return widgetZone == PublicWidgetZones.OpCheckoutShippingAddressBottom
-                ? "InlineDeliveryDatePicker"
-                : "GlobalDeliveryDatePicker";
+            return "GlobalDeliveryDatePicker";
         }
 
         /// <summary>

@@ -30,6 +30,12 @@ namespace Nop.Plugin.Company.Company.Models
         public int MaxDaysAhead { get; set; }
 
         /// <summary>
+        /// Whether this instance is rendered on the checkout page (shows the live cart
+        /// availability check + unavailable-items panel after picking a time)
+        /// </summary>
+        public bool IsCheckoutContext { get; set; }
+
+        /// <summary>
         /// Whether the user has already selected a delivery time
         /// </summary>
         public bool HasSelectedTime => SelectedDeliveryTime.HasValue;
