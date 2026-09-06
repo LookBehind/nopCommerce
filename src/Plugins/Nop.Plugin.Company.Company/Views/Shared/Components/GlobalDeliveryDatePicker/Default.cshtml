@@ -623,6 +623,17 @@
 
         // Calendar Picker Logic
         var modal = $('#delivery-modal');
+
+        // Re-parent the modal straight onto <body>. It's `position: fixed`, but when this
+        // widget renders on the checkout page it sits nested inside the checkout accordion's
+        // markup - if any ancestor there establishes its own stacking context (transform/
+        // transition/z-index, common in accordion/collapse widgets), a fixed-position
+        // descendant gets trapped inside it instead of escaping to the page's top stacking
+        // layer, so it can render behind other elements (e.g. the nav menu) that have their
+        // own z-index. Moving it to be a direct child of body sidesteps that regardless of
+        // where the widget itself was rendered.
+        modal.appendTo(document.body);
+
         var display = $('#delivery-display');
         var currentMonth = new Date().getMonth();
         var currentYear = new Date().getFullYear();
