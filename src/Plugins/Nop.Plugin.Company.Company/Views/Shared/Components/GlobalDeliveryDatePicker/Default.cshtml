@@ -522,218 +522,53 @@
 <script asp-location="Footer">
     $(document).ready(function() {
 
-        // Global delivery time validation manager
-        var DeliveryTimeValidator = {
+        // Update display classes to reflect a GetDeliveryTime response's state
+        // (no-selection / selection-invalid / has-selection styling)
+        function updateDisplayClasses(response) {
+            var $picker = $('#global-delivery-picker');
+            var $display = $('#delivery-display');
 
-            // Configuration
-            config: {
-                checkInterval: 30000, // Check every 30 seconds
-                maxRetries: 3,
-                retryDelay: 5000,
-                apiEndpoint: '@Url.Action("GetDeliveryTime", "DeliveryTime", new { area = "" })',
-                excludePaths: ['/admin/', '/login', '/register', '/logout']
-            },
+            $picker.removeClass('no-selection selection-expired selection-invalid has-selection');
+            $display.removeClass('needs-attention');
 
-            // State tracking
-            state: {
-                lastCheckTime: 0,
-                checkCount: 0,
-                retryCount: 0,
-                isChecking: false,
-                hasValidSelection: false,
-                intervalId: null
-            },
-
-            // Initialize the validator
-            init: function() {
-                if (this.shouldSkipValidation()) {
-                    return;
-                }
-
-                // Start periodic validation
-                this.startPeriodicValidation();
-
-                // Check immediately
-                setTimeout(() => this.performValidationCheck(), 1000);
-
-                // Listen for page visibility changes
-                if (typeof document.visibilityState !== 'undefined') {
-                    document.addEventListener('visibilitychange', () => {
-                        if (!document.hidden) {
-                            // Page became visible, check validation
-                            setTimeout(() => this.performValidationCheck(), 500);
-                        }
-                    });
-                }
-
-                // Listen for storage changes (in case selection is updated in another tab)
-                if (typeof Storage !== 'undefined') {
-                    window.addEventListener('storage', (e) => {
-                        if (e.key === 'SelectedDeliveryTime') {
-                            setTimeout(() => this.performValidationCheck(), 500);
-                        }
-                    });
-                }
-            },
-
-            // Check if validation should be skipped for current page
-            shouldSkipValidation: function() {
-                var currentPath = window.location.pathname.toLowerCase();
-
-                return this.config.excludePaths.some(path =>
-                    currentPath.includes(path)
-                );
-            },
-
-            // Start periodic validation checks
-            startPeriodicValidation: function() {
-                if (this.state.intervalId) {
-                    clearInterval(this.state.intervalId);
-                }
-
-                this.state.intervalId = setInterval(() => {
-                    this.performValidationCheck();
-                }, this.config.checkInterval);
-            },
-
-            // Perform validation check
-            performValidationCheck: function() {
-                if (this.state.isChecking) {
-                    return; // Already checking
-                }
-
-                // Don't check if modal is currently open
-                if ($('#delivery-modal').hasClass('show')) {
-                    return;
-                }
-
-                this.state.isChecking = true;
-                this.state.lastCheckTime = Date.now();
-                this.state.checkCount++;
-
-                // Make AJAX request to check delivery time
-                $.ajax({
-                    url: this.config.apiEndpoint,
-                    type: 'GET',
-                    timeout: 10000,
-                    dataType: 'json'
-                })
-                .done((response) => {
-                    this.handleValidationResponse(response);
-                })
-                .fail((xhr, status, error) => {
-                    this.handleValidationError(xhr, status, error);
-                })
-                .always(() => {
-                    this.state.isChecking = false;
-                    this.state.retryCount = 0; // Reset retry count on completion
-                });
-            },
-
-            // Handle successful validation response
-            handleValidationResponse: function(response) {
-                if (!response.success) {
-                    this.state.hasValidSelection = false;
-                    hasValidSelection = false;
-                    this.updateDisplayClasses(response);
-                    this.openDeliveryPicker();
-                    return;
-                }
-
-                this.state.hasValidSelection = !!response.selectedDeliveryTime;
-                hasValidSelection = !!response.selectedDeliveryTime;
-
-                // Update display classes based on response
-                this.updateDisplayClasses(response);
-
-                // Update display with selectedDeliveryTime from AJAX response
-                if (response.selectedDeliveryTime) {
-                    var selectedDt = new Date(response.selectedDeliveryTime);
-                    var displayText = formatDeliveryTimeDisplay(selectedDt);
-                    $('#delivery-display .delivery-text').text(displayText);
-                    $('#delivery-display .delivery-icon').text('🕐');
-                } else {
-                    this.openDeliveryPicker();
-                }
-            },
-
-            // Update display classes based on validation response
-            updateDisplayClasses: function(response) {
-                var $picker = $('#global-delivery-picker');
-                var $display = $('#delivery-display');
-
-                // Remove all state classes
-                $picker.removeClass('no-selection selection-expired selection-invalid has-selection');
-                $display.removeClass('needs-attention');
-
-                // Add appropriate state class
-                if (response.stateClass) {
-                    $picker.addClass(response.stateClass);
-                }
-
-                // Add needs-attention class if should prompt
-                if (response.shouldPrompt) {
-                    $display.addClass('needs-attention');
-                }
-            },
-
-            // Handle validation error
-            handleValidationError: function(xhr, status, error) {
-                console.log('Delivery time validation error:', status, error);
-
-                if (this.state.retryCount < this.config.maxRetries) {
-                    this.state.retryCount++;
-                    setTimeout(() => {
-                        this.performValidationCheck();
-                    }, this.config.retryDelay);
-                } else {
-                    // Max retries reached, assume no valid selection
-                    this.state.hasValidSelection = false;
-                    hasValidSelection = false;
-                    this.openDeliveryPicker();
-                }
-            },
-
-            // Open delivery picker
-            openDeliveryPicker: function() {
-                // Try to trigger the existing delivery picker
-                var deliveryDisplay = $('#delivery-display');
-                if (deliveryDisplay.length > 0) {
-                    deliveryDisplay.click();
-                } else {
-                    console.error('Delivery picker not found. Please refresh the page.');
-                }
-            },
-
-            // Pause validation checks (e.g., when modal is open)
-            pauseValidation: function() {
-                if (this.state.intervalId) {
-                    clearInterval(this.state.intervalId);
-                    this.state.intervalId = null;
-                }
-            },
-
-            // Resume validation checks
-            resumeValidation: function() {
-                this.startPeriodicValidation();
-                // Perform immediate check after resuming
-                setTimeout(() => this.performValidationCheck(), 500);
-            },
-
-            // Check if user is actively using the page
-            isUserActive: function() {
-                // Simple check - consider extending with more sophisticated detection
-                return !document.hidden && this.state.lastCheckTime > (Date.now() - 60000);
-            },
-
-            // Cleanup function
-            destroy: function() {
-                if (this.state.intervalId) {
-                    clearInterval(this.state.intervalId);
-                    this.state.intervalId = null;
-                }
+            if (response.stateClass) {
+                $picker.addClass(response.stateClass);
             }
-        };
+
+            if (response.shouldPrompt) {
+                $display.addClass('needs-attention');
+            }
+        }
+
+        // Re-fetches and redraws the header's own display. Used after another delivery-time
+        // picker on the page (e.g. the inline checkout picker) changes the selection, via the
+        // 'deliveryTimeUpdated' event below - this replaces the old 30s polling validator with
+        // an on-demand, one-shot refresh instead.
+        function refreshDeliveryDisplay() {
+            $.ajax({
+                url: '@Url.Action("GetDeliveryTime", "DeliveryTime", new { area = "" })',
+                type: 'GET',
+                timeout: 10000,
+                dataType: 'json'
+            })
+            .done(function(response) {
+                if (response.success && response.selectedDeliveryTime) {
+                    var selectedDt = new Date(response.selectedDeliveryTime);
+                    selectedDateTime = response.selectedDeliveryTime;
+                    selectedDate = selectedDt.getFullYear() + '-' +
+                                  String(selectedDt.getMonth() + 1).padStart(2, '0') + '-' +
+                                  String(selectedDt.getDate()).padStart(2, '0');
+                    $('#delivery-display .delivery-text').text(formatDeliveryTimeDisplay(selectedDt));
+                    $('#delivery-display .delivery-icon').text('🕐');
+                    hasValidSelection = true;
+                }
+                updateDisplayClasses(response);
+            });
+        }
+
+        window.addEventListener('deliveryTimeUpdated', function() {
+            refreshDeliveryDisplay();
+        });
 
         // Calendar Picker Logic
         var modal = $('#delivery-modal');
@@ -802,9 +637,7 @@
                     setOrderCounts(response);
 
                     // Update display classes based on response
-                    if (window.DeliveryTimeValidator && window.DeliveryTimeValidator.updateDisplayClasses) {
-                        window.DeliveryTimeValidator.updateDisplayClasses(response);
-                    }
+                    updateDisplayClasses(response);
 
                     // Update display if selectedDeliveryTime exists
                     if (response.selectedDeliveryTime) {
@@ -922,11 +755,6 @@
         function closeModal() {
             modal.removeClass('show');
             showDateView();
-
-            // Resume validation checks
-            if (window.DeliveryTimeValidator) {
-                window.DeliveryTimeValidator.resumeValidation();
-            }
         }
 
         // Show modal when display is clicked
@@ -997,20 +825,12 @@
                 // delivery time, the modal must be closable — even when it was auto-opened
                 // after a transient "no selection" check (e.g. right after checkout).
                 hasValidSelection = !!(response && response.success && response.selectedDeliveryTime);
-                if (window.DeliveryTimeValidator) {
-                    window.DeliveryTimeValidator.state.hasValidSelection = hasValidSelection;
-                }
 
                 // Show/hide close button based on whether there's a valid selection
                 if (hasValidSelection) {
                     $('#delivery-modal-close').show();
                 } else {
                     $('#delivery-modal-close').hide();
-                }
-
-                // Pause validation checks while modal is open
-                if (window.DeliveryTimeValidator) {
-                    window.DeliveryTimeValidator.pauseValidation();
                 }
             });
         });
@@ -1061,8 +881,9 @@
             selectedDate = null;
         });
 
-        // Handle calendar day selection
-        $(document).on('click', '.calendar-day.available', function() {
+        // Handle calendar day selection (scoped to this modal - the inline checkout
+        // picker uses the same classes for shared styling, and must not cross-fire this)
+        $(document).on('click', '#delivery-modal .calendar-day.available', function() {
             var clickedDate = $(this).data('date');
             selectedDate = clickedDate;
 
@@ -1122,8 +943,8 @@
             $('.delivery-modal-content').scrollTop(0);
         }
 
-        // Handle time slot selection
-        $(document).on('click', '.time-slot-item', function() {
+        // Handle time slot selection (scoped to this modal - see note above)
+        $(document).on('click', '#delivery-modal .time-slot-item', function() {
             var datetime = $(this).data('datetime');
             var displayText = $(this).data('display');
 
@@ -1154,11 +975,11 @@
             .done(function() {
                 // Mark that we now have a valid selection
                 hasValidSelection = true;
+                updateDisplayClasses({ stateClass: 'has-selection', shouldPrompt: false });
 
-                // Resume validation checks only after save succeeds
-                if (window.DeliveryTimeValidator) {
-                    window.DeliveryTimeValidator.resumeValidation();
-                }
+                // Let any other delivery-time picker on the page (e.g. the inline
+                // checkout picker) know the selection changed
+                window.dispatchEvent(new CustomEvent('deliveryTimeUpdated'));
             })
             .fail(function() {
                 alert('Failed to save delivery time. Please try again.');
@@ -1172,16 +993,5 @@
 
         // Load initial data
         loadAvailableTimesFromAjax();
-
-        // Initialize the validator
-        DeliveryTimeValidator.init();
-
-        // Make it globally accessible for manual triggering
-        window.DeliveryTimeValidator = DeliveryTimeValidator;
-
-        // Cleanup on page unload
-        $(window).on('unload', function() {
-            DeliveryTimeValidator.destroy();
-        });
     });
 </script>

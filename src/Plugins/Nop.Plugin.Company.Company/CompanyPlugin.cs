@@ -60,7 +60,8 @@ namespace Nop.Plugin.Company.Company
         {
             return Task.FromResult<IList<string>>(new List<string>
             {
-                PublicWidgetZones.HeaderSelectors
+                PublicWidgetZones.HeaderSelectors,
+                PublicWidgetZones.OpCheckoutShippingAddressBottom
             });
         }
 
@@ -71,7 +72,9 @@ namespace Nop.Plugin.Company.Company
         /// <returns>View component name</returns>
         public string GetWidgetViewComponentName(string widgetZone)
         {
-            return "GlobalDeliveryDatePicker";
+            return widgetZone == PublicWidgetZones.OpCheckoutShippingAddressBottom
+                ? "InlineDeliveryDatePicker"
+                : "GlobalDeliveryDatePicker";
         }
 
         /// <summary>

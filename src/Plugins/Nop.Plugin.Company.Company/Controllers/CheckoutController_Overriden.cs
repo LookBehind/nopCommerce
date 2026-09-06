@@ -39,14 +39,12 @@ public class CheckoutController_Overriden: CheckoutController
     private readonly IDeliveryTimeService _deliveryTimeService;
     private readonly IDateTimeHelper _dateTimeHelper;
     private readonly ICompanyService _companyService;
-    private readonly ICompanyVendorScheduleService _companyVendorScheduleService;
-    private readonly IProductService _productService;
-    private readonly IShoppingCartService _shoppingCartService;
+    private readonly ICartAvailabilityService _cartAvailabilityService;
 
     public CheckoutController_Overriden(
         IDeliveryTimeStorageService deliveryTimeStorageService,
         IDeliveryTimeService deliveryTimeService,
-        ICompanyVendorScheduleService companyVendorScheduleService,
+        ICartAvailabilityService cartAvailabilityService,
 
         AddressSettings addressSettings, 
         CustomerSettings customerSettings, 
@@ -107,9 +105,7 @@ public class CheckoutController_Overriden: CheckoutController
         _deliveryTimeService = deliveryTimeService;
         _dateTimeHelper = dateTimeHelper;
         _companyService = companyService;
-        _companyVendorScheduleService = companyVendorScheduleService;
-        _productService = productService;
-        _shoppingCartService = shoppingCartService;
+        _cartAvailabilityService = cartAvailabilityService;
     }
 
     public override async Task<IActionResult> OpcSaveShipping(CheckoutShippingAddressModel model,
@@ -128,7 +124,7 @@ public class CheckoutController_Overriden: CheckoutController
         // instead surfaces as a raw unhandled-exception error page.
         if (!deliveryTime.HasValue)
         {
-            return Json(new { error = 1, message = "Please select a delivery time from the header before proceeding with checkout." });
+            return Json(new { error = 1, message = "Please select a delivery time before proceeding with checkout." });
         }
 
         if (!await _deliveryTimeService.IsDeliveryTimeAvailableAsync(deliveryTime.Value))
@@ -136,33 +132,18 @@ public class CheckoutController_Overriden: CheckoutController
             return Json(new { error = 1, message = "The selected delivery time is no longer available. Please select a new delivery time." });
         }
 
-        var company = await _companyService.GetCompanyByCustomerIdAsync(currentCustomer.Id);
-        if (company != null)
+        // Shares the exact check the inline checkout picker already ran live when the customer
+        // picked this date/time - a defense-in-depth guard in case the cart changed since then.
+        var unavailableItems = await _cartAvailabilityService.GetUnavailableItemsAsync(
+            currentCustomer, currentStore.Id, deliveryTime.Value);
+
+        if (unavailableItems.Any())
         {
-            // deliveryTime is stored as company-local wall-clock time (see OpcConfirmOrder), so
-            // its Date is already the company-local calendar date - no timezone conversion needed.
-            var cart = await _shoppingCartService.GetShoppingCartAsync(currentCustomer, ShoppingCartType.ShoppingCart, currentStore.Id);
-            var unavailableProductNames = new System.Collections.Generic.List<string>();
-            foreach (var item in cart)
+            return Json(new
             {
-                var product = await _productService.GetProductByIdAsync(item.ProductId);
-                if (product == null)
-                    continue;
-
-                if (!await _companyVendorScheduleService.IsVendorAvailableAsync(company.Id, product.VendorId, deliveryTime.Value.Date))
-                {
-                    unavailableProductNames.Add(product.Name);
-                }
-            }
-
-            if (unavailableProductNames.Any())
-            {
-                return Json(new
-                {
-                    error = 1,
-                    message = $"The following items are not available for delivery on the selected date: {string.Join(", ", unavailableProductNames)}. Please remove them from your cart or choose a different delivery time."
-                });
-            }
+                error = 1,
+                message = $"The following items are not available for delivery on the selected date: {string.Join(", ", unavailableItems.Select(i => i.ProductName))}. Please remove them from your cart or choose a different delivery time."
+            });
         }
 
         return await base.OpcSaveShipping(model, form);
