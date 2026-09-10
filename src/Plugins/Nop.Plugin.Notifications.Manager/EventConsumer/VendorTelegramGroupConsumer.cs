@@ -14,20 +14,31 @@ using Nop.Services.Logging;
 namespace Nop.Plugin.Notifications.Manager.EventConsumer;
 
 /// <summary>
-/// Fires whenever a Vendor is inserted (e.g. via the admin "Create Vendor" form) and, when the
-/// feature is enabled, enqueues a Hangfire fire-and-forget job to auto-create a Telegram group for
-/// it - replacing the fully-manual onboarding flow (human creates group, adds bot,
+/// Fires whenever a Vendor is inserted (e.g. via the admin "Create Vendor" form) or updated and,
+/// when the feature is enabled, enqueues a Hangfire fire-and-forget job to auto-create a Telegram
+/// group for it - replacing the fully-manual onboarding flow (human creates group, adds bot,
 /// <c>/associate_with_vendor</c>) with an automatic one. See docs/plans/2026-07-31-telegram-vendor-group-auto-open.md.
+///
+/// Both handlers require <see cref="Vendor.Active"/> before enqueueing: some integrations create a
+/// Vendor mid-checkout with no admin involved at all (e.g. the kerpak self-serve-fridge order sync,
+/// which inserts an unrecognized vendor name on the fly, inactive/unpublished by default) - a group
+/// shouldn't be spun up for that until someone actually turns the vendor on. Listening to
+/// EntityUpdatedEvent too is what catches the "created inactive, activated later" case; it's safe to
+/// enqueue on every Active-vendor update (not just the flip from false to true) because
+/// <see cref="TelegramGroupProvisioningService.ProvisionVendorGroupAsync"/> already no-ops when a
+/// chat mapping exists for that vendor+store.
 ///
 /// Auto-discovered and registered via the IConsumer&lt;T&gt; convention (no explicit DI entry),
 /// same as <see cref="Nop.Plugin.Company.Company.Infrastructure.VendorPictureSquareConsumer"/>.
 ///
-/// Enqueues rather than awaiting the MTProto work inline, so the admin's "Create Vendor" request
-/// isn't blocked on Telegram round-trips, and Hangfire's retry policy (see
+/// Enqueues rather than awaiting the MTProto work inline, so the request that inserted/updated the
+/// vendor isn't blocked on Telegram round-trips, and Hangfire's retry policy (see
 /// <see cref="TelegramGroupProvisioningService.ProvisionVendorGroupAsync"/>'s [AutomaticRetry])
 /// covers transient failures for free.
 /// </summary>
-public class VendorTelegramGroupConsumer : IConsumer<EntityInsertedEvent<Vendor>>
+public class VendorTelegramGroupConsumer :
+    IConsumer<EntityInsertedEvent<Vendor>>,
+    IConsumer<EntityUpdatedEvent<Vendor>>
 {
     private readonly IStoreContext _storeContext;
     private readonly ISettingService _settingService;
@@ -49,10 +60,15 @@ public class VendorTelegramGroupConsumer : IConsumer<EntityInsertedEvent<Vendor>
         _logger = logger;
     }
 
-    public async Task HandleEventAsync(EntityInsertedEvent<Vendor> eventMessage)
+    public Task HandleEventAsync(EntityInsertedEvent<Vendor> eventMessage) =>
+        TryEnqueueProvisioningAsync(eventMessage?.Entity);
+
+    public Task HandleEventAsync(EntityUpdatedEvent<Vendor> eventMessage) =>
+        TryEnqueueProvisioningAsync(eventMessage?.Entity);
+
+    private async Task TryEnqueueProvisioningAsync(Vendor vendor)
     {
-        var vendor = eventMessage?.Entity;
-        if (vendor == null)
+        if (vendor == null || !vendor.Active)
             return;
 
         try
@@ -67,7 +83,7 @@ public class VendorTelegramGroupConsumer : IConsumer<EntityInsertedEvent<Vendor>
             var store = await _storeContext.GetCurrentStoreAsync();
 
             // Resolved lazily (not constructor-injected) so a tenant without Hangfire's client wired up
-            // yet can't have this consumer break every vendor creation - only enabling the feature can.
+            // yet can't have this consumer break every vendor insert/update - only enabling the feature can.
             var backgroundJobClient = _serviceProvider.GetRequiredService<IBackgroundJobClient>();
             backgroundJobClient.Enqueue<ITelegramGroupProvisioningService>(
                 s => s.ProvisionVendorGroupAsync(vendor.Id, store.Id));
