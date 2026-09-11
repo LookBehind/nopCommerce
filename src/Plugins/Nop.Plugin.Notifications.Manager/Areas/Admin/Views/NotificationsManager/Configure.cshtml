@@ -118,6 +118,44 @@
             })
         </div>
     </div>
+
+    <div class="card card-default">
+        <div class="card-header">
+            Vendor Weekly Telegram Report
+        </div>
+        <div class="card-body">
+            <p>
+                Once a day at 18:00 Armenia time, posts one per-vendor order-total CSV
+                (Monday-Sunday, current week) per Company in this store to a shared Telegram chat -
+                replaces the external Redash-driven CronJob. Uses its own bot (separate from this
+                tenant's vendor-facing bot above) since it posts into a shared internal ops group.
+                Leave Chat ID blank to keep it disabled.
+            </p>
+            <form asp-controller="NotificationsManager" asp-action="Configure" method="post">
+                <div class="form-group row">
+                    <div class="col-md-3">
+                        <label asp-for="TelegramReportBotToken">Bot token</label>
+                    </div>
+                    <div class="col-md-9">
+                        <input asp-for="TelegramReportBotToken" class="form-control" autocomplete="off" />
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <div class="col-md-3">
+                        <label asp-for="TelegramReportChatId">Chat ID</label>
+                    </div>
+                    <div class="col-md-9">
+                        <input asp-for="TelegramReportChatId" class="form-control" placeholder="-805765254" />
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <div class="col-md-9 offset-md-3">
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <script>

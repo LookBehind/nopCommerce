@@ -8,7 +8,9 @@ using Nop.Core;
 using Nop.Plugin.Notifications.Manager.Areas.Admin.Factories;
 using Nop.Plugin.Notifications.Manager.Areas.Admin.Models;
 using Nop.Plugin.Notifications.Manager.Services;
+using Nop.Services.Configuration;
 using Nop.Services.Logging;
+using Nop.Services.Messages;
 using Nop.Services.Security;
 using Nop.Web.Areas.Admin.Controllers;
 using Nop.Web.Framework;
@@ -28,6 +30,9 @@ public class NotificationsManagerController : BaseAdminController
     private readonly IPermissionService _permissionService;
     private readonly IStoreContext _storeContext;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ISettingService _settingService;
+    private readonly INotificationService _notificationService;
+    private readonly NotificationManagerSettings _notificationManagerSettings;
     private readonly ILogger _logger;
 
     public NotificationsManagerController(
@@ -38,6 +43,9 @@ public class NotificationsManagerController : BaseAdminController
         IPermissionService permissionService,
         IStoreContext storeContext,
         IServiceProvider serviceProvider,
+        ISettingService settingService,
+        INotificationService notificationService,
+        NotificationManagerSettings notificationManagerSettings,
         ILogger logger)
     {
         _modelFactory = modelFactory;
@@ -47,6 +55,9 @@ public class NotificationsManagerController : BaseAdminController
         _permissionService = permissionService;
         _storeContext = storeContext;
         _serviceProvider = serviceProvider;
+        _settingService = settingService;
+        _notificationService = notificationService;
+        _notificationManagerSettings = notificationManagerSettings;
         _logger = logger;
     }
 
@@ -76,7 +87,27 @@ public class NotificationsManagerController : BaseAdminController
         model.VendorTelegramChatSearchModel = await _modelFactory.PrepareVendorTelegramChatSearchModelAsync(model.VendorTelegramChatSearchModel);
         model.AutoInviteUserSearchModel = await _modelFactory.PrepareAutoInviteUserSearchModelAsync(model.AutoInviteUserSearchModel);
 
+        model.TelegramReportBotToken = _notificationManagerSettings.TelegramReportBotToken;
+        model.TelegramReportChatId = _notificationManagerSettings.TelegramReportChatId;
+
         return View("~/Plugins/Notifications.Manager/Areas/Admin/Views/NotificationsManager/Configure.cshtml", model);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Configure(ConfigurationModel model)
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        _notificationManagerSettings.TelegramReportBotToken = model.TelegramReportBotToken;
+        _notificationManagerSettings.TelegramReportChatId = model.TelegramReportChatId;
+
+        await _settingService.SaveSettingAsync(_notificationManagerSettings, x => x.TelegramReportBotToken);
+        await _settingService.SaveSettingAsync(_notificationManagerSettings, x => x.TelegramReportChatId);
+
+        _notificationService.SuccessNotification("Settings updated.");
+
+        return RedirectToAction("Configure");
     }
 
     [HttpPost]

@@ -29,4 +29,20 @@ public class NotificationManagerSettings : ISettings
     /// has no custom tables today and the list is expected to stay small.
     /// </summary>
     public string AutoInviteTelegramUsersJson { get; set; }
+
+    /// <summary>
+    /// Bot token for the daily vendor weekly-totals Telegram report (<see cref="ScheduledTasks.VendorWeeklyTelegramReportTask"/>).
+    /// Deliberately separate from ExtendedAuthSettings.TelegramBotSecret (the tenant's own vendor-facing
+    /// bot) - the report posts into a shared internal ops group via its own dedicated bot, same as the
+    /// external Redash-driven CronJob it replaces. Blank = report disabled for this tenant.
+    /// </summary>
+    public string TelegramReportBotToken { get; set; }
+
+    /// <summary>
+    /// Telegram chat id the weekly vendor report is posted to (e.g. "-805765254"). Blank = report
+    /// disabled for this tenant. One report message is sent per <see cref="Nop.Core.Domain.Companies.Company"/>
+    /// in the store, each captioned with that company's own name - there is no separate
+    /// "company name" setting here.
+    /// </summary>
+    public string TelegramReportChatId { get; set; }
 }
