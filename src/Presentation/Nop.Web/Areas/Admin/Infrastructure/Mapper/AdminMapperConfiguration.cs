@@ -450,6 +450,8 @@ namespace Nop.Web.Areas.Admin.Infrastructure.Mapper
             //product review
             CreateMap<ProductReview, ProductReviewModel>()
                 .ForMember(model => model.CustomerInfo, mo => mo.Ignore())
+                .ForMember(model => model.TriagedByCustomerInfo, mo => mo.Ignore())
+                .ForMember(model => model.TriagedOn, mo => mo.Ignore())
                 .ForMember(model => model.IsLoggedInAsVendor, mo => mo.Ignore())
                 .ForMember(model => model.ProductReviewReviewTypeMappingSearchModel, mo => mo.Ignore())
                 .ForMember(model => model.CreatedOn, mo => mo.Ignore())

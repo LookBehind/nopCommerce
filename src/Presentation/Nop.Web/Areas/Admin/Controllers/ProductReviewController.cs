@@ -142,6 +142,15 @@ namespace Nop.Web.Areas.Admin.Controllers
                     productReview.Title = model.Title;
                     productReview.ReviewText = model.ReviewText;
                     productReview.IsApproved = model.IsApproved;
+
+                    //MySnacks: capture triage/approval details. Resolution is editable each save; who/when
+                    //are stamped once, on first approval, so they reflect the initial triage and stay stable.
+                    productReview.ResolutionDetails = model.ResolutionDetails;
+                    if (productReview.IsApproved && !productReview.TriagedOnUtc.HasValue)
+                    {
+                        productReview.TriagedByCustomerId = (await _workContext.GetCurrentCustomerAsync()).Id;
+                        productReview.TriagedOnUtc = DateTime.UtcNow;
+                    }
                 }
 
                 productReview.ReplyText = model.ReplyText;

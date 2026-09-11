@@ -75,5 +75,21 @@ namespace Nop.Core.Domain.Catalog
         /// Gets or sets the date and time of instance creation
         /// </summary>
         public DateTime CreatedOnUtc { get; set; }
+
+        /// <summary>
+        /// Gets or sets the customer (MySnacks employee) who triaged/approved this review. MySnacks addition.
+        /// </summary>
+        public int? TriagedByCustomerId { get; set; }
+
+        /// <summary>
+        /// Gets or sets when the review was triaged/approved (UTC). Triage time is derived as
+        /// TriagedOnUtc - CreatedOnUtc. MySnacks addition.
+        /// </summary>
+        public DateTime? TriagedOnUtc { get; set; }
+
+        /// <summary>
+        /// Gets or sets free-text resolution / triage notes recorded by the employee. MySnacks addition.
+        /// </summary>
+        public string ResolutionDetails { get; set; }
     }
 }

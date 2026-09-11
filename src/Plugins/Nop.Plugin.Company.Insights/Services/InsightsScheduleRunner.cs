@@ -44,7 +44,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 if (schedule == null || !schedule.Enabled)
                     return;
 
-                var result = await _reports.RunAsync(schedule.ReportId, null, null);
+                var result = await _reports.RunAsync(schedule.ReportId, null);
                 if (result == null)
                 {
                     await _logger.WarningAsync($"Insights schedule '{schedule.Name}': unknown report '{schedule.ReportId}'");

@@ -203,12 +203,19 @@ namespace Nop.Web.Areas.Admin.Factories
 
                 model.CreatedOn = await _dateTimeHelper.ConvertToUserTimeAsync(productReview.CreatedOnUtc, DateTimeKind.Utc);
 
+                //MySnacks: triage/approval (read-only display)
+                if (productReview.TriagedOnUtc.HasValue)
+                    model.TriagedOn = await _dateTimeHelper.ConvertToUserTimeAsync(productReview.TriagedOnUtc.Value, DateTimeKind.Utc);
+                if (productReview.TriagedByCustomerId.HasValue)
+                    model.TriagedByCustomerInfo = (await _customerService.GetCustomerByIdAsync(productReview.TriagedByCustomerId.Value))?.Email;
+
                 if (!excludeProperties)
                 {
                     model.Title = productReview.Title;
                     model.ReviewText = productReview.ReviewText;
                     model.ReplyText = productReview.ReplyText;
                     model.IsApproved = productReview.IsApproved;
+                    model.ResolutionDetails = productReview.ResolutionDetails;
                 }
 
                 //prepare nested search model

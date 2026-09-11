@@ -3,6 +3,20 @@ using System.Collections.Generic;
 namespace Nop.Plugin.Company.Insights.Models
 {
     /// <summary>
+    /// A tunable report parameter (currently integer-valued, e.g. a look-back window in days).
+    /// The agent and UI may set it within [Min, Max]; out-of-range values are clamped.
+    /// </summary>
+    public class InsightsReportParam
+    {
+        public string Name { get; set; }
+        public string Label { get; set; }
+        public string Type { get; set; } = "int";
+        public int Default { get; set; }
+        public int Min { get; set; }
+        public int Max { get; set; }
+    }
+
+    /// <summary>
     /// Describes a named report the workspace can render (catalog entry).
     /// </summary>
     public class InsightsReportMeta
@@ -16,6 +30,9 @@ namespace Nop.Plugin.Company.Insights.Models
         public string XField { get; set; }
         public string YField { get; set; }
         public string CategoryField { get; set; }
+
+        /// <summary>Parameters the caller (agent/UI) may set; empty = no tunables.</summary>
+        public IList<InsightsReportParam> Parameters { get; set; } = new List<InsightsReportParam>();
     }
 
     /// <summary>"string" | "number" | "date".</summary>

@@ -119,6 +119,35 @@
                                 <div class="form-text-row">@Model.CreatedOn</div>
                             </div>
                         </div>
+                        @*MySnacks: triage/approval tracking*@
+                        <div class="form-group row">
+                            <div class="col-md-3">
+                                <div class="label-wrapper"><label class="col-form-label">Resolution details</label></div>
+                            </div>
+                            <div class="col-md-9">
+                                <nop-textarea asp-for="ResolutionDetails" />
+                                <span asp-validation-for="ResolutionDetails"></span>
+                            </div>
+                        </div>
+                        @if (Model.TriagedOn.HasValue)
+                        {
+                            <div class="form-group row">
+                                <div class="col-md-3">
+                                    <div class="label-wrapper"><label class="col-form-label">Triaged by</label></div>
+                                </div>
+                                <div class="col-md-9">
+                                    <div class="form-text-row">@Model.TriagedByCustomerInfo</div>
+                                </div>
+                            </div>
+                            <div class="form-group row">
+                                <div class="col-md-3">
+                                    <div class="label-wrapper"><label class="col-form-label">Triaged on</label></div>
+                                </div>
+                                <div class="col-md-9">
+                                    <div class="form-text-row">@Model.TriagedOn</div>
+                                </div>
+                            </div>
+                        }
                         @if (Model.ProductReviewReviewTypeMappingSearchModel.IsAnyReviewTypes)
                         {
                             @await Html.PartialAsync("_ProductReviewReviewTypeMappingList", Model.ProductReviewReviewTypeMappingSearchModel)

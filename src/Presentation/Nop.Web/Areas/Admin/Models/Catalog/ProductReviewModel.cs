@@ -54,6 +54,13 @@ namespace Nop.Web.Areas.Admin.Models.Catalog
         [NopResourceDisplayName("Admin.Catalog.ProductReviews.Fields.CreatedOn")]
         public DateTime CreatedOn { get; set; }
 
+        //MySnacks: triage/approval tracking
+        public string ResolutionDetails { get; set; }
+
+        public string TriagedByCustomerInfo { get; set; }
+
+        public DateTime? TriagedOn { get; set; }
+
         //vendor
         public bool IsLoggedInAsVendor { get; set; }
 

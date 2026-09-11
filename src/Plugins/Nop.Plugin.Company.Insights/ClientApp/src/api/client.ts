@@ -56,10 +56,10 @@ export interface PingResult {
 export const api = {
   ping: () => getJson<PingResult>("/Ping"),
   reports: () => getJson<ReportMeta[]>("/Reports"),
-  runReport: (id: string, params?: { from?: string; to?: string }) => {
+  runReport: (id: string, params?: { days?: number; limit?: number }) => {
     const qs = new URLSearchParams();
-    if (params?.from) qs.set("from", params.from);
-    if (params?.to) qs.set("to", params.to);
+    if (params?.days != null) qs.set("days", String(params.days));
+    if (params?.limit != null) qs.set("limit", String(params.limit));
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     return getJson<ReportResult>(`/Reports/${encodeURIComponent(id)}${suffix}`);
   },

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Text.Json;
@@ -128,7 +129,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         /// <c>Admin/Insights/Reports/{id?}</c> route.
         /// </summary>
         [HttpGet]
-        public async Task<IActionResult> Reports(string id, DateTime? from, DateTime? to)
+        public async Task<IActionResult> Reports(string id, int? days, int? limit)
         {
             if (!await HasAccessAsync())
                 return StatusCode(StatusCodes.Status403Forbidden);
@@ -143,12 +144,27 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                     defaultChart = r.DefaultChart,
                     xField = r.XField,
                     yField = r.YField,
-                    categoryField = r.CategoryField
+                    categoryField = r.CategoryField,
+                    parameters = r.Parameters.Select(p => new
+                    {
+                        name = p.Name,
+                        label = p.Label,
+                        type = p.Type,
+                        @default = p.Default,
+                        min = p.Min,
+                        max = p.Max
+                    })
                 });
                 return Json(catalog);
             }
 
-            var result = await _reportService.RunAsync(id, from, to);
+            var parameters = new Dictionary<string, string>();
+            if (days.HasValue)
+                parameters["days"] = days.Value.ToString();
+            if (limit.HasValue)
+                parameters["limit"] = limit.Value.ToString();
+
+            var result = await _reportService.RunAsync(id, parameters);
             if (result == null)
                 return NotFound();
 

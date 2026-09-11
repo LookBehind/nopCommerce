@@ -152,8 +152,14 @@ namespace Nop.Plugin.Company.Insights.Services
                 }
                 case "list_reports":
                 {
-                    var catalog = _reportService.GetCatalog()
-                        .Select(r => new { r.Id, r.Name, r.Description, r.DefaultChart });
+                    var catalog = _reportService.GetCatalog().Select(r => new
+                    {
+                        r.Id,
+                        r.Name,
+                        r.Description,
+                        r.DefaultChart,
+                        Parameters = r.Parameters.Select(p => new { p.Name, p.Default, p.Min, p.Max })
+                    });
                     return (JsonSerializer.Serialize(catalog), null);
                 }
                 case "run_report":
@@ -161,18 +167,32 @@ namespace Nop.Plugin.Company.Insights.Services
                     var id = GetString(args, "id");
                     if (string.IsNullOrWhiteSpace(id))
                         return ("error: missing 'id'", null);
-                    var result = await _reportService.RunAsync(id, null, null);
+                    var parameters = new Dictionary<string, string>();
+                    var days = GetInt(args, "days");
+                    if (days.HasValue)
+                        parameters["days"] = days.Value.ToString();
+                    var result = await _reportService.RunAsync(id, parameters);
                     if (result == null)
                         return ($"error: unknown report id '{id}'", null);
                     return (SummarizeDataset(result), result);
                 }
                 case "query_orders":
                 {
-                    var from = GetDate(args, "from");
-                    var to = GetDate(args, "to");
+                    var days = GetInt(args, "days") ?? 30;
                     var groupBy = GetString(args, "groupBy") ?? "day";
                     var metric = GetString(args, "metric") ?? "count";
-                    var result = await _reportService.QueryOrdersAsync(from, to, groupBy, metric);
+                    var result = await _reportService.QueryOrdersAsync(days, groupBy, metric);
+                    return (SummarizeDataset(result), result);
+                }
+                case "list_reviews":
+                {
+                    var days = GetInt(args, "days") ?? 30;
+                    var vendorId = GetInt(args, "vendorId");
+                    var customerId = GetInt(args, "customerId");
+                    var customerEmail = GetString(args, "customerEmail");
+                    var orderBy = GetString(args, "orderBy") ?? "date";
+                    var limit = GetInt(args, "limit");
+                    var result = await _reportService.GetReviewsAsync(days, vendorId, customerId, customerEmail, orderBy, limit);
                     return (SummarizeDataset(result), result);
                 }
                 default:
@@ -259,8 +279,9 @@ namespace Nop.Plugin.Company.Insights.Services
             sb.AppendLine();
             sb.AppendLine("Tools:");
             sb.AppendLine("- list_reports {}  -> available named reports.");
-            sb.AppendLine("- run_report {\"id\":\"<reportId>\"}  -> columns and rows of a report.");
-            sb.AppendLine("- query_orders {\"from\":\"YYYY-MM-DD\"(optional),\"to\":\"YYYY-MM-DD\"(optional),\"groupBy\":\"day\"|\"status\",\"metric\":\"count\"|\"revenue\"}  -> aggregated orders.");
+            sb.AppendLine("- run_report {\"id\":\"<reportId>\",\"days\":<int, optional>}  -> a report's columns and rows. list_reports shows each report's parameters and their min/max; \"days\" is clamped to the report's allowed range (e.g. up to 90).");
+            sb.AppendLine("- query_orders {\"days\":<int, optional, default 30, max 365>,\"groupBy\":\"day\"|\"status\",\"metric\":\"count\"|\"revenue\"}  -> aggregated orders over the last N days.");
+            sb.AppendLine("- list_reviews {\"days\":<int, optional, default 30, max 90>,\"vendorId\":<int, optional>,\"customerId\":<int, optional>,\"customerEmail\":\"...\"(optional),\"orderBy\":\"date\"|\"rating\"|\"helpful\"(optional),\"limit\":<int, optional, default 50, max 200>}  -> product reviews (date, product, vendor, customer name+email, rating, approved, title, review, and triage: who/when/hours/resolution).");
             if (memoryEnabled)
             {
                 sb.AppendLine("- recall {\"query\":\"...\"}  -> retrieve notes you saved in earlier conversations.");
@@ -329,12 +350,15 @@ namespace Nop.Plugin.Company.Insights.Services
             return null;
         }
 
-        private static DateTime? GetDate(JsonElement el, string prop)
+        private static int? GetInt(JsonElement el, string prop)
         {
-            var s = GetString(el, prop);
-            if (!string.IsNullOrWhiteSpace(s) &&
-                DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var d))
-                return d;
+            if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var v))
+                return null;
+            if (v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n))
+                return n;
+            if (v.ValueKind == JsonValueKind.String &&
+                int.TryParse(v.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var s))
+                return s;
             return null;
         }
 

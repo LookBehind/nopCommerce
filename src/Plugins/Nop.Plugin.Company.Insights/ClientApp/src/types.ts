@@ -5,6 +5,15 @@ export interface ReportColumn {
   type: "string" | "number" | "date";
 }
 
+export interface ReportParam {
+  name: string;
+  label?: string;
+  type?: string;
+  default: number;
+  min: number;
+  max: number;
+}
+
 export interface ReportMeta {
   id: string;
   name: string;
@@ -13,6 +22,7 @@ export interface ReportMeta {
   xField?: string;
   yField?: string;
   categoryField?: string;
+  parameters?: ReportParam[];
 }
 
 export interface ReportResult {
