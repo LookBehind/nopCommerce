@@ -1,0 +1,6 @@
+# SPA dev-time only — the BUILT output lives in ../wwwroot/app (tracked, ships with the plugin).
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+npm-debug.log*

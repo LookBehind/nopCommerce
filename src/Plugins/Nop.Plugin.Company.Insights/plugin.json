@@ -1,0 +1,11 @@
+{
+  "Group": "Company",
+  "FriendlyName": "Company Insights (AI Analytics Chat)",
+  "SystemName": "Company.Insights",
+  "Version": "0.1",
+  "SupportedVersions": [ "4.50" ],
+  "Author": "Custom",
+  "DisplayOrder": 2,
+  "FileName": "Nop.Plugin.Company.Insights.dll",
+  "Description": "AI-chat business intelligence workspace for backoffice users: a tabbed canvas of tables and charts with a conversational agent that generates, pins and schedules reports. Gated by the AccessInsights permission."
+}

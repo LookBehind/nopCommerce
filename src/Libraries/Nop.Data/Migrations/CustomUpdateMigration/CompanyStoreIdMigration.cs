@@ -16,20 +16,31 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
     {
         public override void Up()
         {
-            var companyTable = Schema.Table(NameCompatibilityManager.GetTableName(typeof(Company)));
+            var tableName = NameCompatibilityManager.GetTableName(typeof(Company));
+            var storeIdColumn = nameof(Company.StoreId);
+            var companyTable = Schema.Table(tableName);
+
             if (companyTable.Exists() &&
-                !companyTable.Column(nameof(Company.StoreId)).Exists())
+                !companyTable.Column(storeIdColumn).Exists())
             {
                 Alter
-                    .Table(NameCompatibilityManager.GetTableName(typeof(Company)))
-                    .AddColumn(nameof(Company.StoreId))
+                    .Table(tableName)
+                    .AddColumn(storeIdColumn)
                     .AsInt32()
                     .Nullable();
 
-                Execute.Sql(
-                    $"UPDATE [{NameCompatibilityManager.GetTableName(typeof(Company))}] " +
-                    $"SET [{nameof(Company.StoreId)}] = (SELECT TOP 1 [Id] FROM [Store] ORDER BY [Id]) " +
-                    $"WHERE [{nameof(Company.StoreId)}] IS NULL");
+                // Backfill each existing company to the tenant's first store (lowest store id).
+                // The backfill SQL must be provider-specific because identifier quoting differs
+                // per dialect (SQL Server [ ], PostgreSQL " ", MySQL ` `). The previous single
+                // SQL Server-only string (bracket quoting + TOP) threw "syntax error at or near
+                // '['" on PostgreSQL-backed installs (local dev), crashing startup. MIN([Id])
+                // replaces "TOP 1 ... ORDER BY [Id]" so only the quoting differs per branch.
+                IfDatabase("SqlServer").Execute.Sql(
+                    $"UPDATE [{tableName}] SET [{storeIdColumn}] = (SELECT MIN([Id]) FROM [Store]) WHERE [{storeIdColumn}] IS NULL");
+                IfDatabase("Postgres").Execute.Sql(
+                    $"UPDATE \"{tableName}\" SET \"{storeIdColumn}\" = (SELECT MIN(\"Id\") FROM \"Store\") WHERE \"{storeIdColumn}\" IS NULL");
+                IfDatabase("MySql").Execute.Sql(
+                    $"UPDATE `{tableName}` SET `{storeIdColumn}` = (SELECT MIN(`Id`) FROM `Store`) WHERE `{storeIdColumn}` IS NULL");
             }
         }
 

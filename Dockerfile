@@ -44,6 +44,8 @@ WORKDIR /src/Plugins/Nop.Plugin.Payments.AmeriaVPos
 RUN dotnet build Nop.Plugin.Payments.AmeriaVPos.csproj -c Release
 WORKDIR /src/Plugins/Nop.Plugin.Company.Company
 RUN dotnet build Nop.Plugin.Company.Company.csproj -c Release
+WORKDIR /src/Plugins/Nop.Plugin.Company.Insights
+RUN dotnet build Nop.Plugin.Company.Insights.csproj -c Release
 
 # publish project
 WORKDIR /src/Presentation/Nop.Web
