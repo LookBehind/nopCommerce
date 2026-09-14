@@ -1,13 +1,24 @@
 import { useMemo } from "react";
 import { VegaLite } from "react-vega";
-import type { ChartConfig, Dataset } from "../../types";
+import type { View } from "vega";
+import type { ChartConfig, Dataset, ReportParams } from "../../types";
 import { useReportResult } from "../../hooks/useReport";
 import { useElementSize } from "../../hooks/useElementSize";
 import { buildSpec } from "../../charts/vegaSpec";
 
-export function ChartWidget({ config, dataset }: { config: ChartConfig; dataset?: Dataset }) {
+export function ChartWidget({
+  config,
+  dataset,
+  params,
+  onView,
+}: {
+  config: ChartConfig;
+  dataset?: Dataset;
+  params?: ReportParams;
+  onView?: (view: View) => void;
+}) {
   // Live report widgets fetch by id; agent-pinned widgets carry an inline dataset.
-  const remote = useReportResult(dataset ? undefined : config.reportId);
+  const remote = useReportResult(dataset ? undefined : config.reportId, params);
   const { ref, width, height } = useElementSize<HTMLDivElement>();
 
   const source = dataset ?? remote.result;
@@ -25,9 +36,18 @@ export function ChartWidget({ config, dataset }: { config: ChartConfig; dataset?
       {loading && <div className="ins-widget-msg">Loading…</div>}
       {error && <div className="ins-widget-msg err">Report error: {error}</div>}
       {!loading && !error && source && source.rows.length === 0 && (
-        <div className="ins-widget-msg">No data</div>
+        <div className="ins-widget-msg">
+          No data in this range{params?.days ? ` (last ${params.days} days)` : ""}.
+        </div>
       )}
-      {spec && <VegaLite spec={spec as never} actions={false} renderer="canvas" />}
+      {spec && (
+        <VegaLite
+          spec={spec as never}
+          actions={false}
+          renderer="canvas"
+          onNewView={(view) => onView?.(view)}
+        />
+      )}
     </div>
   );
 }

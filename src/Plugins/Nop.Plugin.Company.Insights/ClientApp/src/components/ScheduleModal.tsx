@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { Capabilities, ReportMeta, Schedule } from "../types";
+import type { Capabilities, ReportMeta, ReportParams, Schedule } from "../types";
+import { ReportParamControls, defaultParams } from "./ReportParamControls";
+import { toast } from "../ui/feedback";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -9,6 +11,7 @@ export function ScheduleModal({ onClose }: { onClose: () => void }) {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState("");
@@ -18,6 +21,9 @@ export function ScheduleModal({ onClose }: { onClose: () => void }) {
   const [weekday, setWeekday] = useState("1");
   const [customCron, setCustomCron] = useState("0 9 * * *");
   const [chatId, setChatId] = useState("");
+  const [params, setParams] = useState<ReportParams>({});
+
+  const selectedReport = useMemo(() => reports.find((r) => r.id === reportId), [reports, reportId]);
 
   async function refresh() {
     try {
@@ -36,6 +42,11 @@ export function ScheduleModal({ onClose }: { onClose: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Reset params to the selected report's defaults when it changes.
+  useEffect(() => {
+    setParams(selectedReport ? defaultParams(selectedReport) : {});
+  }, [selectedReport]);
+
   function buildCron(): string {
     const [hh, mm] = time.split(":").map((x) => Number(x));
     if (frequency === "hourly") return "0 * * * *";
@@ -44,28 +55,49 @@ export function ScheduleModal({ onClose }: { onClose: () => void }) {
     return customCron.trim();
   }
 
+  function buildSchedule(): Schedule {
+    return {
+      name: name || selectedReport?.name || "Report",
+      reportId,
+      cron: buildCron(),
+      telegramChatId: chatId,
+      enabled: true,
+      days: params.days ?? null,
+      limit: params.limit ?? null,
+    };
+  }
+
   async function save() {
     setBusy(true);
     setError(null);
     try {
-      const s: Schedule = {
-        name: name || reports.find((r) => r.id === reportId)?.name || "Report",
-        reportId,
-        cron: buildCron(),
-        telegramChatId: chatId,
-        enabled: true,
-      };
-      const res = await api.saveSchedule(s);
+      const res = await api.saveSchedule(buildSchedule());
       if (!res.ok) setError(res.error ?? "save failed");
       else {
         setName("");
         setChatId("");
+        toast.success("Schedule saved");
         await refresh();
       }
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function sendTest() {
+    if (!reportId || !chatId) return;
+    setTesting(true);
+    setError(null);
+    try {
+      const res = await api.testSchedule(buildSchedule());
+      if (res.ok) toast.success("Test report sent to Telegram");
+      else setError(res.error === "send-failed" ? "Telegram rejected the message (check the chat id)." : (res.error ?? "test failed"));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -81,11 +113,11 @@ export function ScheduleModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="ins-modal-backdrop" onClick={onClose}>
-      <div className="ins-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="ins-modal-backdrop" onClick={onClose} onKeyDown={(e) => e.key === "Escape" && onClose()}>
+      <div className="ins-modal" role="dialog" aria-modal="true" aria-label="Scheduled reports" onClick={(e) => e.stopPropagation()}>
         <div className="ins-modal-head">
           <h2>Scheduled reports → Telegram</h2>
-          <button className="ins-icon-btn" onClick={onClose} title="Close">
+          <button className="ins-icon-btn" onClick={onClose} title="Close" aria-label="Close">
             ✕
           </button>
         </div>
@@ -150,14 +182,34 @@ export function ScheduleModal({ onClose }: { onClose: () => void }) {
             <label>
               Telegram chat id
               <input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="-1001234567890" />
+              <span className="ins-muted" style={{ fontSize: 11 }}>
+                Add the bot to the group and use the numeric chat id (groups start with <code>-100</code>).
+              </span>
             </label>
+
+            {selectedReport && (selectedReport.parameters ?? []).length > 0 && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <ReportParamControls report={selectedReport} value={params} onChange={setParams} />
+              </div>
+            )}
+
             <div className="ins-form-actions">
               <span className="ins-muted">
                 cron: <code>{buildCron()}</code> · Asia/Yerevan
               </span>
-              <button className="ins-btn primary" disabled={busy || !reportId || !chatId} onClick={() => void save()}>
-                Add schedule
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="ins-btn"
+                  disabled={testing || !reportId || !chatId || !caps?.telegram}
+                  onClick={() => void sendTest()}
+                  title="Run once and send now"
+                >
+                  {testing ? "Sending…" : "Send test now"}
+                </button>
+                <button className="ins-btn primary" disabled={busy || !reportId || !chatId} onClick={() => void save()}>
+                  Add schedule
+                </button>
+              </div>
             </div>
           </div>
 
@@ -170,7 +222,9 @@ export function ScheduleModal({ onClose }: { onClose: () => void }) {
                     {s.name} {!s.enabled && <span className="ins-muted">(paused)</span>}
                   </div>
                   <div className="ins-muted ins-sched-sub">
-                    {s.reportId} · <code>{s.cron}</code> · → {s.telegramChatId}
+                    {s.reportId}
+                    {s.days ? ` · ${s.days}d` : ""}
+                    {s.limit ? ` · ${s.limit} rows` : ""} · <code>{s.cron}</code> · → {s.telegramChatId}
                   </div>
                 </div>
                 <div className="ins-sched-actions">

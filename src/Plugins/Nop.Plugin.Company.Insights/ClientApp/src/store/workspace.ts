@@ -1,6 +1,16 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { GridItem, Tab, Widget, WidgetType, WorkspaceState } from "../types";
+import type {
+  Capabilities,
+  ChartKind,
+  ChatDock,
+  GridItem,
+  Tab,
+  ThemePref,
+  Widget,
+  WidgetType,
+  WorkspaceState,
+} from "../types";
 
 function uid(prefix: string): string {
   const rnd =
@@ -27,29 +37,52 @@ function nextPosition(layout: GridItem[], w: number, h: number): GridItem {
   return { i: "", x: 0, y: bottom, w, h };
 }
 
+/** The durable slice we persist locally AND sync to the server. */
+export interface WorkspaceSnapshot {
+  tabs: Tab[];
+  activeTabId: string;
+  selectedAgentId: string;
+  theme: ThemePref;
+  chatDock: ChatDock;
+  chatSize: number;
+}
+
 interface WorkspaceActions {
   addTab: (name?: string) => void;
   removeTab: (tabId: string) => void;
   renameTab: (tabId: string, name: string) => void;
   setActiveTab: (tabId: string) => void;
   resetWorkspace: () => void;
-  addWidget: (tabId: string, widget: Omit<Widget, "id">) => void;
+  addWidget: (tabId: string, widget: Omit<Widget, "id">) => string;
   removeWidget: (tabId: string, widgetId: string) => void;
   updateWidget: (tabId: string, widgetId: string, patch: Partial<Widget>) => void;
+  duplicateWidget: (tabId: string, widgetId: string) => void;
+  setChartKind: (tabId: string, widgetId: string, kind: ChartKind) => void;
   setLayout: (tabId: string, layout: GridItem[]) => void;
   toggleChat: () => void;
+  setChatOpen: (open: boolean) => void;
   setAgent: (agentId: string) => void;
+  setTheme: (theme: ThemePref) => void;
+  setChatDock: (dock: ChatDock) => void;
+  setChatSize: (size: number) => void;
+  setCapabilities: (caps: Capabilities) => void;
+  applySnapshot: (snap: Partial<WorkspaceSnapshot>) => void;
+  snapshot: () => WorkspaceSnapshot;
 }
 
 const firstTab = emptyTab("Overview");
 
-export const useWorkspace = create<WorkspaceState & WorkspaceActions>()(
+export const useWorkspace = create<WorkspaceState & { capabilities: Capabilities | null } & WorkspaceActions>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       tabs: [firstTab],
       activeTabId: firstTab.id,
       chatOpen: false,
       selectedAgentId: "analyst",
+      theme: "system",
+      chatDock: "bottom",
+      chatSize: 380,
+      capabilities: null,
 
       addTab: (name) =>
         set((s) => {
@@ -79,11 +112,11 @@ export const useWorkspace = create<WorkspaceState & WorkspaceActions>()(
           return { tabs: [t], activeTabId: t.id, chatOpen: false };
         }),
 
-      addWidget: (tabId, widget) =>
+      addWidget: (tabId, widget) => {
+        const id = uid("w");
         set((s) => ({
           tabs: s.tabs.map((t) => {
             if (t.id !== tabId) return t;
-            const id = uid("w");
             const size = DEFAULT_SIZE[widget.type];
             const pos = nextPosition(t.layout, size.w, size.h);
             return {
@@ -92,7 +125,9 @@ export const useWorkspace = create<WorkspaceState & WorkspaceActions>()(
               layout: [...t.layout, { ...pos, i: id }],
             };
           }),
-        })),
+        }));
+        return id;
+      },
 
       removeWidget: (tabId, widgetId) =>
         set((s) => ({
@@ -121,18 +156,97 @@ export const useWorkspace = create<WorkspaceState & WorkspaceActions>()(
           ),
         })),
 
+      duplicateWidget: (tabId, widgetId) =>
+        set((s) => ({
+          tabs: s.tabs.map((t) => {
+            if (t.id !== tabId) return t;
+            const src = t.widgets.find((w) => w.id === widgetId);
+            const srcLayout = t.layout.find((l) => l.i === widgetId);
+            if (!src || !srcLayout) return t;
+            const id = uid("w");
+            const pos = nextPosition(t.layout, srcLayout.w, srcLayout.h);
+            return {
+              ...t,
+              widgets: [...t.widgets, { ...src, id, title: `${src.title} (copy)` }],
+              layout: [...t.layout, { ...pos, i: id }],
+            };
+          }),
+        })),
+
+      setChartKind: (tabId, widgetId, kind) =>
+        set((s) => ({
+          tabs: s.tabs.map((t) =>
+            t.id !== tabId
+              ? t
+              : {
+                  ...t,
+                  widgets: t.widgets.map((w) =>
+                    w.id === widgetId && w.chart
+                      ? { ...w, chart: { ...w.chart, chartKind: kind } }
+                      : w
+                  ),
+                }
+          ),
+        })),
+
       setLayout: (tabId, layout) =>
         set((s) => ({
           tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, layout } : t)),
         })),
 
       toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
+      setChatOpen: (open) => set({ chatOpen: open }),
       setAgent: (agentId) => set({ selectedAgentId: agentId }),
+      setTheme: (theme) => set({ theme }),
+      setChatDock: (chatDock) => set({ chatDock }),
+      setChatSize: (chatSize) => set({ chatSize: Math.max(220, Math.min(900, Math.round(chatSize))) }),
+      setCapabilities: (capabilities) => set({ capabilities }),
+
+      applySnapshot: (snap) =>
+        set((s) => ({
+          tabs: Array.isArray(snap.tabs) && snap.tabs.length ? snap.tabs : s.tabs,
+          activeTabId: snap.activeTabId ?? s.activeTabId,
+          selectedAgentId: snap.selectedAgentId ?? s.selectedAgentId,
+          theme: snap.theme ?? s.theme,
+          chatDock: snap.chatDock ?? s.chatDock,
+          chatSize: snap.chatSize ?? s.chatSize,
+        })),
+
+      snapshot: () => {
+        const s = get();
+        return {
+          tabs: s.tabs,
+          activeTabId: s.activeTabId,
+          selectedAgentId: s.selectedAgentId,
+          theme: s.theme,
+          chatDock: s.chatDock,
+          chatSize: s.chatSize,
+        };
+      },
     }),
     {
       name: "company-insights-workspace-v1",
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
+      // Persist only the durable slice; capabilities/chatOpen are transient.
+      partialize: (s) => ({
+        tabs: s.tabs,
+        activeTabId: s.activeTabId,
+        selectedAgentId: s.selectedAgentId,
+        theme: s.theme,
+        chatDock: s.chatDock,
+        chatSize: s.chatSize,
+      }),
+      migrate: (persisted: unknown, version: number) => {
+        // v1 -> v2: add theme/dock/size defaults; tolerate any missing/renamed fields.
+        const p = (persisted ?? {}) as Record<string, unknown>;
+        if (version < 2) {
+          p.theme = p.theme ?? "system";
+          p.chatDock = p.chatDock ?? "bottom";
+          p.chatSize = p.chatSize ?? 380;
+        }
+        return p as unknown as WorkspaceState;
+      },
     }
   )
 );

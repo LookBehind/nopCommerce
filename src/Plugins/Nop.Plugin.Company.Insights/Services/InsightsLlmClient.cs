@@ -99,5 +99,36 @@ namespace Nop.Plugin.Company.Insights.Services
             return parsed?.Choices?.FirstOrDefault()?.Message?.Content
                 ?? throw new InvalidOperationException("KubeAI chat completion returned no content");
         }
+
+        /// <summary>
+        /// Cheap readiness probe: a 1-token completion under a short timeout. Returns true if the model
+        /// answered (warm), false if it timed out or errored (still scaling up). Sending it also nudges
+        /// KubeAI to scale the model from zero, so the SPA can poll this to wake the model without
+        /// holding a long request open through the CDN.
+        /// </summary>
+        public async Task<bool> ProbeAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var request = new CompletionRequest
+                {
+                    Model = DefaultModel,
+                    Stream = false,
+                    Temperature = 0.0,
+                    MaxTokens = 1,
+                    Messages = new List<LlmMessage> { new LlmMessage { Role = "user", Content = "ping" } }
+                };
+
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(timeout);
+
+                using var response = await _httpClient.PostAsJsonAsync("chat/completions", request, cts.Token);
+                return response.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

@@ -76,7 +76,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 await using var conn = new NpgsqlConnection(_config.BuildConnectionString());
                 await conn.OpenAsync(cancellationToken);
                 await using var cmd = new NpgsqlCommand(
-                    "SELECT content, kind, created_at, embedding <=> @emb::vector AS distance " +
+                    "SELECT id, content, kind, created_at, embedding <=> @emb::vector AS distance " +
                     "FROM insights_memory WHERE tenant = @tenant AND agent_id = @agent " +
                     "ORDER BY embedding <=> @emb::vector LIMIT @k", conn);
                 cmd.Parameters.AddWithValue("tenant", _config.Tenant);
@@ -89,10 +89,11 @@ namespace Nop.Plugin.Company.Insights.Services
                 {
                     results.Add(new MemoryItem
                     {
-                        Content = reader.GetString(0),
-                        Kind = reader.GetString(1),
-                        CreatedAt = reader.GetDateTime(2),
-                        Distance = reader.GetDouble(3)
+                        Id = reader.GetInt64(0),
+                        Content = reader.GetString(1),
+                        Kind = reader.GetString(2),
+                        CreatedAt = reader.GetDateTime(3),
+                        Distance = reader.GetDouble(4)
                     });
                 }
             }
@@ -101,6 +102,64 @@ namespace Nop.Plugin.Company.Insights.Services
                 await _logger.WarningAsync("Insights memory: recall failed", ex);
             }
             return results;
+        }
+
+        public async Task<IList<MemoryItem>> ListAsync(string agentId, int limit, CancellationToken cancellationToken = default)
+        {
+            var results = new List<MemoryItem>();
+            if (!Enabled)
+                return results;
+
+            try
+            {
+                await EnsureSchemaAsync(cancellationToken);
+                await using var conn = new NpgsqlConnection(_config.BuildConnectionString());
+                await conn.OpenAsync(cancellationToken);
+                await using var cmd = new NpgsqlCommand(
+                    "SELECT id, content, kind, created_at FROM insights_memory " +
+                    "WHERE tenant = @tenant AND agent_id = @agent ORDER BY created_at DESC LIMIT @limit", conn);
+                cmd.Parameters.AddWithValue("tenant", _config.Tenant);
+                cmd.Parameters.AddWithValue("agent", agentId ?? "analyst");
+                cmd.Parameters.AddWithValue("limit", Math.Clamp(limit, 1, 200));
+                await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    results.Add(new MemoryItem
+                    {
+                        Id = reader.GetInt64(0),
+                        Content = reader.GetString(1),
+                        Kind = reader.GetString(2),
+                        CreatedAt = reader.GetDateTime(3)
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                await _logger.WarningAsync("Insights memory: list failed", ex);
+            }
+            return results;
+        }
+
+        public async Task DeleteAsync(long id, CancellationToken cancellationToken = default)
+        {
+            if (!Enabled)
+                return;
+
+            try
+            {
+                await EnsureSchemaAsync(cancellationToken);
+                await using var conn = new NpgsqlConnection(_config.BuildConnectionString());
+                await conn.OpenAsync(cancellationToken);
+                await using var cmd = new NpgsqlCommand(
+                    "DELETE FROM insights_memory WHERE tenant = @tenant AND id = @id", conn);
+                cmd.Parameters.AddWithValue("tenant", _config.Tenant);
+                cmd.Parameters.AddWithValue("id", id);
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await _logger.WarningAsync("Insights memory: delete failed", ex);
+            }
         }
 
         private async Task EnsureSchemaAsync(CancellationToken cancellationToken)

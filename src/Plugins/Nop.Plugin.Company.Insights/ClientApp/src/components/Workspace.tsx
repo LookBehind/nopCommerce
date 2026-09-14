@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useWorkspace } from "../store/workspace";
 import { TabBar } from "./TabBar";
 import { Canvas } from "./Canvas";
@@ -6,18 +6,31 @@ import { ChatPanel } from "./ChatPanel";
 import { AgentPicker } from "./AgentPicker";
 import { AddWidgetMenu } from "./AddWidgetMenu";
 import { ScheduleModal } from "./ScheduleModal";
+import { confirmDialog } from "../ui/feedback";
+import type { ThemePref } from "../types";
+
+const THEME_ICON: Record<ThemePref, string> = { system: "◐", light: "☀", dark: "☾" };
+const THEME_NEXT: Record<ThemePref, ThemePref> = { system: "light", light: "dark", dark: "system" };
 
 export function Workspace() {
   const tabs = useWorkspace((s) => s.tabs);
   const activeTabId = useWorkspace((s) => s.activeTabId);
   const resetWorkspace = useWorkspace((s) => s.resetWorkspace);
   const chatOpen = useWorkspace((s) => s.chatOpen);
+  const chatDock = useWorkspace((s) => s.chatDock);
+  const chatSize = useWorkspace((s) => s.chatSize);
+  const theme = useWorkspace((s) => s.theme);
+  const setTheme = useWorkspace((s) => s.setTheme);
+  const caps = useWorkspace((s) => s.capabilities);
   const [showSchedule, setShowSchedule] = useState(false);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
 
   return (
-    <div className={`ins-app ${chatOpen ? "chat-open" : ""}`}>
+    <div
+      className={`ins-app ${chatOpen ? "chat-open" : ""} dock-${chatDock}`}
+      style={{ "--chat-size": `${chatSize}px` } as CSSProperties}
+    >
       <header className="ins-header">
         <div className="ins-brand">
           <span className="ins-brand-mark">◨</span>
@@ -25,19 +38,34 @@ export function Workspace() {
         </div>
         <div className="ins-header-actions">
           <AddWidgetMenu tabId={activeTab.id} />
+          {caps?.scheduling && (
+            <button
+              className="ins-btn"
+              title="Scheduled reports to Telegram"
+              onClick={() => setShowSchedule(true)}
+            >
+              ⏰ Schedule
+            </button>
+          )}
           <button
-            className="ins-btn"
-            title="Scheduled reports to Telegram"
-            onClick={() => setShowSchedule(true)}
+            className="ins-btn subtle"
+            title={`Theme: ${theme} (click to change)`}
+            aria-label="Toggle theme"
+            onClick={() => setTheme(THEME_NEXT[theme])}
           >
-            ⏰ Schedule
+            {THEME_ICON[theme]}
           </button>
           <button
             className="ins-btn subtle"
             title="Reset workspace"
-            onClick={() => {
-              if (window.confirm("Reset the workspace? Tabs and widgets will be cleared."))
-                resetWorkspace();
+            onClick={async () => {
+              const ok = await confirmDialog({
+                title: "Reset workspace?",
+                message: "All tabs and widgets will be cleared.",
+                confirmLabel: "Reset",
+                danger: true,
+              });
+              if (ok) resetWorkspace();
             }}
           >
             Reset

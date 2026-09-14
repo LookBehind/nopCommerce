@@ -13,6 +13,9 @@ namespace Nop.Plugin.Company.Insights.Services
     {
         /// <summary>Invoked by Hangfire on the schedule's cron: run the report and post it to Telegram.</summary>
         Task RunAsync(string scheduleId);
+
+        /// <summary>Run an ad-hoc schedule definition once and post it to Telegram (used by "Send test now").</summary>
+        Task<bool> SendOnceAsync(InsightsSchedule schedule, CancellationToken cancellationToken = default);
     }
 
     public class InsightsScheduleRunner : IInsightsScheduleRunner
@@ -44,22 +47,41 @@ namespace Nop.Plugin.Company.Insights.Services
                 if (schedule == null || !schedule.Enabled)
                     return;
 
-                var result = await _reports.RunAsync(schedule.ReportId, null);
-                if (result == null)
-                {
-                    await _logger.WarningAsync($"Insights schedule '{schedule.Name}': unknown report '{schedule.ReportId}'");
-                    return;
-                }
-
-                var html = FormatReport(schedule.Name, result);
-                var sent = await _telegram.SendMessageAsync(schedule.TelegramChatId, html, CancellationToken.None);
-                if (!sent)
-                    await _logger.WarningAsync($"Insights schedule '{schedule.Name}': Telegram send failed (token/chat/config).");
+                await SendOnceAsync(schedule, CancellationToken.None);
             }
             catch (Exception ex)
             {
                 await _logger.ErrorAsync($"Insights schedule run failed ({scheduleId})", ex);
             }
+        }
+
+        public async Task<bool> SendOnceAsync(InsightsSchedule schedule, CancellationToken cancellationToken = default)
+        {
+            if (schedule == null)
+                return false;
+
+            var result = await _reports.RunAsync(schedule.ReportId, BuildParams(schedule));
+            if (result == null)
+            {
+                await _logger.WarningAsync($"Insights schedule '{schedule.Name}': unknown report '{schedule.ReportId}'");
+                return false;
+            }
+
+            var html = FormatReport(schedule.Name, result);
+            var sent = await _telegram.SendMessageAsync(schedule.TelegramChatId, html, cancellationToken);
+            if (!sent)
+                await _logger.WarningAsync($"Insights schedule '{schedule.Name}': Telegram send failed (token/chat/config).");
+            return sent;
+        }
+
+        private static IDictionary<string, string> BuildParams(InsightsSchedule s)
+        {
+            var p = new Dictionary<string, string>();
+            if (s.Days.HasValue)
+                p["days"] = s.Days.Value.ToString();
+            if (s.Limit.HasValue)
+                p["limit"] = s.Limit.Value.ToString();
+            return p.Count > 0 ? p : null;
         }
 
         private static string FormatReport(string name, InsightsReportResult result)

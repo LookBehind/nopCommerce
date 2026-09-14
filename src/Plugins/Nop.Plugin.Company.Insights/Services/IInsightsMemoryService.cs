@@ -8,6 +8,7 @@ namespace Nop.Plugin.Company.Insights.Services
     /// <summary>A recalled memory item.</summary>
     public class MemoryItem
     {
+        public long Id { get; set; }
         public string Content { get; set; }
         public string Kind { get; set; }
         public double Distance { get; set; }
@@ -28,5 +29,11 @@ namespace Nop.Plugin.Company.Insights.Services
 
         /// <summary>Semantic recall of the most relevant stored memories. Empty on failure/disabled.</summary>
         Task<IList<MemoryItem>> RecallAsync(string agentId, string query, int k, CancellationToken cancellationToken = default);
+
+        /// <summary>The most recently saved memories for an agent (for the management UI), newest first.</summary>
+        Task<IList<MemoryItem>> ListAsync(string agentId, int limit, CancellationToken cancellationToken = default);
+
+        /// <summary>Delete one stored memory by id. No-op if disabled.</summary>
+        Task DeleteAsync(long id, CancellationToken cancellationToken = default);
     }
 }

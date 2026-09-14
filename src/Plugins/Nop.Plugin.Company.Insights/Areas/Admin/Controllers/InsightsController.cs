@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Nop.Core;
 using Nop.Plugin.Company.Insights.Models;
 using Nop.Plugin.Company.Insights.Security;
 using Nop.Plugin.Company.Insights.Services;
@@ -25,7 +26,11 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         private readonly IInsightsReportService _reportService;
         private readonly IInsightsAgentService _agentService;
         private readonly IInsightsMemoryService _memoryService;
+        private readonly IInsightsWorkspaceService _workspaceService;
         private readonly IInsightsScheduleService _scheduleService;
+        private readonly IInsightsScheduleRunner _scheduleRunner;
+        private readonly InsightsLlmClient _llmClient;
+        private readonly IWorkContext _workContext;
         private readonly InsightsMemoryConfig _config;
         private readonly IAntiforgery _antiforgery;
 
@@ -53,7 +58,11 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             IInsightsReportService reportService,
             IInsightsAgentService agentService,
             IInsightsMemoryService memoryService,
+            IInsightsWorkspaceService workspaceService,
             IInsightsScheduleService scheduleService,
+            IInsightsScheduleRunner scheduleRunner,
+            InsightsLlmClient llmClient,
+            IWorkContext workContext,
             InsightsMemoryConfig config,
             IAntiforgery antiforgery)
         {
@@ -61,9 +70,19 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             _reportService = reportService;
             _agentService = agentService;
             _memoryService = memoryService;
+            _workspaceService = workspaceService;
             _scheduleService = scheduleService;
+            _scheduleRunner = scheduleRunner;
+            _llmClient = llmClient;
+            _workContext = workContext;
             _config = config;
             _antiforgery = antiforgery;
+        }
+
+        private async Task<int> CurrentUserIdAsync()
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            return customer?.Id ?? 0;
         }
 
         private async Task<bool> HasAccessAsync()
@@ -118,6 +137,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                 capabilities = new
                 {
                     memory = _memoryService.Enabled,
+                    persistence = _workspaceService.Enabled,
                     scheduling = _scheduleService.Enabled,
                     telegram = _config.TelegramEnabled
                 }
@@ -251,6 +271,182 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             return Json(new { ok = true });
         }
 
+        // ---- Per-user persistence: workspace ----
+
+        /// <summary>The current user's saved workspace (tabs/widgets/layout), or null.</summary>
+        [HttpGet]
+        public async Task<IActionResult> Workspace()
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+
+            var json = await _workspaceService.GetWorkspaceAsync(await CurrentUserIdAsync(), HttpContext.RequestAborted);
+            return Content(json ?? "null", "application/json");
+        }
+
+        /// <summary>Persist the current user's workspace blob.</summary>
+        [HttpPost]
+        public async Task<IActionResult> SaveWorkspace([FromForm] string payload)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+            if (string.IsNullOrWhiteSpace(payload))
+                return Json(new { ok = false, error = "empty" });
+
+            var ok = await _workspaceService.SaveWorkspaceAsync(await CurrentUserIdAsync(), payload, HttpContext.RequestAborted);
+            return Json(new { ok });
+        }
+
+        // ---- Per-user persistence: conversations ----
+
+        /// <summary>List the current user's saved conversations (headers only).</summary>
+        [HttpGet]
+        public async Task<IActionResult> Conversations()
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+
+            var items = await _workspaceService.ListConversationsAsync(await CurrentUserIdAsync(), HttpContext.RequestAborted);
+            return Json(items.Select(c => new { id = c.Id, title = c.Title, agentId = c.AgentId, createdAt = c.CreatedAt, updatedAt = c.UpdatedAt }));
+        }
+
+        /// <summary>Fetch one full conversation (with messages).</summary>
+        [HttpGet]
+        public async Task<IActionResult> Conversation(string id)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+
+            var c = await _workspaceService.GetConversationAsync(await CurrentUserIdAsync(), id, HttpContext.RequestAborted);
+            if (c == null)
+                return NotFound();
+
+            var payload = "{" +
+                $"\"id\":{JsonSerializer.Serialize(c.Id)}," +
+                $"\"title\":{JsonSerializer.Serialize(c.Title)}," +
+                $"\"agentId\":{JsonSerializer.Serialize(c.AgentId)}," +
+                $"\"messages\":{(string.IsNullOrWhiteSpace(c.MessagesJson) ? "[]" : c.MessagesJson)}," +
+                $"\"createdAt\":{JsonSerializer.Serialize(c.CreatedAt)}," +
+                $"\"updatedAt\":{JsonSerializer.Serialize(c.UpdatedAt)}}}";
+            return Content(payload, "application/json");
+        }
+
+        /// <summary>Create or update a conversation. Payload: {id?, title, agentId, messages:[...]}.</summary>
+        [HttpPost]
+        public async Task<IActionResult> SaveConversation([FromForm] string payload)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+            if (!_workspaceService.Enabled)
+                return Json(new { ok = false, error = "persistence-disabled" });
+            if (string.IsNullOrWhiteSpace(payload))
+                return Json(new { ok = false, error = "empty" });
+
+            string id = null, title = null, agentId = null, messagesJson = "[]";
+            try
+            {
+                using var doc = JsonDocument.Parse(payload);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String)
+                    id = idEl.GetString();
+                if (root.TryGetProperty("title", out var tEl) && tEl.ValueKind == JsonValueKind.String)
+                    title = tEl.GetString();
+                if (root.TryGetProperty("agentId", out var aEl) && aEl.ValueKind == JsonValueKind.String)
+                    agentId = aEl.GetString();
+                if (root.TryGetProperty("messages", out var mEl) && mEl.ValueKind == JsonValueKind.Array)
+                    messagesJson = mEl.GetRawText();
+            }
+            catch
+            {
+                return Json(new { ok = false, error = "bad-payload" });
+            }
+
+            var saved = await _workspaceService.SaveConversationAsync(await CurrentUserIdAsync(), new InsightsConversation
+            {
+                Id = id,
+                Title = title,
+                AgentId = agentId,
+                MessagesJson = messagesJson
+            }, HttpContext.RequestAborted);
+
+            if (saved == null)
+                return Json(new { ok = false, error = "save-failed" });
+            return Json(new { ok = true, id = saved.Id, updatedAt = saved.UpdatedAt });
+        }
+
+        /// <summary>Delete a conversation.</summary>
+        [HttpPost]
+        public async Task<IActionResult> DeleteConversation([FromForm] string id)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+
+            await _workspaceService.DeleteConversationAsync(await CurrentUserIdAsync(), id, HttpContext.RequestAborted);
+            return Json(new { ok = true });
+        }
+
+        // ---- Agent memory management ----
+
+        /// <summary>List saved agent memories for the management UI.</summary>
+        [HttpGet]
+        public async Task<IActionResult> Memories(string agentId)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+
+            var items = await _memoryService.ListAsync(agentId ?? "analyst", 100, HttpContext.RequestAborted);
+            return Json(items.Select(m => new { id = m.Id, kind = m.Kind, content = m.Content, createdAt = m.CreatedAt }));
+        }
+
+        /// <summary>Delete one saved agent memory.</summary>
+        [HttpPost]
+        public async Task<IActionResult> DeleteMemory([FromForm] string id)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+            if (!long.TryParse(id, out var memId))
+                return Json(new { ok = false, error = "bad-id" });
+
+            await _memoryService.DeleteAsync(memId, HttpContext.RequestAborted);
+            return Json(new { ok = true });
+        }
+
+        // ---- Model warm-up ----
+
+        /// <summary>
+        /// Wakes the analysis model (scales from zero) and reports whether it's ready. The SPA polls
+        /// this before a chat so it can show progress instead of a long, CDN-timing-out request.
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> Warmup()
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+
+            var ready = await _llmClient.ProbeAsync(TimeSpan.FromSeconds(20), HttpContext.RequestAborted);
+            return Json(new { ready });
+        }
+
+        // ---- Schedule test delivery ----
+
+        /// <summary>Run a schedule definition once and post it to Telegram now (verify before saving).</summary>
+        [HttpPost]
+        public async Task<IActionResult> TestSchedule([FromForm] string payload)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+            if (!_config.TelegramEnabled)
+                return Json(new { ok = false, error = "telegram-disabled" });
+
+            var schedule = Deserialize<InsightsSchedule>(payload);
+            if (schedule == null || string.IsNullOrWhiteSpace(schedule.ReportId) ||
+                string.IsNullOrWhiteSpace(schedule.TelegramChatId))
+                return Json(new { ok = false, error = "missing-fields" });
+
+            var sent = await _scheduleRunner.SendOnceAsync(schedule, HttpContext.RequestAborted);
+            return Json(new { ok = sent, error = sent ? null : "send-failed" });
+        }
+
         private static T Deserialize<T>(string payload) where T : class
         {
             if (string.IsNullOrWhiteSpace(payload))
@@ -267,6 +463,8 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             cron = s.Cron,
             telegramChatId = s.TelegramChatId,
             enabled = s.Enabled,
+            days = s.Days,
+            limit = s.Limit,
             createdAt = s.CreatedAt
         };
     }

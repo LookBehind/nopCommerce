@@ -45,7 +45,7 @@ namespace Nop.Plugin.Company.Insights.Services
             await using var conn = new NpgsqlConnection(_config.BuildConnectionString());
             await conn.OpenAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand(
-                "SELECT id, name, report_id, cron, telegram_chat_id, enabled, created_at " +
+                "SELECT id, name, report_id, cron, telegram_chat_id, enabled, created_at, days, limit_rows " +
                 "FROM insights_schedule WHERE tenant = @tenant ORDER BY created_at", conn);
             cmd.Parameters.AddWithValue("tenant", _config.Tenant);
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -63,7 +63,7 @@ namespace Nop.Plugin.Company.Insights.Services
             await using var conn = new NpgsqlConnection(_config.BuildConnectionString());
             await conn.OpenAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand(
-                "SELECT id, name, report_id, cron, telegram_chat_id, enabled, created_at " +
+                "SELECT id, name, report_id, cron, telegram_chat_id, enabled, created_at, days, limit_rows " +
                 "FROM insights_schedule WHERE tenant = @tenant AND id = @id", conn);
             cmd.Parameters.AddWithValue("tenant", _config.Tenant);
             cmd.Parameters.AddWithValue("id", id);
@@ -91,10 +91,11 @@ namespace Nop.Plugin.Company.Insights.Services
             await using var conn = new NpgsqlConnection(_config.BuildConnectionString());
             await conn.OpenAsync(cancellationToken);
             await using var cmd = new NpgsqlCommand(
-                "INSERT INTO insights_schedule (id, tenant, name, report_id, cron, telegram_chat_id, enabled, created_at) " +
-                "VALUES (@id, @tenant, @name, @report, @cron, @chat, @enabled, @created) " +
+                "INSERT INTO insights_schedule (id, tenant, name, report_id, cron, telegram_chat_id, enabled, created_at, days, limit_rows) " +
+                "VALUES (@id, @tenant, @name, @report, @cron, @chat, @enabled, @created, @days, @limit) " +
                 "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, report_id = EXCLUDED.report_id, " +
-                "cron = EXCLUDED.cron, telegram_chat_id = EXCLUDED.telegram_chat_id, enabled = EXCLUDED.enabled", conn);
+                "cron = EXCLUDED.cron, telegram_chat_id = EXCLUDED.telegram_chat_id, enabled = EXCLUDED.enabled, " +
+                "days = EXCLUDED.days, limit_rows = EXCLUDED.limit_rows", conn);
             cmd.Parameters.AddWithValue("id", schedule.Id);
             cmd.Parameters.AddWithValue("tenant", _config.Tenant);
             cmd.Parameters.AddWithValue("name", schedule.Name ?? "Report");
@@ -103,6 +104,8 @@ namespace Nop.Plugin.Company.Insights.Services
             cmd.Parameters.AddWithValue("chat", schedule.TelegramChatId ?? "");
             cmd.Parameters.AddWithValue("enabled", schedule.Enabled);
             cmd.Parameters.AddWithValue("created", DateTime.SpecifyKind(schedule.CreatedAt, DateTimeKind.Utc));
+            cmd.Parameters.AddWithValue("days", (object)schedule.Days ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("limit", (object)schedule.Limit ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
 
             SyncHangfire(schedule);
@@ -154,7 +157,9 @@ namespace Nop.Plugin.Company.Insights.Services
             Cron = r.GetString(3),
             TelegramChatId = r.GetString(4),
             Enabled = r.GetBoolean(5),
-            CreatedAt = r.GetDateTime(6)
+            CreatedAt = r.GetDateTime(6),
+            Days = r.IsDBNull(7) ? (int?)null : r.GetInt32(7),
+            Limit = r.IsDBNull(8) ? (int?)null : r.GetInt32(8)
         };
 
         private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
@@ -179,7 +184,11 @@ namespace Nop.Plugin.Company.Insights.Services
                     "  cron text NOT NULL," +
                     "  telegram_chat_id text NOT NULL," +
                     "  enabled boolean NOT NULL DEFAULT true," +
-                    "  created_at timestamptz NOT NULL DEFAULT now());" +
+                    "  created_at timestamptz NOT NULL DEFAULT now()," +
+                    "  days integer," +
+                    "  limit_rows integer);" +
+                    "ALTER TABLE insights_schedule ADD COLUMN IF NOT EXISTS days integer;" +
+                    "ALTER TABLE insights_schedule ADD COLUMN IF NOT EXISTS limit_rows integer;" +
                     "CREATE INDEX IF NOT EXISTS idx_insights_schedule_tenant ON insights_schedule (tenant);", conn);
                 await cmd.ExecuteNonQueryAsync(cancellationToken);
                 _schemaReady = true;

@@ -1,12 +1,23 @@
-import type { Capabilities, ChatTurnResponse, ReportMeta, ReportResult, Schedule } from "../types";
+import type {
+  Capabilities,
+  ChatTurnResponse,
+  Conversation,
+  ConversationHeader,
+  MemoryRow,
+  ReportMeta,
+  ReportParams,
+  ReportResult,
+  Schedule,
+} from "../types";
 
 // The SPA is hosted at /Admin/Insights, so the gated JSON API shares that base.
 const API_BASE = "/Admin/Insights";
 
-async function getJson<T>(path: string): Promise<T> {
+async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { Accept: "application/json" },
     credentials: "same-origin",
+    signal,
   });
   if (!res.ok) {
     throw new Error(`${res.status} ${res.statusText}`);
@@ -24,7 +35,11 @@ function antiforgeryToken(): string {
 // POST as form-encoded: nopCommerce admin filters read Request.Form (a JSON body makes them
 // throw), and antiforgery is satisfied by the __RequestVerificationToken form field. Complex
 // payloads ride as a JSON string in a "payload" field.
-async function postForm<T>(path: string, fields: Record<string, string>): Promise<T> {
+async function postForm<T>(
+  path: string,
+  fields: Record<string, string>,
+  signal?: AbortSignal
+): Promise<T> {
   const body = new URLSearchParams();
   body.set("__RequestVerificationToken", antiforgeryToken());
   for (const [k, v] of Object.entries(fields)) body.set(k, v);
@@ -38,11 +53,19 @@ async function postForm<T>(path: string, fields: Record<string, string>): Promis
     },
     credentials: "same-origin",
     body: body.toString(),
+    signal,
   });
   if (!res.ok) {
     throw new Error(`${res.status} ${res.statusText}`);
   }
   return (await res.json()) as T;
+}
+
+function reportQuery(params?: ReportParams): string {
+  const qs = new URLSearchParams();
+  if (params?.days != null) qs.set("days", String(params.days));
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  return qs.toString() ? `?${qs.toString()}` : "";
 }
 
 export interface PingResult {
@@ -55,20 +78,44 @@ export interface PingResult {
 
 export const api = {
   ping: () => getJson<PingResult>("/Ping"),
+
+  // reports
   reports: () => getJson<ReportMeta[]>("/Reports"),
-  runReport: (id: string, params?: { days?: number; limit?: number }) => {
-    const qs = new URLSearchParams();
-    if (params?.days != null) qs.set("days", String(params.days));
-    if (params?.limit != null) qs.set("limit", String(params.limit));
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return getJson<ReportResult>(`/Reports/${encodeURIComponent(id)}${suffix}`);
-  },
-  chat: (agentId: string, messages: { role: string; content: string }[]) =>
-    postForm<ChatTurnResponse>("/Chat", { payload: JSON.stringify({ agentId, messages }) }),
+  runReport: (id: string, params?: ReportParams) =>
+    getJson<ReportResult>(`/Reports/${encodeURIComponent(id)}${reportQuery(params)}`),
+
+  // agent chat
+  chat: (
+    agentId: string,
+    messages: { role: string; content: string }[],
+    signal?: AbortSignal
+  ) => postForm<ChatTurnResponse>("/Chat", { payload: JSON.stringify({ agentId, messages }) }, signal),
+  warmup: () => postForm<{ ready: boolean }>("/Warmup", {}),
+
+  // workspace persistence (per user)
+  getWorkspace: () => getJson<unknown | null>("/Workspace"),
+  saveWorkspace: (data: unknown) =>
+    postForm<{ ok: boolean }>("/SaveWorkspace", { payload: JSON.stringify(data) }),
+
+  // conversations (per user)
+  conversations: () => getJson<ConversationHeader[]>("/Conversations"),
+  conversation: (id: string) => getJson<Conversation>(`/Conversation?id=${encodeURIComponent(id)}`),
+  saveConversation: (c: { id?: string; title: string; agentId: string; messages: unknown[] }) =>
+    postForm<{ ok: boolean; id?: string }>("/SaveConversation", { payload: JSON.stringify(c) }),
+  deleteConversation: (id: string) => postForm<{ ok: boolean }>("/DeleteConversation", { id }),
+
+  // agent memory management
+  memories: (agentId: string) =>
+    getJson<MemoryRow[]>(`/Memories?agentId=${encodeURIComponent(agentId)}`),
+  deleteMemory: (id: number) => postForm<{ ok: boolean }>("/DeleteMemory", { id: String(id) }),
+
+  // schedules
   schedules: () => getJson<Schedule[]>("/Schedules"),
   saveSchedule: (s: Schedule) =>
     postForm<{ ok: boolean; schedule?: Schedule; error?: string }>("/SaveSchedule", {
       payload: JSON.stringify(s),
     }),
   deleteSchedule: (id: string) => postForm<{ ok: boolean }>("/DeleteSchedule", { id }),
+  testSchedule: (s: Partial<Schedule>) =>
+    postForm<{ ok: boolean; error?: string }>("/TestSchedule", { payload: JSON.stringify(s) }),
 };

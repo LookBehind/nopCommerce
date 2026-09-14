@@ -9,6 +9,16 @@ function vegaType(col: ReportColumn | undefined): "temporal" | "quantitative" | 
   return "nominal";
 }
 
+/** Resolve a CSS variable from the document root, with a fallback. */
+function cssVar(name: string, fallback: string): string {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Build a Vega-Lite spec (as a plain object) from tabular report data + the widget's
  * chart config. Data is embedded inline so each widget is self-contained.
@@ -25,6 +35,10 @@ export function buildSpec(
   const y = config.yField;
   const cat = config.categoryField;
 
+  const labelColor = cssVar("--sub", "#9aa3b2");
+  const titleColor = cssVar("--fg", "#c7cddb");
+  const gridColor = cssVar("--border", "rgba(127,127,127,.15)");
+
   const base = {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
     width: Math.max(80, width),
@@ -33,8 +47,8 @@ export function buildSpec(
     autosize: { type: "fit", contains: "padding" },
     data: { values: rows },
     config: {
-      axis: { labelColor: "#9aa3b2", titleColor: "#c7cddb", gridColor: "rgba(255,255,255,.06)", domainColor: "rgba(255,255,255,.12)" },
-      legend: { labelColor: "#9aa3b2", titleColor: "#c7cddb" },
+      axis: { labelColor, titleColor, gridColor, domainColor: gridColor },
+      legend: { labelColor, titleColor },
       view: { stroke: "transparent" },
     },
   };

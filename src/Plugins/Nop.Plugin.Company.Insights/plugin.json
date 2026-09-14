@@ -2,7 +2,7 @@
   "Group": "Company",
   "FriendlyName": "Company Insights (AI Analytics Chat)",
   "SystemName": "Company.Insights",
-  "Version": "0.1",
+  "Version": "0.2",
   "SupportedVersions": [ "4.50" ],
   "Author": "Custom",
   "DisplayOrder": 2,

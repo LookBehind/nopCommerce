@@ -1,68 +1,239 @@
-import { useRef, useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspace } from "../store/workspace";
 import { agentById } from "../agents";
 import { api } from "../api/client";
-import type { ChatMessage, ChatWidget, Dataset } from "../types";
+import type { ChatMessage, ChatWidget, ConversationHeader, Dataset } from "../types";
 import { ChartWidget } from "./widgets/ChartWidget";
 import { TableWidget } from "./widgets/TableWidget";
+import { MemoryPanel } from "./MemoryPanel";
+import { useLlmStatus } from "../ui/llmStatus";
+import { confirmDialog, toast } from "../ui/feedback";
+
+const SUGGESTIONS = [
+  "orders per day this month",
+  "break down orders by status",
+  "revenue trend over the last 90 days",
+  "recent product reviews needing triage",
+];
+
+const WARMUP_MAX_MS = 8 * 60 * 1000;
 
 export function ChatPanel() {
   const chatOpen = useWorkspace((s) => s.chatOpen);
   const toggleChat = useWorkspace((s) => s.toggleChat);
   const selectedAgentId = useWorkspace((s) => s.selectedAgentId);
+  const chatDock = useWorkspace((s) => s.chatDock);
+  const chatSize = useWorkspace((s) => s.chatSize);
+  const setChatSize = useWorkspace((s) => s.setChatSize);
+  const setChatDock = useWorkspace((s) => s.setChatDock);
+  const caps = useWorkspace((s) => s.capabilities);
   const agent = agentById(selectedAgentId);
+  const setLlmStatus = useLlmStatus((s) => s.setStatus);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [warming, setWarming] = useState<number | null>(null); // elapsed seconds while warming
+  const [convId, setConvId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<ConversationHeader[]>([]);
+  const [showMemory, setShowMemory] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const persistence = !!caps?.persistence;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, busy]);
+  }, [messages, busy, warming]);
 
-  async function send() {
-    const text = input.trim();
-    if (!text || busy) return;
-
-    const history: ChatMessage[] = [...messages, { role: "user", content: text }];
-    setMessages(history);
-    setInput("");
-    setBusy(true);
+  const refreshHistory = useCallback(async () => {
+    if (!persistence) return;
     try {
-      const res = await api.chat(
-        selectedAgentId,
-        history.map((m) => ({ role: m.role, content: m.content }))
-      );
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: res.reply, widgets: res.widgets },
-      ]);
-    } catch (e) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Request failed: ${String(e)}`, error: true },
-      ]);
+      setHistory(await api.conversations());
+    } catch {
+      /* ignore */
+    }
+  }, [persistence]);
+
+  // Persist the current thread after each completed exchange.
+  const persist = useCallback(
+    async (msgs: ChatMessage[]) => {
+      if (!persistence || msgs.length === 0) return;
+      const title = msgs.find((m) => m.role === "user")?.content?.slice(0, 60) || "Conversation";
+      try {
+        const res = await api.saveConversation({
+          id: convId ?? undefined,
+          title,
+          agentId: selectedAgentId,
+          messages: msgs,
+        });
+        if (res.ok && res.id && !convId) setConvId(res.id);
+      } catch {
+        /* best effort */
+      }
+    },
+    [persistence, convId, selectedAgentId]
+  );
+
+  async function ensureWarm(signal: AbortSignal): Promise<void> {
+    if (useLlmStatus.getState().status === "ready") return;
+    setWarming(0);
+    setLlmStatus("warming");
+    const start = Date.now();
+    try {
+      while (!signal.aborted && Date.now() - start < WARMUP_MAX_MS) {
+        const { ready } = await api.warmup();
+        if (ready) {
+          setLlmStatus("ready");
+          return;
+        }
+        setWarming(Math.round((Date.now() - start) / 1000));
+        await new Promise((r) => setTimeout(r, 2500));
+      }
     } finally {
-      setBusy(false);
+      setWarming(null);
     }
   }
 
+  async function send(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || busy) return;
+
+    const thread: ChatMessage[] = [...messages, { role: "user", content: trimmed }];
+    setMessages(thread);
+    setInput("");
+    setBusy(true);
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+    try {
+      await ensureWarm(ac.signal);
+      if (ac.signal.aborted) return;
+
+      const res = await api.chat(
+        selectedAgentId,
+        thread.map((m) => ({ role: m.role, content: m.content })),
+        ac.signal
+      );
+      setLlmStatus("ready");
+      const next: ChatMessage[] = [
+        ...thread,
+        { role: "assistant", content: res.reply, widgets: res.widgets },
+      ];
+      setMessages(next);
+      void persist(next);
+    } catch (e) {
+      if (ac.signal.aborted) {
+        setMessages((prev) => [...prev, { role: "assistant", content: "⏹ Stopped.", error: true }]);
+      } else {
+        setLlmStatus("cold");
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `Request failed: ${String(e)}`, error: true },
+        ]);
+      }
+    } finally {
+      setBusy(false);
+      setWarming(null);
+      abortRef.current = null;
+    }
+  }
+
+  function stop() {
+    abortRef.current?.abort();
+  }
+
+  function newChat() {
+    stop();
+    setMessages([]);
+    setConvId(null);
+  }
+
+  async function openConversation(id: string) {
+    try {
+      const c = await api.conversation(id);
+      setMessages(c.messages ?? []);
+      setConvId(c.id);
+      setShowHistory(false);
+    } catch {
+      toast.error("Couldn't load that conversation");
+    }
+  }
+
+  async function deleteConversation(id: string) {
+    const ok = await confirmDialog({ title: "Delete conversation?", confirmLabel: "Delete", danger: true });
+    if (!ok) return;
+    await api.deleteConversation(id);
+    if (id === convId) newChat();
+    void refreshHistory();
+  }
+
+  const sizeStyle =
+    chatDock === "right" ? { width: chatSize } : { height: chatSize + 40 };
+
   return (
-    <div className={`ins-chat ${chatOpen ? "open" : "collapsed"}`}>
+    <div className={`ins-chat dock-${chatDock} ${chatOpen ? "open" : "collapsed"}`} style={chatOpen ? sizeStyle : undefined}>
+      {chatOpen && <ResizeHandle dock={chatDock} size={chatSize} onResize={setChatSize} />}
+
       <div className="ins-chat-bar">
         <button className="ins-chat-handle" onClick={toggleChat} title={chatOpen ? "Hide chat" : "Show chat"}>
           {chatOpen ? "▾ Hide chat" : `▴ Ask ${agent.name}`}
         </button>
-        {chatOpen && messages.length > 0 && (
-          <button className="ins-chat-reset" onClick={() => setMessages([])} title="Reset conversation">
-            Reset
-          </button>
+        {chatOpen && (
+          <div className="ins-chat-bar-actions">
+            <button className="ins-icon-btn" title="New conversation" aria-label="New conversation" onClick={newChat}>
+              ✎
+            </button>
+            {persistence && (
+              <button
+                className="ins-icon-btn"
+                title="Conversation history"
+                aria-label="Conversation history"
+                onClick={() => {
+                  setShowHistory((v) => !v);
+                  void refreshHistory();
+                }}
+              >
+                🕘
+              </button>
+            )}
+            {caps?.memory && (
+              <button className="ins-icon-btn" title="Agent memory" aria-label="Agent memory" onClick={() => setShowMemory(true)}>
+                🧠
+              </button>
+            )}
+            <button
+              className="ins-icon-btn"
+              title={chatDock === "bottom" ? "Dock to right" : "Dock to bottom"}
+              aria-label="Toggle chat dock"
+              onClick={() => setChatDock(chatDock === "bottom" ? "right" : "bottom")}
+            >
+              {chatDock === "bottom" ? "⇥" : "⤓"}
+            </button>
+          </div>
         )}
       </div>
 
       {chatOpen && (
         <div className="ins-chat-body">
+          {showHistory && (
+            <div className="ins-chat-history">
+              {history.length === 0 && <div className="ins-muted" style={{ padding: 8 }}>No saved conversations.</div>}
+              {history.map((h) => (
+                <div key={h.id} className={`ins-hist-row ${h.id === convId ? "active" : ""}`}>
+                  <button className="ins-hist-open" onClick={() => openConversation(h.id)} title={h.title}>
+                    <span className="ins-hist-title">{h.title}</span>
+                    <span className="ins-muted ins-hist-date">{new Date(h.updatedAt).toLocaleDateString()}</span>
+                  </button>
+                  <button className="ins-icon-btn" title="Delete" aria-label="Delete conversation" onClick={() => void deleteConversation(h.id)}>
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="ins-chat-messages" ref={scrollRef}>
             {messages.length === 0 && (
               <div className="ins-chat-empty">
@@ -70,40 +241,92 @@ export function ChatPanel() {
                   <strong>{agent.name}</strong> — {agent.description}
                 </p>
                 <p className="ins-muted">
-                  Ask about orders, revenue or status. I'll fetch real data and can propose a
-                  chart or table you pin to the canvas. Try: <em>"orders per day this month"</em> or{" "}
-                  <em>"break down orders by status"</em>.
+                  Ask about orders, revenue, reviews or status. I'll fetch real data and can propose a
+                  chart or table you pin to the canvas.
                 </p>
+                <div className="ins-suggestions">
+                  {SUGGESTIONS.map((s) => (
+                    <button key={s} className="ins-chip" onClick={() => void send(s)}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             {messages.map((m, i) => (
               <MessageBubble key={i} message={m} />
             ))}
-            {busy && <div className="ins-chat-thinking">{agent.name} is thinking… (the model may be warming up)</div>}
+            {warming !== null && (
+              <div className="ins-chat-thinking">
+                Waking the analysis model (it scales to zero when idle)… {warming}s
+              </div>
+            )}
+            {busy && warming === null && <div className="ins-chat-thinking">{agent.name} is thinking…</div>}
           </div>
 
           <form
             className="ins-chat-input"
             onSubmit={(e) => {
               e.preventDefault();
-              void send();
+              void send(input);
             }}
           >
-            <input
-              type="text"
-              placeholder={`Ask ${agent.name}…`}
+            <textarea
+              rows={1}
+              placeholder={`Ask ${agent.name}…  (Enter to send, Shift+Enter for a new line)`}
               value={input}
-              disabled={busy}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void send(input);
+                }
+              }}
             />
-            <button type="submit" className="ins-btn primary" disabled={busy || !input.trim()}>
-              Send
-            </button>
+            {busy ? (
+              <button type="button" className="ins-btn danger" onClick={stop}>
+                Stop
+              </button>
+            ) : (
+              <button type="submit" className="ins-btn primary" disabled={!input.trim()}>
+                Send
+              </button>
+            )}
           </form>
         </div>
       )}
+
+      {showMemory && <MemoryPanel agentId={selectedAgentId} onClose={() => setShowMemory(false)} />}
     </div>
   );
+}
+
+function ResizeHandle({
+  dock,
+  size,
+  onResize,
+}: {
+  dock: "bottom" | "right";
+  size: number;
+  onResize: (n: number) => void;
+}) {
+  function onPointerDown(e: React.PointerEvent) {
+    e.preventDefault();
+    const startPos = dock === "right" ? e.clientX : e.clientY;
+    const startSize = size;
+    const move = (ev: PointerEvent) => {
+      const cur = dock === "right" ? ev.clientX : ev.clientY;
+      const delta = dock === "right" ? startPos - cur : startPos - cur;
+      onResize(startSize + delta);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  return <div className={`ins-chat-resize ${dock}`} onPointerDown={onPointerDown} title="Drag to resize" />;
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {
@@ -143,6 +366,7 @@ function WidgetCard({ widget }: { widget: ChatWidget }) {
     } else {
       addWidget(activeTabId, { type: "table", title: widget.title, dataset });
     }
+    toast.success("Pinned to canvas");
   }
 
   return (

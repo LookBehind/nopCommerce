@@ -25,6 +25,12 @@ export interface ReportMeta {
   parameters?: ReportParam[];
 }
 
+/** Resolved parameter values for a report-backed widget (subset the UI exposes today). */
+export interface ReportParams {
+  days?: number;
+  limit?: number;
+}
+
 export interface ReportResult {
   id: string;
   columns: ReportColumn[];
@@ -57,6 +63,8 @@ export interface Widget {
   // chart / table
   chart?: ChartConfig;
   tableReportId?: string;
+  /** Parameter values for a report-backed chart/table widget (days/limit). */
+  reportParams?: ReportParams;
   dataset?: Dataset;
   // note
   noteText?: string;
@@ -93,6 +101,7 @@ export interface ChatMessage {
 
 export interface Capabilities {
   memory: boolean;
+  persistence: boolean;
   scheduling: boolean;
   telegram: boolean;
 }
@@ -104,7 +113,32 @@ export interface Schedule {
   cron: string;
   telegramChatId: string;
   enabled: boolean;
+  days?: number | null;
+  limit?: number | null;
   createdAt?: string;
+}
+
+// ---- Saved conversations (server persistence) ----
+
+export interface ConversationHeader {
+  id: string;
+  title: string;
+  agentId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Conversation extends ConversationHeader {
+  messages: ChatMessage[];
+}
+
+// ---- Agent memory management ----
+
+export interface MemoryRow {
+  id: number;
+  kind: string;
+  content: string;
+  createdAt: string;
 }
 
 /** react-grid-layout item (subset we persist). */
@@ -129,9 +163,16 @@ export interface Agent {
   description: string;
 }
 
+export type ThemePref = "system" | "light" | "dark";
+export type ChatDock = "bottom" | "right";
+
 export interface WorkspaceState {
   tabs: Tab[];
   activeTabId: string;
   chatOpen: boolean;
   selectedAgentId: string;
+  theme: ThemePref;
+  chatDock: ChatDock;
+  /** Chat panel size in px: height when docked bottom, width when docked right. */
+  chatSize: number;
 }
