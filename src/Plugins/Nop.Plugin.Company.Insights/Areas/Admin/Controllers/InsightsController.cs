@@ -181,7 +181,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         /// <c>Admin/Insights/Reports/{id?}</c> route. Scoped to the active profile.
         /// </summary>
         [HttpGet]
-        public async Task<IActionResult> Reports(string id, int? days, int? limit, string profile = null, int? companyId = null)
+        public async Task<IActionResult> Reports(string id, int? days, int? limit, string from = null, string to = null, string slot = null, string profile = null, int? companyId = null)
         {
             if (!await HasAccessAsync())
                 return StatusCode(StatusCodes.Status403Forbidden);
@@ -222,6 +222,12 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                 parameters["days"] = days.Value.ToString();
             if (limit.HasValue)
                 parameters["limit"] = limit.Value.ToString();
+            if (!string.IsNullOrWhiteSpace(from))
+                parameters["from"] = from;
+            if (!string.IsNullOrWhiteSpace(to))
+                parameters["to"] = to;
+            if (!string.IsNullOrWhiteSpace(slot))
+                parameters["slot"] = slot;
 
             var scope = await _profileService.ResolveScopeAsync(activeProfile, companyId, HttpContext.RequestAborted);
             var result = await _reportService.RunAsync(id, parameters, scope);
@@ -232,7 +238,8 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             {
                 id = result.Id,
                 columns = result.Columns.Select(c => new { name = c.Name, type = c.Type }),
-                rows = result.Rows
+                rows = result.Rows,
+                totals = result.Totals?.Select(t => new { label = t.Label, value = t.Value })
             });
         }
 

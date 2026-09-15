@@ -14,7 +14,16 @@ const resultCache = new Map<string, Entry>();
 const listeners = new Map<string, Set<() => void>>();
 
 function keyOf(id: string, params?: ReportParams, ctx?: ProfileContext): string {
-  return `${id}|${params?.days ?? ""}|${params?.limit ?? ""}|${ctx?.profileId ?? ""}|${ctx?.companyId ?? ""}`;
+  return [
+    id,
+    params?.days ?? "",
+    params?.limit ?? "",
+    params?.from ?? "",
+    params?.to ?? "",
+    params?.slot ?? "",
+    ctx?.profileId ?? "",
+    ctx?.companyId ?? "",
+  ].join("|");
 }
 
 function notify(key: string) {

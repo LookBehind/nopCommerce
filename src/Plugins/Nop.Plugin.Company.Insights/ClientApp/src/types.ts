@@ -29,12 +29,22 @@ export interface ReportMeta {
 export interface ReportParams {
   days?: number;
   limit?: number;
+  /** Delivery date range (ISO yyyy-MM-dd) + optional time slot (HH:mm) for date-range reports. */
+  from?: string;
+  to?: string;
+  slot?: string;
+}
+
+export interface ReportTotal {
+  label: string;
+  value: unknown;
 }
 
 export interface ReportResult {
   id: string;
   columns: ReportColumn[];
   rows: Record<string, unknown>[];
+  totals?: ReportTotal[] | null;
 }
 
 // ---- Widgets & canvas ----

@@ -8,6 +8,7 @@ using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Orders;
+using Nop.Core.Domain.Vendors;
 using Nop.Data;
 using Nop.Plugin.Company.Insights.Models;
 
@@ -58,7 +59,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 {
                     Id = "reviews",
                     Name = "Product reviews",
-                    Description = "Recent product reviews (best viewed as a table). The agent can also filter by vendor/customer and reorder via list_reviews.",
+                    Description = "Recent product reviews (best viewed as a table). The agent can also filter by vendor/customer email or name and reorder via list_reviews.",
                     DefaultChart = "bar",
                     XField = "Rating",
                     YField = "Rating",
@@ -66,6 +67,53 @@ namespace Nop.Plugin.Company.Insights.Services
                     {
                         new InsightsReportParam { Name = "days", Label = "Look-back (days)", Default = 30, Min = 1, Max = 90 },
                         new InsightsReportParam { Name = "limit", Label = "Max rows", Default = 50, Min = 1, Max = 200 }
+                    }
+                },
+                new InsightsReportMeta
+                {
+                    Id = "vendor-traction",
+                    Name = "Vendor traction",
+                    Description = "Order items per vendor over time — who's gaining vs losing traction (best as an area chart).",
+                    DefaultChart = "area",
+                    XField = "Date",
+                    YField = "OrderItems",
+                    CategoryField = "Vendor",
+                    Parameters = new List<InsightsReportParam>
+                    {
+                        new InsightsReportParam { Name = "days", Label = "Look-back (days)", Default = 90, Min = 7, Max = 365 }
+                    }
+                },
+                new InsightsReportMeta
+                {
+                    Id = "products-per-category",
+                    Name = "Products per category",
+                    Description = "Number of published products in each category.",
+                    DefaultChart = "bar",
+                    XField = "Category",
+                    YField = "Products"
+                },
+                new InsightsReportMeta
+                {
+                    Id = "products-per-category-per-vendor",
+                    Name = "Products per category · vendor",
+                    Description = "Products per category broken down by vendor — spot over-crowded categories / competition (stacked bar).",
+                    DefaultChart = "bar",
+                    XField = "Category",
+                    YField = "Products",
+                    CategoryField = "Vendor"
+                },
+                new InsightsReportMeta
+                {
+                    Id = "delivery-order-items",
+                    Name = "Ordered items by delivery date/time",
+                    Description = "Quantity ordered per product per vendor for a delivery date/time or range, with a grand total.",
+                    DefaultChart = "bar",
+                    XField = "Product",
+                    YField = "Quantity",
+                    CategoryField = "Vendor",
+                    Parameters = new List<InsightsReportParam>
+                    {
+                        new InsightsReportParam { Name = "range", Label = "Delivery date/time", Type = "daterange", Default = 0, Min = 0, Max = 0 }
                     }
                 }
             };
@@ -91,6 +139,10 @@ namespace Nop.Plugin.Company.Insights.Services
                 "orders-per-day" => await OrdersPerDayAsync(days, scope),
                 "orders-by-status" => await OrdersByStatusAsync(days, scope),
                 "reviews" => await GetReviewsAsync(days, null, null, null, "date", ResolveInt(meta, "limit", parameters), scope),
+                "vendor-traction" => await VendorTractionAsync(days, scope),
+                "products-per-category" => await ProductsPerCategoryAsync(scope),
+                "products-per-category-per-vendor" => await ProductsPerCategoryPerVendorAsync(scope),
+                "delivery-order-items" => await DeliveryOrderItemsAsync(parameters, scope),
                 _ => null
             };
         }
@@ -315,6 +367,261 @@ namespace Nop.Plugin.Company.Insights.Services
             }
 
             return result;
+        }
+
+        // ---- Workplace Manager reports ----
+
+        /// <summary>Order items per vendor over time (weekly buckets) — vendor traction. Top 10 vendors + "Other".</summary>
+        private async Task<InsightsReportResult> VendorTractionAsync(int days, ReportScope scope)
+        {
+            days = Math.Clamp(days <= 0 ? 90 : days, 7, QueryOrdersMaxDays);
+            var result = new InsightsReportResult
+            {
+                Id = "vendor-traction",
+                Columns = new List<InsightsReportColumn>
+                {
+                    new InsightsReportColumn { Name = "Date", Type = "date" },
+                    new InsightsReportColumn { Name = "Vendor", Type = "string" },
+                    new InsightsReportColumn { Name = "OrderItems", Type = "number" }
+                }
+            };
+            if (scope != null && scope.Denied)
+                return result;
+
+            var fromUtc = DateTime.UtcNow.AddDays(-days);
+            var query =
+                from oi in _dataProvider.GetTable<OrderItem>()
+                join o in _dataProvider.GetTable<Order>() on oi.OrderId equals o.Id
+                join p in _dataProvider.GetTable<Product>() on oi.ProductId equals p.Id
+                where !o.Deleted && o.CreatedOnUtc >= fromUtc
+                select new { o.CreatedOnUtc, p.VendorId, o.CompanyId };
+
+            if (scope?.CompanyId is int companyId)
+                query = query.Where(x => x.CompanyId == companyId);
+
+            // Per-vendor per-day counts in SQL, then bucket to weeks in memory.
+            var daily = await query
+                .Where(x => x.VendorId > 0)
+                .GroupBy(x => new { x.VendorId, Day = x.CreatedOnUtc.Date })
+                .Select(g => new { g.Key.VendorId, g.Key.Day, Count = g.Count() })
+                .ToListAsync();
+
+            if (daily.Count == 0)
+                return result;
+
+            var vendorNames = await ResolveVendorNamesAsync(daily.Select(d => d.VendorId).Distinct().ToList());
+
+            // Top 10 vendors by total items; the rest folded into "Other".
+            var totals = daily.GroupBy(d => d.VendorId)
+                .Select(g => new { VendorId = g.Key, Total = g.Sum(x => x.Count) })
+                .OrderByDescending(x => x.Total)
+                .ToList();
+            var topVendorIds = totals.Take(10).Select(x => x.VendorId).ToHashSet();
+
+            string VendorLabel(int vid) =>
+                topVendorIds.Contains(vid) ? (vendorNames.TryGetValue(vid, out var n) ? n : $"Vendor {vid}") : "Other";
+
+            var weekly = daily
+                .GroupBy(d => new { Week = StartOfWeek(d.Day), Vendor = VendorLabel(d.VendorId) })
+                .Select(g => new { g.Key.Week, g.Key.Vendor, Count = g.Sum(x => x.Count) })
+                .OrderBy(x => x.Week).ThenBy(x => x.Vendor);
+
+            foreach (var w in weekly)
+                result.Rows.Add(new Dictionary<string, object>
+                {
+                    ["Date"] = w.Week.ToString("yyyy-MM-dd"),
+                    ["Vendor"] = w.Vendor,
+                    ["OrderItems"] = w.Count
+                });
+
+            return result;
+        }
+
+        /// <summary>Published-product counts per category.</summary>
+        private async Task<InsightsReportResult> ProductsPerCategoryAsync(ReportScope scope)
+        {
+            var result = new InsightsReportResult
+            {
+                Id = "products-per-category",
+                Columns = new List<InsightsReportColumn>
+                {
+                    new InsightsReportColumn { Name = "Category", Type = "string" },
+                    new InsightsReportColumn { Name = "Products", Type = "number" }
+                }
+            };
+            var rows = await LoadCatalogRowsAsync(scope);
+            foreach (var g in rows.GroupBy(r => r.Category).OrderByDescending(g => g.Select(x => x.ProductId).Distinct().Count()))
+                result.Rows.Add(new Dictionary<string, object>
+                {
+                    ["Category"] = g.Key,
+                    ["Products"] = g.Select(x => x.ProductId).Distinct().Count()
+                });
+            return result;
+        }
+
+        /// <summary>Published-product counts per category, split by vendor (competition / crowdedness).</summary>
+        private async Task<InsightsReportResult> ProductsPerCategoryPerVendorAsync(ReportScope scope)
+        {
+            var result = new InsightsReportResult
+            {
+                Id = "products-per-category-per-vendor",
+                Columns = new List<InsightsReportColumn>
+                {
+                    new InsightsReportColumn { Name = "Category", Type = "string" },
+                    new InsightsReportColumn { Name = "Vendor", Type = "string" },
+                    new InsightsReportColumn { Name = "Products", Type = "number" }
+                }
+            };
+            var rows = await LoadCatalogRowsAsync(scope);
+            if (rows.Count == 0)
+                return result;
+
+            var vendorNames = await ResolveVendorNamesAsync(rows.Select(r => r.VendorId).Distinct().ToList());
+            foreach (var g in rows
+                .Where(r => r.VendorId > 0)
+                .GroupBy(r => new { r.Category, r.VendorId })
+                .Select(g => new { g.Key.Category, g.Key.VendorId, Count = g.Select(x => x.ProductId).Distinct().Count() })
+                .OrderBy(x => x.Category).ThenByDescending(x => x.Count))
+            {
+                result.Rows.Add(new Dictionary<string, object>
+                {
+                    ["Category"] = g.Category,
+                    ["Vendor"] = vendorNames.TryGetValue(g.VendorId, out var n) ? n : $"Vendor {g.VendorId}",
+                    ["Products"] = g.Count
+                });
+            }
+            return result;
+        }
+
+        // ---- Backoffice reports ----
+
+        /// <summary>Quantity ordered per product per vendor for a delivery date/time (or range), with a grand total.</summary>
+        private async Task<InsightsReportResult> DeliveryOrderItemsAsync(IDictionary<string, string> parameters, ReportScope scope)
+        {
+            var result = new InsightsReportResult
+            {
+                Id = "delivery-order-items",
+                Columns = new List<InsightsReportColumn>
+                {
+                    new InsightsReportColumn { Name = "Vendor", Type = "string" },
+                    new InsightsReportColumn { Name = "Product", Type = "string" },
+                    new InsightsReportColumn { Name = "Quantity", Type = "number" }
+                }
+            };
+            if (scope != null && scope.Denied)
+                return result;
+
+            // Delivery date range (ScheduleDate is UTC+4 wall-clock; compare directly). Default = today.
+            var today = DateTime.UtcNow.Date;
+            var fromDate = ParseDate(parameters, "from") ?? today;
+            var toDate = ParseDate(parameters, "to") ?? fromDate;
+            var toEnd = toDate.Date.AddDays(1).AddTicks(-1);
+            var slot = parameters != null && parameters.TryGetValue("slot", out var s) ? (s ?? "").Trim() : "";
+
+            var query =
+                from oi in _dataProvider.GetTable<OrderItem>()
+                join o in _dataProvider.GetTable<Order>() on oi.OrderId equals o.Id
+                join p in _dataProvider.GetTable<Product>() on oi.ProductId equals p.Id
+                where !o.Deleted && o.ScheduleDate >= fromDate && o.ScheduleDate <= toEnd
+                select new { o.ScheduleDate, o.CompanyId, p.VendorId, ProductName = p.Name, oi.Quantity };
+
+            if (scope?.CompanyId is int companyId)
+                query = query.Where(x => x.CompanyId == companyId);
+
+            var rows = await query.ToListAsync();
+
+            // Optional delivery time-slot filter (HH:mm), applied in memory on the parsed DateTime.
+            if (!string.IsNullOrEmpty(slot) && TimeSpan.TryParse(slot, out var ts))
+                rows = rows.Where(x => x.ScheduleDate.Hour == ts.Hours && x.ScheduleDate.Minute == ts.Minutes).ToList();
+
+            var vendorNames = await ResolveVendorNamesAsync(rows.Select(r => r.VendorId).Distinct().ToList());
+
+            var grouped = rows
+                .GroupBy(r => new { r.VendorId, r.ProductName })
+                .Select(g => new { g.Key.VendorId, g.Key.ProductName, Qty = g.Sum(x => x.Quantity) })
+                .OrderByDescending(x => x.Qty)
+                .ToList();
+
+            foreach (var g in grouped)
+                result.Rows.Add(new Dictionary<string, object>
+                {
+                    ["Vendor"] = vendorNames.TryGetValue(g.VendorId, out var n) ? n : $"Vendor {g.VendorId}",
+                    ["Product"] = g.ProductName,
+                    ["Quantity"] = g.Qty
+                });
+
+            var rangeLabel = fromDate.Date == toDate.Date ? fromDate.ToString("yyyy-MM-dd") : $"{fromDate:yyyy-MM-dd} → {toDate:yyyy-MM-dd}";
+            if (!string.IsNullOrEmpty(slot))
+                rangeLabel += $" @ {slot}";
+            result.Totals = new List<InsightsReportTotal>
+            {
+                new InsightsReportTotal { Label = "Total items", Value = grouped.Sum(x => x.Qty) },
+                new InsightsReportTotal { Label = "Distinct products", Value = grouped.Count },
+                new InsightsReportTotal { Label = "Delivery", Value = rangeLabel }
+            };
+            return result;
+        }
+
+        private sealed class CatalogRow
+        {
+            public string Category { get; set; }
+            public int VendorId { get; set; }
+            public int ProductId { get; set; }
+        }
+
+        /// <summary>Published, non-deleted products mapped to categories, scoped to the company's vendors when scoped.</summary>
+        private async Task<List<CatalogRow>> LoadCatalogRowsAsync(ReportScope scope)
+        {
+            if (scope != null && scope.Denied)
+                return new List<CatalogRow>();
+
+            IList<int> scopedVendorIds = scope?.CompanyId != null ? (scope.VendorIds ?? new List<int>()) : null;
+            if (scopedVendorIds != null && scopedVendorIds.Count == 0)
+                return new List<CatalogRow>();
+
+            var query =
+                from pc in _dataProvider.GetTable<ProductCategory>()
+                join p in _dataProvider.GetTable<Product>() on pc.ProductId equals p.Id
+                join cat in _dataProvider.GetTable<Category>() on pc.CategoryId equals cat.Id
+                where !p.Deleted && p.Published && !cat.Deleted
+                select new { Category = cat.Name, p.VendorId, ProductId = p.Id };
+
+            if (scopedVendorIds != null)
+                query = query.Where(x => scopedVendorIds.Contains(x.VendorId));
+
+            var rows = await query.ToListAsync();
+            return rows.Select(x => new CatalogRow { Category = x.Category, VendorId = x.VendorId, ProductId = x.ProductId }).ToList();
+        }
+
+        /// <summary>Vendor display names for the given ids.</summary>
+        private async Task<Dictionary<int, string>> ResolveVendorNamesAsync(IList<int> vendorIds)
+        {
+            var result = new Dictionary<int, string>();
+            var ids = vendorIds?.Where(v => v > 0).Distinct().ToList();
+            if (ids == null || ids.Count == 0)
+                return result;
+
+            var list = await _dataProvider.GetTable<Vendor>()
+                .Where(v => ids.Contains(v.Id))
+                .Select(v => new { v.Id, v.Name })
+                .ToListAsync();
+            foreach (var v in list)
+                result[v.Id] = v.Name;
+            return result;
+        }
+
+        private static DateTime StartOfWeek(DateTime d)
+        {
+            var diff = ((int)d.DayOfWeek + 6) % 7; // Monday = 0
+            return d.Date.AddDays(-diff);
+        }
+
+        private static DateTime? ParseDate(IDictionary<string, string> parameters, string key)
+        {
+            if (parameters != null && parameters.TryGetValue(key, out var raw) && !string.IsNullOrWhiteSpace(raw)
+                && DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
+                return dt;
+            return null;
         }
 
         /// <summary>An empty reviews result carrying the correct column shape (for fail-closed / no-match).</summary>

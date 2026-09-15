@@ -42,13 +42,22 @@ namespace Nop.Plugin.Company.Insights.Models
         public string Type { get; set; }
     }
 
+    /// <summary>A labelled summary value rendered under a report (e.g. a grand total).</summary>
+    public class InsightsReportTotal
+    {
+        public string Label { get; set; }
+        public object Value { get; set; }
+    }
+
     /// <summary>
-    /// Tabular result of running a report: column metadata + rows keyed by column name.
+    /// Tabular result of running a report: column metadata + rows keyed by column name, plus
+    /// optional summary totals rendered beneath the visualization.
     /// </summary>
     public class InsightsReportResult
     {
         public string Id { get; set; }
         public IList<InsightsReportColumn> Columns { get; set; } = new List<InsightsReportColumn>();
         public IList<IDictionary<string, object>> Rows { get; set; } = new List<IDictionary<string, object>>();
+        public IList<InsightsReportTotal> Totals { get; set; }
     }
 }

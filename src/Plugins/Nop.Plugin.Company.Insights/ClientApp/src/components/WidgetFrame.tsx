@@ -218,6 +218,17 @@ export function WidgetFrame({ tabId, widget }: { tabId: string; widget: Widget }
       </div>
       <div className="ins-widget-body">{body}</div>
 
+      {isReportBacked && report.result?.totals && report.result.totals.length > 0 && (
+        <div className="ins-widget-totals">
+          {report.result.totals.map((t, i) => (
+            <span key={i} className="ins-total">
+              <span className="ins-muted">{t.label}:</span>{" "}
+              <strong>{typeof t.value === "number" ? t.value.toLocaleString() : String(t.value)}</strong>
+            </span>
+          ))}
+        </div>
+      )}
+
       {config && (
         <WidgetConfigModal
           widget={widget}

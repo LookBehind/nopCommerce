@@ -72,6 +72,9 @@ function reportQuery(params?: ReportParams, ctx?: ProfileContext): string {
   const qs = new URLSearchParams();
   if (params?.days != null) qs.set("days", String(params.days));
   if (params?.limit != null) qs.set("limit", String(params.limit));
+  if (params?.from) qs.set("from", params.from);
+  if (params?.to) qs.set("to", params.to);
+  if (params?.slot) qs.set("slot", params.slot);
   if (ctx?.profileId) qs.set("profile", ctx.profileId);
   if (ctx?.companyId != null) qs.set("companyId", String(ctx.companyId));
   return qs.toString() ? `?${qs.toString()}` : "";

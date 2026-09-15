@@ -57,7 +57,11 @@ namespace Nop.Plugin.Company.Insights.Services
                 // Admins get this too (dual view) — see docs §6.
                 RoleSystemNames = new[] { RoleCompanyDashboardViewer, RoleAdministrators },
                 CompanyScoped = true,
-                AllowedReports = new[] { "orders-per-day", "orders-by-status", "reviews" },
+                AllowedReports = new[]
+                {
+                    "orders-per-day", "orders-by-status", "reviews",
+                    "vendor-traction", "products-per-category", "products-per-category-per-vendor"
+                },
                 Persona = "a BI analyst for a company's workplace-food program on MySnacks, focused on vendor " +
                           "performance, catalog/category health, reviews and delivery reliability for that one company"
             }

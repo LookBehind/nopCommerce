@@ -199,6 +199,9 @@ body {
 .ins-widget-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
 .ins-widget-stamp { font-size: 11px; color: var(--sub); white-space: nowrap; }
 .ins-widget-body { flex: 1 1 auto; min-height: 0; position: relative; }
+.ins-widget-totals { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 14px; padding: 6px 10px;
+  border-top: 1px solid var(--border); background: var(--panel-2); font-size: 12.5px; }
+.ins-total strong { font-variant-numeric: tabular-nums; }
 .ins-widget-msg { display: grid; place-items: center; height: 100%; color: var(--sub); font-size: 13px; padding: 8px; text-align: center; }
 .ins-widget-msg.err { color: var(--err); }
 
