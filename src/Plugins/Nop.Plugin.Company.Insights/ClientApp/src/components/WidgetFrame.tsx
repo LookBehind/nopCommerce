@@ -124,12 +124,13 @@ export function WidgetFrame({ tabId, widget }: { tabId: string; widget: Widget }
             </button>
           )}
           {!isDivider && (
-            <div className="ins-wmenu">
+            // Stop mousedown here so clicks on the menu/backdrop don't start a
+            // react-grid-layout drag (the header is the drag handle) and get swallowed.
+            <div className="ins-wmenu" onMouseDown={(e) => e.stopPropagation()}>
               <button
                 className="ins-icon-btn"
                 title="Widget options"
                 aria-label="Widget options"
-                onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => setMenuOpen((o) => !o)}
               >
                 ⋯
