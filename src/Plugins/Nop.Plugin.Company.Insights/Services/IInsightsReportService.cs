@@ -17,22 +17,24 @@ namespace Nop.Plugin.Company.Insights.Services
         /// <summary>
         /// Run a report by id with optional parameters (e.g. {"days":"60"}), clamped to each
         /// parameter's declared [Min, Max]. Null/missing values use the declared defaults.
+        /// <paramref name="scope"/> is the authoritative company scope (null = unscoped).
         /// Returns null if the id is unknown.
         /// </summary>
-        Task<InsightsReportResult> RunAsync(string id, IDictionary<string, string> parameters);
+        Task<InsightsReportResult> RunAsync(string id, IDictionary<string, string> parameters, ReportScope scope = null);
 
         /// <summary>
         /// Structured order aggregation for the agent (no free SQL). groupBy: "day" | "status";
         /// metric: "count" | "revenue". <paramref name="days"/> is the look-back window (clamped).
         /// </summary>
-        Task<InsightsReportResult> QueryOrdersAsync(int days, string groupBy, string metric);
+        Task<InsightsReportResult> QueryOrdersAsync(int days, string groupBy, string metric, ReportScope scope = null);
 
         /// <summary>
         /// Product reviews (joined to product for vendor + customer for email/name) created within the
-        /// last <paramref name="days"/> (clamped to 90). Optional vendor / customer id / customer email
-        /// filters; orderBy: "date" | "rating" | "helpful". <paramref name="limit"/> row cap
-        /// (default 50, clamped to 200). Includes triage columns (who/when/resolution + triage hours).
+        /// last <paramref name="days"/> (clamped to 90). Optional vendor / customer email / customer
+        /// name filters; orderBy: "date" | "rating" | "helpful". <paramref name="limit"/> row cap
+        /// (default 50, clamped to 200). Customer is shown as full name + email (never CustomerId).
+        /// Includes triage columns (who/when/resolution + triage hours).
         /// </summary>
-        Task<InsightsReportResult> GetReviewsAsync(int days, int? vendorId, int? customerId, string customerEmail, string orderBy, int? limit);
+        Task<InsightsReportResult> GetReviewsAsync(int days, int? vendorId, string customerEmail, string customerName, string orderBy, int? limit, ReportScope scope = null);
     }
 }

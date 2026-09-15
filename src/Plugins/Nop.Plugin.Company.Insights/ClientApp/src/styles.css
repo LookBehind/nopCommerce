@@ -112,7 +112,8 @@ body {
 }
 .ins-icon-btn:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
 
-/* ---------- agent picker ---------- */
+/* ---------- profile / agent picker ---------- */
+.ins-profile-picker { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .ins-agent-picker { display: inline-flex; align-items: center; gap: 6px;
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px 8px; }
 .ins-agent-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sub); }

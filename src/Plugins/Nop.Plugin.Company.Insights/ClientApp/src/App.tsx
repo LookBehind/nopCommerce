@@ -22,6 +22,7 @@ function useThemeEffect() {
 export function App() {
   const [state, setState] = useState<"checking" | "ok" | "denied" | "error">("checking");
   const setCapabilities = useWorkspace((s) => s.setCapabilities);
+  const setProfilesData = useWorkspace((s) => s.setProfilesData);
   const applySnapshot = useWorkspace((s) => s.applySnapshot);
   const saveTimer = useRef<number | null>(null);
 
@@ -38,6 +39,14 @@ export function App() {
           return;
         }
         if (r.capabilities) setCapabilities(r.capabilities);
+
+        // Load the user's role-gated profiles (primary interactive context).
+        try {
+          const profiles = await api.profiles();
+          if (!cancelled) setProfilesData(profiles);
+        } catch {
+          /* profiles unavailable — picker stays hidden */
+        }
 
         // Hydrate from the server copy when persistence is on and a saved workspace exists.
         if (r.capabilities?.persistence) {

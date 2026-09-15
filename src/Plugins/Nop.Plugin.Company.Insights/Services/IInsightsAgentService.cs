@@ -10,6 +10,10 @@ namespace Nop.Plugin.Company.Insights.Services
     /// </summary>
     public interface IInsightsAgentService
     {
-        Task<AgentTurnResult> RunTurnAsync(ChatTurnRequest request, CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Runs one turn under the given profile (persona) and data scope. The scope is applied to
+        /// every data tool so a Workplace Manager only ever sees their company's data.
+        /// </summary>
+        Task<AgentTurnResult> RunTurnAsync(ChatTurnRequest request, InsightsProfile profile, ReportScope scope, CancellationToken cancellationToken = default);
     }
 }

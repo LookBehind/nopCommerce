@@ -16,6 +16,7 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
         {
             services.AddScoped<IInsightsReportService, InsightsReportService>();
             services.AddScoped<IInsightsAgentService, InsightsAgentService>();
+            services.AddScoped<IInsightsProfileService, InsightsProfileService>();
             services.AddScoped<IInsightsMemoryService, InsightsMemoryService>();
             services.AddScoped<IInsightsWorkspaceService, InsightsWorkspaceService>();
             services.AddScoped<IInsightsScheduleService, InsightsScheduleService>();

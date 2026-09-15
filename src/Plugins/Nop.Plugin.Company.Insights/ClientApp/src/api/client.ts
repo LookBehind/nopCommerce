@@ -4,11 +4,18 @@ import type {
   Conversation,
   ConversationHeader,
   MemoryRow,
+  ProfilesResponse,
   ReportMeta,
   ReportParams,
   ReportResult,
   Schedule,
 } from "../types";
+
+/** The active profile + optional company scope, appended to report/chat calls. */
+export interface ProfileContext {
+  profileId?: string;
+  companyId?: number | null;
+}
 
 // The SPA is hosted at /Admin/Insights, so the gated JSON API shares that base.
 const API_BASE = "/Admin/Insights";
@@ -61,10 +68,12 @@ async function postForm<T>(
   return (await res.json()) as T;
 }
 
-function reportQuery(params?: ReportParams): string {
+function reportQuery(params?: ReportParams, ctx?: ProfileContext): string {
   const qs = new URLSearchParams();
   if (params?.days != null) qs.set("days", String(params.days));
   if (params?.limit != null) qs.set("limit", String(params.limit));
+  if (ctx?.profileId) qs.set("profile", ctx.profileId);
+  if (ctx?.companyId != null) qs.set("companyId", String(ctx.companyId));
   return qs.toString() ? `?${qs.toString()}` : "";
 }
 
@@ -78,18 +87,24 @@ export interface PingResult {
 
 export const api = {
   ping: () => getJson<PingResult>("/Ping"),
+  profiles: () => getJson<ProfilesResponse>("/Profiles"),
 
   // reports
-  reports: () => getJson<ReportMeta[]>("/Reports"),
-  runReport: (id: string, params?: ReportParams) =>
-    getJson<ReportResult>(`/Reports/${encodeURIComponent(id)}${reportQuery(params)}`),
+  reports: (ctx?: ProfileContext) => getJson<ReportMeta[]>(`/Reports${reportQuery(undefined, ctx)}`),
+  runReport: (id: string, params?: ReportParams, ctx?: ProfileContext) =>
+    getJson<ReportResult>(`/Reports/${encodeURIComponent(id)}${reportQuery(params, ctx)}`),
 
   // agent chat
   chat: (
-    agentId: string,
+    ctx: ProfileContext,
     messages: { role: string; content: string }[],
     signal?: AbortSignal
-  ) => postForm<ChatTurnResponse>("/Chat", { payload: JSON.stringify({ agentId, messages }) }, signal),
+  ) =>
+    postForm<ChatTurnResponse>(
+      "/Chat",
+      { payload: JSON.stringify({ profileId: ctx.profileId, companyId: ctx.companyId, messages }) },
+      signal
+    ),
   warmup: () => postForm<{ ready: boolean }>("/Warmup", {}),
 
   // workspace persistence (per user)

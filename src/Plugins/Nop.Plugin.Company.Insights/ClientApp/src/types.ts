@@ -163,6 +163,30 @@ export interface Agent {
   description: string;
 }
 
+// ---- Profiles (role-gated interactive context) ----
+
+export interface ProfileInfo {
+  id: string;
+  name: string;
+  description: string;
+  companyScoped: boolean;
+  /** True when this scoped profile needs an explicit company choice (admins with no own company). */
+  needsCompany: boolean;
+}
+
+export interface CompanyOption {
+  id: number;
+  name: string;
+}
+
+export interface ProfilesResponse {
+  defaultId: string;
+  isAdmin: boolean;
+  ownCompanyId: number | null;
+  profiles: ProfileInfo[];
+  companies: CompanyOption[];
+}
+
 export type ThemePref = "system" | "light" | "dark";
 export type ChatDock = "bottom" | "right";
 
@@ -171,6 +195,10 @@ export interface WorkspaceState {
   activeTabId: string;
   chatOpen: boolean;
   selectedAgentId: string;
+  /** Active profile id (primary interactive context). */
+  selectedProfileId: string;
+  /** Company chosen by an admin using a company-scoped profile (null otherwise). */
+  selectedCompanyId: number | null;
   theme: ThemePref;
   chatDock: ChatDock;
   /** Chat panel size in px: height when docked bottom, width when docked right. */

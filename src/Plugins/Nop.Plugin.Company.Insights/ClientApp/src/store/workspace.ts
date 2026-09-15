@@ -4,13 +4,24 @@ import type {
   Capabilities,
   ChartKind,
   ChatDock,
+  CompanyOption,
   GridItem,
+  ProfileInfo,
+  ProfilesResponse,
   Tab,
   ThemePref,
   Widget,
   WidgetType,
   WorkspaceState,
 } from "../types";
+
+interface ProfilesData {
+  profiles: ProfileInfo[];
+  companies: CompanyOption[];
+  isAdmin: boolean;
+  defaultId: string;
+  ownCompanyId: number | null;
+}
 
 function uid(prefix: string): string {
   const rnd =
@@ -42,6 +53,8 @@ export interface WorkspaceSnapshot {
   tabs: Tab[];
   activeTabId: string;
   selectedAgentId: string;
+  selectedProfileId: string;
+  selectedCompanyId: number | null;
   theme: ThemePref;
   chatDock: ChatDock;
   chatSize: number;
@@ -62,6 +75,9 @@ interface WorkspaceActions {
   toggleChat: () => void;
   setChatOpen: (open: boolean) => void;
   setAgent: (agentId: string) => void;
+  setProfile: (profileId: string) => void;
+  setCompany: (companyId: number | null) => void;
+  setProfilesData: (data: ProfilesResponse) => void;
   setTheme: (theme: ThemePref) => void;
   setChatDock: (dock: ChatDock) => void;
   setChatSize: (size: number) => void;
@@ -72,17 +88,22 @@ interface WorkspaceActions {
 
 const firstTab = emptyTab("Overview");
 
-export const useWorkspace = create<WorkspaceState & { capabilities: Capabilities | null } & WorkspaceActions>()(
+export const useWorkspace = create<
+  WorkspaceState & { capabilities: Capabilities | null; profilesData: ProfilesData | null } & WorkspaceActions
+>()(
   persist(
     (set, get) => ({
       tabs: [firstTab],
       activeTabId: firstTab.id,
       chatOpen: false,
       selectedAgentId: "analyst",
+      selectedProfileId: "",
+      selectedCompanyId: null,
       theme: "system",
       chatDock: "bottom",
       chatSize: 380,
       capabilities: null,
+      profilesData: null,
 
       addTab: (name) =>
         set((s) => {
@@ -197,6 +218,24 @@ export const useWorkspace = create<WorkspaceState & { capabilities: Capabilities
       toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
       setChatOpen: (open) => set({ chatOpen: open }),
       setAgent: (agentId) => set({ selectedAgentId: agentId }),
+      setProfile: (selectedProfileId) => set({ selectedProfileId }),
+      setCompany: (selectedCompanyId) => set({ selectedCompanyId }),
+      setProfilesData: (data) =>
+        set((s) => {
+          const ids = data.profiles.map((p) => p.id);
+          // Keep the current selection if still valid, else fall back to the server default.
+          const selectedProfileId = ids.includes(s.selectedProfileId) ? s.selectedProfileId : data.defaultId;
+          return {
+            profilesData: {
+              profiles: data.profiles,
+              companies: data.companies,
+              isAdmin: data.isAdmin,
+              defaultId: data.defaultId,
+              ownCompanyId: data.ownCompanyId,
+            },
+            selectedProfileId,
+          };
+        }),
       setTheme: (theme) => set({ theme }),
       setChatDock: (chatDock) => set({ chatDock }),
       setChatSize: (chatSize) => set({ chatSize: Math.max(220, Math.min(900, Math.round(chatSize))) }),
@@ -207,6 +246,8 @@ export const useWorkspace = create<WorkspaceState & { capabilities: Capabilities
           tabs: Array.isArray(snap.tabs) && snap.tabs.length ? snap.tabs : s.tabs,
           activeTabId: snap.activeTabId ?? s.activeTabId,
           selectedAgentId: snap.selectedAgentId ?? s.selectedAgentId,
+          selectedProfileId: snap.selectedProfileId ?? s.selectedProfileId,
+          selectedCompanyId: snap.selectedCompanyId ?? s.selectedCompanyId,
           theme: snap.theme ?? s.theme,
           chatDock: snap.chatDock ?? s.chatDock,
           chatSize: snap.chatSize ?? s.chatSize,
@@ -218,6 +259,8 @@ export const useWorkspace = create<WorkspaceState & { capabilities: Capabilities
           tabs: s.tabs,
           activeTabId: s.activeTabId,
           selectedAgentId: s.selectedAgentId,
+          selectedProfileId: s.selectedProfileId,
+          selectedCompanyId: s.selectedCompanyId,
           theme: s.theme,
           chatDock: s.chatDock,
           chatSize: s.chatSize,
@@ -233,6 +276,8 @@ export const useWorkspace = create<WorkspaceState & { capabilities: Capabilities
         tabs: s.tabs,
         activeTabId: s.activeTabId,
         selectedAgentId: s.selectedAgentId,
+        selectedProfileId: s.selectedProfileId,
+        selectedCompanyId: s.selectedCompanyId,
         theme: s.theme,
         chatDock: s.chatDock,
         chatSize: s.chatSize,

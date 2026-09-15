@@ -1,21 +1,27 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { agentById, AGENTS } from "../agents";
 import type { MemoryRow } from "../types";
 import { confirmDialog, toast } from "../ui/feedback";
 
-/** Lists and manages the agent's saved long-term memories (pgvector notes). */
-export function MemoryPanel({ agentId, onClose }: { agentId: string; onClose: () => void }) {
-  const [selected, setSelected] = useState(agentId);
+/** Lists and manages the assistant's saved long-term memories (pgvector notes) for a profile. */
+export function MemoryPanel({
+  agentId,
+  profileName,
+  onClose,
+}: {
+  agentId: string;
+  profileName: string;
+  onClose: () => void;
+}) {
   const [rows, setRows] = useState<MemoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function load(id: string) {
+  async function load() {
     setLoading(true);
     setError(null);
     try {
-      setRows(await api.memories(id));
+      setRows(await api.memories(agentId));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -24,9 +30,9 @@ export function MemoryPanel({ agentId, onClose }: { agentId: string; onClose: ()
   }
 
   useEffect(() => {
-    void load(selected);
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected]);
+  }, [agentId]);
 
   async function remove(row: MemoryRow) {
     const ok = await confirmDialog({
@@ -43,34 +49,19 @@ export function MemoryPanel({ agentId, onClose }: { agentId: string; onClose: ()
 
   return (
     <div className="ins-modal-backdrop" onClick={onClose} onKeyDown={(e) => e.key === "Escape" && onClose()}>
-      <div className="ins-modal" role="dialog" aria-modal="true" aria-label="Agent memory" onClick={(e) => e.stopPropagation()}>
+      <div className="ins-modal" role="dialog" aria-modal="true" aria-label="Assistant memory" onClick={(e) => e.stopPropagation()}>
         <div className="ins-modal-head">
-          <h2>Agent memory — {agentById(selected).name}</h2>
+          <h2>Memory — {profileName}</h2>
           <button className="ins-icon-btn" onClick={onClose} title="Close" aria-label="Close">
             ✕
           </button>
         </div>
         <div className="ins-modal-body">
-          <label className="ins-muted" style={{ fontSize: 12 }}>
-            Agent
-            <select
-              value={selected}
-              onChange={(e) => setSelected(e.target.value)}
-              style={{ marginLeft: 8 }}
-            >
-              {AGENTS.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
           {loading && <div className="ins-muted">Loading…</div>}
           {error && <div className="ins-modal-warn err">{error}</div>}
           {!loading && !error && rows.length === 0 && (
             <div className="ins-muted">
-              No saved notes yet. The agent stores durable learnings here as you work with it.
+              No saved notes yet. The assistant stores durable learnings here as you work with it.
             </div>
           )}
 

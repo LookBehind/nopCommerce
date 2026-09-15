@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspace } from "../store/workspace";
-import { agentById } from "../agents";
 import { api } from "../api/client";
+import type { ProfileContext } from "../api/client";
 import type { ChatMessage, ChatWidget, ConversationHeader, Dataset } from "../types";
 import { ChartWidget } from "./widgets/ChartWidget";
 import { TableWidget } from "./widgets/TableWidget";
@@ -21,14 +21,20 @@ const WARMUP_MAX_MS = 8 * 60 * 1000;
 export function ChatPanel() {
   const chatOpen = useWorkspace((s) => s.chatOpen);
   const toggleChat = useWorkspace((s) => s.toggleChat);
-  const selectedAgentId = useWorkspace((s) => s.selectedAgentId);
+  const selectedProfileId = useWorkspace((s) => s.selectedProfileId);
+  const selectedCompanyId = useWorkspace((s) => s.selectedCompanyId);
+  const profilesData = useWorkspace((s) => s.profilesData);
   const chatDock = useWorkspace((s) => s.chatDock);
   const chatSize = useWorkspace((s) => s.chatSize);
   const setChatSize = useWorkspace((s) => s.setChatSize);
   const setChatDock = useWorkspace((s) => s.setChatDock);
   const caps = useWorkspace((s) => s.capabilities);
-  const agent = agentById(selectedAgentId);
   const setLlmStatus = useLlmStatus((s) => s.setStatus);
+
+  const activeProfile = profilesData?.profiles.find((p) => p.id === selectedProfileId);
+  const profileName = activeProfile?.name ?? "Insights";
+  const profileDesc = activeProfile?.description ?? "Ask about orders, revenue, reviews or delivery.";
+  const ctx: ProfileContext = { profileId: selectedProfileId || undefined, companyId: selectedCompanyId };
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -65,7 +71,7 @@ export function ChatPanel() {
         const res = await api.saveConversation({
           id: convId ?? undefined,
           title,
-          agentId: selectedAgentId,
+          agentId: selectedProfileId,
           messages: msgs,
         });
         if (res.ok && res.id && !convId) setConvId(res.id);
@@ -73,7 +79,7 @@ export function ChatPanel() {
         /* best effort */
       }
     },
-    [persistence, convId, selectedAgentId]
+    [persistence, convId, selectedProfileId]
   );
 
   async function ensureWarm(signal: AbortSignal): Promise<void> {
@@ -112,7 +118,7 @@ export function ChatPanel() {
       if (ac.signal.aborted) return;
 
       const res = await api.chat(
-        selectedAgentId,
+        ctx,
         thread.map((m) => ({ role: m.role, content: m.content })),
         ac.signal
       );
@@ -178,7 +184,7 @@ export function ChatPanel() {
 
       <div className="ins-chat-bar">
         <button className="ins-chat-handle" onClick={toggleChat} title={chatOpen ? "Hide chat" : "Show chat"}>
-          {chatOpen ? "▾ Hide chat" : `▴ Ask ${agent.name}`}
+          {chatOpen ? "▾ Hide chat" : `▴ Ask ${profileName}`}
         </button>
         {chatOpen && (
           <div className="ins-chat-bar-actions">
@@ -238,7 +244,7 @@ export function ChatPanel() {
             {messages.length === 0 && (
               <div className="ins-chat-empty">
                 <p>
-                  <strong>{agent.name}</strong> — {agent.description}
+                  <strong>{profileName}</strong> — {profileDesc}
                 </p>
                 <p className="ins-muted">
                   Ask about orders, revenue, reviews or status. I'll fetch real data and can propose a
@@ -261,7 +267,7 @@ export function ChatPanel() {
                 Waking the analysis model (it scales to zero when idle)… {warming}s
               </div>
             )}
-            {busy && warming === null && <div className="ins-chat-thinking">{agent.name} is thinking…</div>}
+            {busy && warming === null && <div className="ins-chat-thinking">{profileName} is thinking…</div>}
           </div>
 
           <form
@@ -273,7 +279,7 @@ export function ChatPanel() {
           >
             <textarea
               rows={1}
-              placeholder={`Ask ${agent.name}…  (Enter to send, Shift+Enter for a new line)`}
+              placeholder={`Ask ${profileName}…  (Enter to send, Shift+Enter for a new line)`}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -296,7 +302,7 @@ export function ChatPanel() {
         </div>
       )}
 
-      {showMemory && <MemoryPanel agentId={selectedAgentId} onClose={() => setShowMemory(false)} />}
+      {showMemory && <MemoryPanel agentId={selectedProfileId} profileName={profileName} onClose={() => setShowMemory(false)} />}
     </div>
   );
 }

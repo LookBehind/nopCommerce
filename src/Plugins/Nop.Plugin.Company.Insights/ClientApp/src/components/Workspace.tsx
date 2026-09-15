@@ -3,7 +3,7 @@ import { useWorkspace } from "../store/workspace";
 import { TabBar } from "./TabBar";
 import { Canvas } from "./Canvas";
 import { ChatPanel } from "./ChatPanel";
-import { AgentPicker } from "./AgentPicker";
+import { ProfilePicker } from "./ProfilePicker";
 import { AddWidgetMenu } from "./AddWidgetMenu";
 import { ScheduleModal } from "./ScheduleModal";
 import { confirmDialog } from "../ui/feedback";
@@ -70,7 +70,7 @@ export function Workspace() {
           >
             Reset
           </button>
-          <AgentPicker />
+          <ProfilePicker />
         </div>
       </header>
 

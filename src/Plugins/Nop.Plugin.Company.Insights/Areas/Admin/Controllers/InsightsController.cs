@@ -25,6 +25,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         private readonly IPermissionService _permissionService;
         private readonly IInsightsReportService _reportService;
         private readonly IInsightsAgentService _agentService;
+        private readonly IInsightsProfileService _profileService;
         private readonly IInsightsMemoryService _memoryService;
         private readonly IInsightsWorkspaceService _workspaceService;
         private readonly IInsightsScheduleService _scheduleService;
@@ -57,6 +58,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             IPermissionService permissionService,
             IInsightsReportService reportService,
             IInsightsAgentService agentService,
+            IInsightsProfileService profileService,
             IInsightsMemoryService memoryService,
             IInsightsWorkspaceService workspaceService,
             IInsightsScheduleService scheduleService,
@@ -69,6 +71,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             _permissionService = permissionService;
             _reportService = reportService;
             _agentService = agentService;
+            _profileService = profileService;
             _memoryService = memoryService;
             _workspaceService = workspaceService;
             _scheduleService = scheduleService;
@@ -145,18 +148,51 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         }
 
         /// <summary>
-        /// Report catalog (no id) or a report result (with id). Matches the
-        /// <c>Admin/Insights/Reports/{id?}</c> route.
+        /// Profiles the current user may use (role-gated) + default + admin/company context.
+        /// The profile is the primary interactive context (persona, report/tool set, data scope).
         /// </summary>
         [HttpGet]
-        public async Task<IActionResult> Reports(string id, int? days, int? limit)
+        public async Task<IActionResult> Profiles()
         {
             if (!await HasAccessAsync())
                 return StatusCode(StatusCodes.Status403Forbidden);
 
+            var resolved = await _profileService.ResolveForCurrentUserAsync(HttpContext.RequestAborted);
+            return Json(new
+            {
+                defaultId = resolved.DefaultId,
+                isAdmin = resolved.IsAdmin,
+                ownCompanyId = resolved.OwnCompanyId,
+                profiles = resolved.Allowed.Select(p => new
+                {
+                    id = p.Id,
+                    name = p.Name,
+                    description = p.Description,
+                    companyScoped = p.CompanyScoped,
+                    // A scoped profile needs an explicit company pick only when the user has no own company (admins).
+                    needsCompany = p.CompanyScoped && resolved.OwnCompanyId == null
+                }),
+                companies = resolved.SelectableCompanies.Select(c => new { id = c.Id, name = c.Name })
+            });
+        }
+
+        /// <summary>
+        /// Report catalog (no id) or a report result (with id). Matches the
+        /// <c>Admin/Insights/Reports/{id?}</c> route. Scoped to the active profile.
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> Reports(string id, int? days, int? limit, string profile = null, int? companyId = null)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+
+            var activeProfile = await _profileService.GetActiveProfileAsync(profile, HttpContext.RequestAborted);
+
             if (string.IsNullOrWhiteSpace(id))
             {
-                var catalog = _reportService.GetCatalog().Select(r => new
+                var catalog = _reportService.GetCatalog()
+                    .Where(r => activeProfile == null || activeProfile.ReportAllowed(r.Id))
+                    .Select(r => new
                 {
                     id = r.Id,
                     name = r.Name,
@@ -178,13 +214,17 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                 return Json(catalog);
             }
 
+            if (activeProfile != null && !activeProfile.ReportAllowed(id))
+                return StatusCode(StatusCodes.Status403Forbidden);
+
             var parameters = new Dictionary<string, string>();
             if (days.HasValue)
                 parameters["days"] = days.Value.ToString();
             if (limit.HasValue)
                 parameters["limit"] = limit.Value.ToString();
 
-            var result = await _reportService.RunAsync(id, parameters);
+            var scope = await _profileService.ResolveScopeAsync(activeProfile, companyId, HttpContext.RequestAborted);
+            var result = await _reportService.RunAsync(id, parameters, scope);
             if (result == null)
                 return NotFound();
 
@@ -211,7 +251,9 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             if (request == null)
                 return BadRequest();
 
-            var result = await _agentService.RunTurnAsync(request, HttpContext.RequestAborted);
+            var activeProfile = await _profileService.GetActiveProfileAsync(request.ProfileId, HttpContext.RequestAborted);
+            var scope = await _profileService.ResolveScopeAsync(activeProfile, request.CompanyId, HttpContext.RequestAborted);
+            var result = await _agentService.RunTurnAsync(request, activeProfile, scope, HttpContext.RequestAborted);
 
             return Json(new
             {

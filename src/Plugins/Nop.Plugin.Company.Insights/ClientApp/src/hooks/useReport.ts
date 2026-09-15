@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import type { ProfileContext } from "../api/client";
+import { useWorkspace } from "../store/workspace";
 import type { ReportMeta, ReportParams, ReportResult } from "../types";
 
-// Cache is keyed by report id + resolved params so widgets with different windows don't collide.
+// Cache is keyed by report id + resolved params + profile/company so widgets don't collide across
+// windows OR profiles (switching profile/company must refetch — different data scope).
 interface Entry {
   promise: Promise<ReportResult>;
   fetchedAt: number;
@@ -10,28 +13,36 @@ interface Entry {
 const resultCache = new Map<string, Entry>();
 const listeners = new Map<string, Set<() => void>>();
 
-function keyOf(id: string, params?: ReportParams): string {
-  return `${id}|${params?.days ?? ""}|${params?.limit ?? ""}`;
+function keyOf(id: string, params?: ReportParams, ctx?: ProfileContext): string {
+  return `${id}|${params?.days ?? ""}|${params?.limit ?? ""}|${ctx?.profileId ?? ""}|${ctx?.companyId ?? ""}`;
 }
 
 function notify(key: string) {
   listeners.get(key)?.forEach((fn) => fn());
 }
 
-export function fetchReport(id: string, params?: ReportParams): Entry {
-  const key = keyOf(id, params);
+/** Read the active profile context from the store (for report scoping). */
+function currentCtx(): ProfileContext {
+  const s = useWorkspace.getState();
+  return { profileId: s.selectedProfileId || undefined, companyId: s.selectedCompanyId };
+}
+
+export function fetchReport(id: string, params?: ReportParams, ctx?: ProfileContext): Entry {
+  const c = ctx ?? currentCtx();
+  const key = keyOf(id, params, c);
   let entry = resultCache.get(key);
   if (!entry) {
-    entry = { promise: api.runReport(id, params), fetchedAt: Date.now() };
+    entry = { promise: api.runReport(id, params, c), fetchedAt: Date.now() };
     resultCache.set(key, entry);
   }
   return entry;
 }
 
 /** Drop a cached result and tell every widget bound to it to refetch. */
-export function refreshReport(id: string, params?: ReportParams) {
-  resultCache.delete(keyOf(id, params));
-  notify(keyOf(id, params));
+export function refreshReport(id: string, params?: ReportParams, ctx?: ProfileContext) {
+  const key = keyOf(id, params, ctx ?? currentCtx());
+  resultCache.delete(key);
+  notify(key);
 }
 
 export function invalidateReports() {
@@ -48,7 +59,11 @@ interface State {
 
 export function useReportResult(reportId: string | undefined, params?: ReportParams): State & { refresh: () => void } {
   const [state, setState] = useState<State>({ loading: !!reportId });
-  const key = reportId ? keyOf(reportId, params) : "";
+  // Re-key on the active profile/company so a scope change refetches.
+  const profileId = useWorkspace((s) => s.selectedProfileId);
+  const companyId = useWorkspace((s) => s.selectedCompanyId);
+  const ctx: ProfileContext = { profileId: profileId || undefined, companyId };
+  const key = reportId ? keyOf(reportId, params, ctx) : "";
 
   useEffect(() => {
     if (!reportId) {
@@ -59,7 +74,7 @@ export function useReportResult(reportId: string | undefined, params?: ReportPar
 
     const load = () => {
       setState({ loading: true });
-      const entry = fetchReport(reportId, params);
+      const entry = fetchReport(reportId, params, ctx);
       entry.promise
         .then((result) => !cancelled && setState({ loading: false, result, fetchedAt: entry.fetchedAt }))
         .catch((e) => !cancelled && setState({ loading: false, error: String(e) }));
@@ -81,7 +96,7 @@ export function useReportResult(reportId: string | undefined, params?: ReportPar
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return { ...state, refresh: () => reportId && refreshReport(reportId, params) };
+  return { ...state, refresh: () => reportId && refreshReport(reportId, params, ctx) };
 }
 
 export function useReportCatalog(): { loading: boolean; reports: ReportMeta[]; error?: string } {
@@ -89,15 +104,17 @@ export function useReportCatalog(): { loading: boolean; reports: ReportMeta[]; e
     loading: true,
     reports: [],
   });
+  // The catalog is profile-filtered, so refetch when the profile changes.
+  const profileId = useWorkspace((s) => s.selectedProfileId);
   useEffect(() => {
     let cancelled = false;
     api
-      .reports()
+      .reports({ profileId: profileId || undefined })
       .then((reports) => !cancelled && setState({ loading: false, reports }))
       .catch((e) => !cancelled && setState({ loading: false, reports: [], error: String(e) }));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [profileId]);
   return state;
 }

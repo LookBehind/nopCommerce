@@ -22,14 +22,6 @@ namespace Nop.Plugin.Company.Insights.Services
         private const int MaxObservationRows = 50;
         private static readonly TimeSpan LlmTimeout = TimeSpan.FromSeconds(120);
 
-        private static readonly Dictionary<string, (string Name, string Role, string Focus)> Personas =
-            new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["analyst"] = ("Analyst", "a general BI analyst", "orders, revenue, trends and summaries"),
-                ["ops"] = ("Operations", "an operations analyst", "order flow, delivery timing and vendor operations"),
-                ["finance"] = ("Finance", "a finance analyst", "revenue, reconciliation and invoicing")
-            };
-
         private readonly InsightsLlmClient _llm;
         private readonly IInsightsReportService _reportService;
         private readonly IInsightsMemoryService _memory;
@@ -47,11 +39,15 @@ namespace Nop.Plugin.Company.Insights.Services
             _logger = logger;
         }
 
-        public async Task<AgentTurnResult> RunTurnAsync(ChatTurnRequest request, CancellationToken cancellationToken = default)
+        public async Task<AgentTurnResult> RunTurnAsync(ChatTurnRequest request, InsightsProfile profile, ReportScope scope, CancellationToken cancellationToken = default)
         {
+            profile ??= new InsightsProfile { Id = "analyst", Name = "Analyst", Persona = "a general BI analyst" };
+            scope ??= ReportScope.Unscoped();
+            var memoryKey = profile.Id;
+
             var messages = new List<InsightsLlmClient.LlmMessage>
             {
-                new InsightsLlmClient.LlmMessage { Role = "system", Content = BuildSystemPrompt(request.AgentId, _memory.Enabled) }
+                new InsightsLlmClient.LlmMessage { Role = "system", Content = BuildSystemPrompt(profile, scope, _memory.Enabled) }
             };
 
             foreach (var m in request.Messages ?? new List<AgentChatMessage>())
@@ -65,7 +61,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 });
             }
 
-            await InjectMemoryContextAsync(messages, request, cancellationToken);
+            await InjectMemoryContextAsync(messages, request, memoryKey, cancellationToken);
 
             InsightsReportResult lastDataset = null;
 
@@ -99,7 +95,7 @@ namespace Nop.Plugin.Company.Insights.Services
                     {
                         var tool = actionEl.GetString() ?? "";
                         root.TryGetProperty("args", out var argsEl);
-                        var (observation, dataset) = await ExecuteToolAsync(tool, argsEl, request.AgentId, cancellationToken);
+                        var (observation, dataset) = await ExecuteToolAsync(tool, argsEl, memoryKey, scope, cancellationToken);
                         if (dataset != null)
                             lastDataset = dataset;
 
@@ -130,7 +126,7 @@ namespace Nop.Plugin.Company.Insights.Services
         #region Tools
 
         private async Task<(string observation, InsightsReportResult dataset)> ExecuteToolAsync(
-            string tool, JsonElement args, string agentId, CancellationToken ct)
+            string tool, JsonElement args, string memoryKey, ReportScope scope, CancellationToken ct)
         {
             switch (tool)
             {
@@ -139,7 +135,7 @@ namespace Nop.Plugin.Company.Insights.Services
                     var content = GetString(args, "content");
                     if (string.IsNullOrWhiteSpace(content))
                         return ("error: missing 'content'", null);
-                    var ok = await _memory.RememberAsync(agentId, GetString(args, "kind"), content, ct);
+                    var ok = await _memory.RememberAsync(memoryKey, GetString(args, "kind"), content, ct);
                     return (ok ? "saved" : "error: memory unavailable", null);
                 }
                 case "recall":
@@ -147,7 +143,7 @@ namespace Nop.Plugin.Company.Insights.Services
                     var q = GetString(args, "query");
                     if (string.IsNullOrWhiteSpace(q))
                         return ("error: missing 'query'", null);
-                    var mems = await _memory.RecallAsync(agentId, q, 5, ct);
+                    var mems = await _memory.RecallAsync(memoryKey, q, 5, ct);
                     return (JsonSerializer.Serialize(mems.Select(m => new { m.Content, m.Kind })), null);
                 }
                 case "list_reports":
@@ -171,7 +167,7 @@ namespace Nop.Plugin.Company.Insights.Services
                     var days = GetInt(args, "days");
                     if (days.HasValue)
                         parameters["days"] = days.Value.ToString();
-                    var result = await _reportService.RunAsync(id, parameters);
+                    var result = await _reportService.RunAsync(id, parameters, scope);
                     if (result == null)
                         return ($"error: unknown report id '{id}'", null);
                     return (SummarizeDataset(result), result);
@@ -181,18 +177,18 @@ namespace Nop.Plugin.Company.Insights.Services
                     var days = GetInt(args, "days") ?? 30;
                     var groupBy = GetString(args, "groupBy") ?? "day";
                     var metric = GetString(args, "metric") ?? "count";
-                    var result = await _reportService.QueryOrdersAsync(days, groupBy, metric);
+                    var result = await _reportService.QueryOrdersAsync(days, groupBy, metric, scope);
                     return (SummarizeDataset(result), result);
                 }
                 case "list_reviews":
                 {
                     var days = GetInt(args, "days") ?? 30;
                     var vendorId = GetInt(args, "vendorId");
-                    var customerId = GetInt(args, "customerId");
                     var customerEmail = GetString(args, "customerEmail");
+                    var customerName = GetString(args, "customerName");
                     var orderBy = GetString(args, "orderBy") ?? "date";
                     var limit = GetInt(args, "limit");
-                    var result = await _reportService.GetReviewsAsync(days, vendorId, customerId, customerEmail, orderBy, limit);
+                    var result = await _reportService.GetReviewsAsync(days, vendorId, customerEmail, customerName, orderBy, limit, scope);
                     return (SummarizeDataset(result), result);
                 }
                 default:
@@ -202,7 +198,7 @@ namespace Nop.Plugin.Company.Insights.Services
 
         /// <summary>Auto-recalls relevant saved notes for the latest user message and injects them as context.</summary>
         private async Task InjectMemoryContextAsync(
-            List<InsightsLlmClient.LlmMessage> messages, ChatTurnRequest request, CancellationToken ct)
+            List<InsightsLlmClient.LlmMessage> messages, ChatTurnRequest request, string memoryKey, CancellationToken ct)
         {
             if (!_memory.Enabled)
                 return;
@@ -212,7 +208,7 @@ namespace Nop.Plugin.Company.Insights.Services
             if (lastUser == null || string.IsNullOrWhiteSpace(lastUser.Content))
                 return;
 
-            var memories = await _memory.RecallAsync(request.AgentId, lastUser.Content, 3, ct);
+            var memories = await _memory.RecallAsync(memoryKey, lastUser.Content, 3, ct);
             if (memories.Count == 0)
                 return;
 
@@ -263,13 +259,13 @@ namespace Nop.Plugin.Company.Insights.Services
 
         #region Prompt & JSON helpers
 
-        private static string BuildSystemPrompt(string agentId, bool memoryEnabled)
+        private static string BuildSystemPrompt(InsightsProfile profile, ReportScope scope, bool memoryEnabled)
         {
-            var persona = Personas.TryGetValue(agentId ?? "analyst", out var p) ? p : Personas["analyst"];
-
             var sb = new StringBuilder();
-            sb.AppendLine($"You are {persona.Name}, {persona.Role} for the MySnacks food-ordering platform, focused on {persona.Focus}.");
+            sb.AppendLine($"You are {profile.Name}, {profile.Persona} on the MySnacks food-ordering platform.");
             sb.AppendLine("You help backoffice staff explore this tenant's order data. You are READ-ONLY: you can only read data through the tools below, never modify anything.");
+            if (scope != null && scope.CompanyId.HasValue)
+                sb.AppendLine("IMPORTANT: your data is already restricted to a single company — every tool only returns that company's data. Do not claim to see other companies.");
             if (memoryEnabled)
                 sb.AppendLine("You have long-term memory across conversations: consult it with recall, and save durable, reusable learnings (not one-off facts) with remember.");
             sb.AppendLine();
@@ -281,7 +277,7 @@ namespace Nop.Plugin.Company.Insights.Services
             sb.AppendLine("- list_reports {}  -> available named reports.");
             sb.AppendLine("- run_report {\"id\":\"<reportId>\",\"days\":<int, optional>}  -> a report's columns and rows. list_reports shows each report's parameters and their min/max; \"days\" is clamped to the report's allowed range (e.g. up to 90).");
             sb.AppendLine("- query_orders {\"days\":<int, optional, default 30, max 365>,\"groupBy\":\"day\"|\"status\",\"metric\":\"count\"|\"revenue\"}  -> aggregated orders over the last N days.");
-            sb.AppendLine("- list_reviews {\"days\":<int, optional, default 30, max 90>,\"vendorId\":<int, optional>,\"customerId\":<int, optional>,\"customerEmail\":\"...\"(optional),\"orderBy\":\"date\"|\"rating\"|\"helpful\"(optional),\"limit\":<int, optional, default 50, max 200>}  -> product reviews (date, product, vendor, customer name+email, rating, approved, title, review, and triage: who/when/hours/resolution).");
+            sb.AppendLine("- list_reviews {\"days\":<int, optional, default 30, max 90>,\"vendorId\":<int, optional>,\"customerEmail\":\"...\"(optional),\"customerName\":\"...\"(optional),\"orderBy\":\"date\"|\"rating\"|\"helpful\"(optional),\"limit\":<int, optional, default 50, max 200>}  -> product reviews (date, product, vendor, customer full name+email, rating, approved, title, review, and triage: who/when/hours/resolution). Refer to customers by name and email, never by id.");
             if (memoryEnabled)
             {
                 sb.AppendLine("- recall {\"query\":\"...\"}  -> retrieve notes you saved in earlier conversations.");

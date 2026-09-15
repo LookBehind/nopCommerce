@@ -13,6 +13,10 @@ namespace Nop.Plugin.Company.Insights.Models
     public class ChatTurnRequest
     {
         public string AgentId { get; set; }
+        /// <summary>Active profile id (drives persona, tools, data scope).</summary>
+        public string ProfileId { get; set; }
+        /// <summary>Company to scope to when an admin uses a company-scoped profile (ignored for real company members).</summary>
+        public int? CompanyId { get; set; }
         public List<AgentChatMessage> Messages { get; set; } = new List<AgentChatMessage>();
     }
 
