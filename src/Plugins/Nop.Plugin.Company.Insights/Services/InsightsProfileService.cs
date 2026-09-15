@@ -60,7 +60,8 @@ namespace Nop.Plugin.Company.Insights.Services
                 AllowedReports = new[]
                 {
                     "orders-per-day", "orders-by-status", "reviews",
-                    "vendor-traction", "products-per-category", "products-per-category-per-vendor"
+                    "vendor-traction", "products-per-category", "products-per-category-per-vendor",
+                    "vendor-delivery-reliability"
                 },
                 Persona = "a BI analyst for a company's workplace-food program on MySnacks, focused on vendor " +
                           "performance, catalog/category health, reviews and delivery reliability for that one company"

@@ -8,6 +8,7 @@ using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Orders;
+using Nop.Core.Domain.Shipping;
 using Nop.Core.Domain.Vendors;
 using Nop.Data;
 using Nop.Plugin.Company.Insights.Models;
@@ -115,6 +116,19 @@ namespace Nop.Plugin.Company.Insights.Services
                     {
                         new InsightsReportParam { Name = "range", Label = "Delivery date/time", Type = "daterange", Default = 0, Min = 0, Max = 0 }
                     }
+                },
+                new InsightsReportMeta
+                {
+                    Id = "vendor-delivery-reliability",
+                    Name = "Vendor delivery reliability",
+                    Description = "Per vendor: on-time % and average delay (actual delivery vs the promised delivery time).",
+                    DefaultChart = "bar",
+                    XField = "Vendor",
+                    YField = "On-time %",
+                    Parameters = new List<InsightsReportParam>
+                    {
+                        new InsightsReportParam { Name = "days", Label = "Look-back (days)", Default = 90, Min = 7, Max = 365 }
+                    }
                 }
             };
         }
@@ -143,6 +157,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 "products-per-category" => await ProductsPerCategoryAsync(scope),
                 "products-per-category-per-vendor" => await ProductsPerCategoryPerVendorAsync(scope),
                 "delivery-order-items" => await DeliveryOrderItemsAsync(parameters, scope),
+                "vendor-delivery-reliability" => await VendorDeliveryReliabilityAsync(days, scope),
                 _ => null
             };
         }
@@ -558,6 +573,111 @@ namespace Nop.Plugin.Company.Insights.Services
                 new InsightsReportTotal { Label = "Total items", Value = grouped.Sum(x => x.Qty) },
                 new InsightsReportTotal { Label = "Distinct products", Value = grouped.Count },
                 new InsightsReportTotal { Label = "Delivery", Value = rangeLabel }
+            };
+            return result;
+        }
+
+        /// <summary>
+        /// Per-vendor delivery reliability: actual delivery (Shipment.DeliveryDateUtc, falling back to
+        /// ShippedDateUtc) vs the promised Order.ScheduleDate. One delivery event per (shipment, vendor).
+        /// </summary>
+        private async Task<InsightsReportResult> VendorDeliveryReliabilityAsync(int days, ReportScope scope)
+        {
+            const int graceMinutes = 15; // delivered within 15 min of the promise counts as on-time
+            days = Math.Clamp(days <= 0 ? 90 : days, 7, QueryOrdersMaxDays);
+            var fromUtc = DateTime.UtcNow.AddDays(-days);
+
+            var result = new InsightsReportResult
+            {
+                Id = "vendor-delivery-reliability",
+                Columns = new List<InsightsReportColumn>
+                {
+                    new InsightsReportColumn { Name = "Vendor", Type = "string" },
+                    new InsightsReportColumn { Name = "Deliveries", Type = "number" },
+                    new InsightsReportColumn { Name = "On-time %", Type = "number" },
+                    new InsightsReportColumn { Name = "Avg delay (h)", Type = "number" },
+                    new InsightsReportColumn { Name = "Late", Type = "number" }
+                }
+            };
+            if (scope != null && scope.Denied)
+                return result;
+
+            var query =
+                from si in _dataProvider.GetTable<ShipmentItem>()
+                join s in _dataProvider.GetTable<Shipment>() on si.ShipmentId equals s.Id
+                join o in _dataProvider.GetTable<Order>() on s.OrderId equals o.Id
+                join oi in _dataProvider.GetTable<OrderItem>() on si.OrderItemId equals oi.Id
+                join p in _dataProvider.GetTable<Product>() on oi.ProductId equals p.Id
+                where !o.Deleted && p.VendorId > 0
+                    && (s.DeliveryDateUtc >= fromUtc || s.ShippedDateUtc >= fromUtc)
+                select new { ShipmentId = s.Id, s.DeliveryDateUtc, s.ShippedDateUtc, o.ScheduleDate, o.CompanyId, p.VendorId };
+
+            if (scope?.CompanyId is int companyId)
+                query = query.Where(x => x.CompanyId == companyId);
+
+            var raw = await query.ToListAsync();
+            if (raw.Count == 0)
+                return result;
+
+            // One event per (shipment, vendor): a shipment counts once for each vendor it contains.
+            var events = raw
+                .Select(x => new
+                {
+                    x.ShipmentId,
+                    x.VendorId,
+                    Actual = x.DeliveryDateUtc ?? x.ShippedDateUtc,
+                    Promised = x.ScheduleDate
+                })
+                .Where(x => x.Actual.HasValue && x.Actual.Value >= fromUtc)
+                .GroupBy(x => new { x.ShipmentId, x.VendorId })
+                .Select(g => new
+                {
+                    g.Key.VendorId,
+                    LateMinutes = (g.First().Actual.Value - g.First().Promised).TotalMinutes
+                })
+                .ToList();
+
+            if (events.Count == 0)
+                return result;
+
+            var vendorNames = await ResolveVendorNamesAsync(events.Select(e => e.VendorId).Distinct().ToList());
+
+            var perVendor = events
+                .GroupBy(e => e.VendorId)
+                .Select(g =>
+                {
+                    var deliveries = g.Count();
+                    var onTime = g.Count(x => x.LateMinutes <= graceMinutes);
+                    var avgDelay = g.Average(x => Math.Max(x.LateMinutes, 0)) / 60.0;
+                    return new
+                    {
+                        VendorId = g.Key,
+                        Deliveries = deliveries,
+                        OnTimePct = (int)Math.Round(100.0 * onTime / deliveries),
+                        AvgDelayHours = Math.Round(avgDelay, 1),
+                        Late = deliveries - onTime
+                    };
+                })
+                .OrderBy(x => x.OnTimePct).ThenByDescending(x => x.AvgDelayHours)
+                .ToList();
+
+            foreach (var v in perVendor)
+                result.Rows.Add(new Dictionary<string, object>
+                {
+                    ["Vendor"] = vendorNames.TryGetValue(v.VendorId, out var n) ? n : $"Vendor {v.VendorId}",
+                    ["Deliveries"] = v.Deliveries,
+                    ["On-time %"] = v.OnTimePct,
+                    ["Avg delay (h)"] = v.AvgDelayHours,
+                    ["Late"] = v.Late
+                });
+
+            var totalDeliveries = perVendor.Sum(x => x.Deliveries);
+            var totalLate = perVendor.Sum(x => x.Late);
+            result.Totals = new List<InsightsReportTotal>
+            {
+                new InsightsReportTotal { Label = "Deliveries", Value = totalDeliveries },
+                new InsightsReportTotal { Label = "On-time %", Value = totalDeliveries > 0 ? (int)Math.Round(100.0 * (totalDeliveries - totalLate) / totalDeliveries) : 0 },
+                new InsightsReportTotal { Label = "Late", Value = totalLate }
             };
             return result;
         }
