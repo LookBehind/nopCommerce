@@ -1,20 +1,22 @@
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Routing;
 using Nop.Core;
 using Nop.Core.Domain.Security;
 using Nop.Data;
 using Nop.Plugin.Company.Insights.Security;
 using Nop.Services.Plugins;
 using Nop.Services.Security;
+using Nop.Web.Framework.Menu;
 
 namespace Nop.Plugin.Company.Insights
 {
     /// <summary>
     /// Company Insights plugin — AI-chat BI workspace for backoffice users.
-    /// P0 skeleton: registers the <c>AccessInsights</c> permission and exposes the
-    /// admin bootstrap route that hosts the SPA.
+    /// Registers the <c>AccessInsights</c> permission, adds a gated admin-sidebar entry,
+    /// and exposes the admin bootstrap route that hosts the SPA.
     /// </summary>
-    public class InsightsPlugin : BasePlugin
+    public class InsightsPlugin : BasePlugin, IAdminMenuPlugin
     {
         #region Fields
 
@@ -75,6 +77,35 @@ namespace Nop.Plugin.Company.Insights
             }
 
             await base.UninstallAsync();
+        }
+
+        /// <summary>
+        /// Adds a top-level "Insights" item to the admin sidebar (right after Dashboard),
+        /// shown only to users who hold the <c>AccessInsights</c> permission.
+        /// </summary>
+        public async Task ManageSiteMapAsync(SiteMapNode rootNode)
+        {
+            if (!await _permissionService.AuthorizeAsync(InsightsPermissionProvider.AccessInsights))
+                return;
+
+            var node = new SiteMapNode
+            {
+                SystemName = "Company.Insights",
+                Title = "Insights",
+                Url = $"{_webHelper.GetStoreLocation()}Admin/Insights",
+                IconClass = "far fa-chart-bar",
+                Visible = true,
+                RouteValues = new RouteValueDictionary { { "area", "Admin" } }
+            };
+
+            // Place just under Dashboard when present, otherwise at the top.
+            var dashboardIndex = rootNode.ChildNodes
+                .ToList()
+                .FindIndex(n => n.SystemName == "Dashboard");
+            if (dashboardIndex >= 0)
+                rootNode.ChildNodes.Insert(dashboardIndex + 1, node);
+            else
+                rootNode.ChildNodes.Insert(0, node);
         }
 
         #endregion
