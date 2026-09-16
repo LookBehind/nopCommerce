@@ -302,15 +302,15 @@ namespace Nop.Plugin.Company.Insights.Services
             if (memoryEnabled)
                 sb.AppendLine("You have long-term memory across conversations: consult it with recall, and save durable, reusable learnings (not one-off facts) with remember.");
             sb.AppendLine();
-            sb.AppendLine("Respond with EXACTLY ONE JSON object per turn and nothing else — no markdown, no text outside the JSON. Use one of two shapes:");
+            sb.AppendLine("Respond with EXACTLY ONE JSON object per turn and nothing else — no text or fences outside the JSON. Use one of two shapes:");
             sb.AppendLine("1) Call a tool: {\"action\":\"<tool>\",\"args\":{...}}");
-            sb.AppendLine("2) Finish: {\"final\":\"<concise answer citing real figures>\",\"widgets\":[<widget>...]}");
+            sb.AppendLine("2) Finish: {\"final\":\"<answer, in Markdown>\",\"widgets\":[<widget>...]}");
             sb.AppendLine();
             sb.AppendLine("Tools:");
             sb.AppendLine("- list_reports {}  -> available named reports.");
             sb.AppendLine("- run_report {\"id\":\"<reportId>\",\"days\":<int, optional>}  -> a report's columns and rows. list_reports shows each report's parameters and their min/max; \"days\" is clamped to the report's allowed range (e.g. up to 90).");
             sb.AppendLine("- query_orders {\"days\":<int, optional, default 30, max 365>,\"groupBy\":\"day\"|\"status\",\"metric\":\"count\"|\"revenue\"}  -> aggregated orders over the last N days.");
-            sb.AppendLine("- list_reviews {\"days\":<int, optional, default 30, max 90>,\"vendorId\":<int, optional>,\"customerEmail\":\"...\"(optional),\"customerName\":\"...\"(optional),\"orderBy\":\"date\"|\"rating\"|\"helpful\"(optional),\"limit\":<int, optional, default 50, max 200>}  -> product reviews (date, product, vendor, customer full name+email, rating, approved, title, review, and triage: who/when/hours/resolution). Refer to customers by name and email, never by id.");
+            sb.AppendLine("- list_reviews {\"days\":<int, optional, default 30, max 90>,\"vendorId\":<int, optional>,\"customerEmail\":\"...\"(optional),\"customerName\":\"...\"(optional),\"orderBy\":\"date\"|\"rating\"|\"helpful\"(optional),\"limit\":<int, optional, default 50, max 200>}  -> product reviews (date, product, vendor name+email, customer full name+email, rating, approved, title, review, and triage: who/when/hours/resolution). Refer to customers AND vendors by their name and email, never by a bare id.");
             if (memoryEnabled)
             {
                 sb.AppendLine("- recall {\"query\":\"...\"}  -> retrieve notes you saved in earlier conversations.");
@@ -320,7 +320,8 @@ namespace Nop.Plugin.Company.Insights.Services
             sb.AppendLine("Widget (optional; visualizes the MOST RECENT dataset you fetched this turn):");
             sb.AppendLine("{\"kind\":\"chart\"|\"table\",\"chartKind\":\"line\"|\"area\"|\"bar\"|\"pie\",\"title\":\"...\",\"xField\":\"<column>\",\"yField\":\"<column>\",\"categoryField\":\"<column>\"}");
             sb.AppendLine();
-            sb.AppendLine("Rules: always fetch real data with a tool before answering; never invent numbers. Field names in widgets must match the dataset columns. Keep answers short. Only add widgets when a chart or table genuinely helps.");
+            sb.AppendLine("Rules: always fetch real data with a tool before answering; never invent numbers. Field names in widgets must match the dataset columns. Only add widgets when a chart or table genuinely helps.");
+            sb.AppendLine("Formatting the \"final\" answer (it is rendered as Markdown): keep it short and skimmable. Lead with a one-line takeaway, then a bulleted list ('- ') of the key points — one figure or finding per bullet. Use **bold** for the important numbers, names, and labels. Use a Markdown table only for small comparisons; for anything larger, add a widget instead of a big table. Write the Markdown inside the JSON string with real newlines (\\n).");
             return sb.ToString();
         }
 

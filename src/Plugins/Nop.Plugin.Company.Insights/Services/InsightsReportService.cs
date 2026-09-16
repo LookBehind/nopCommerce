@@ -327,6 +327,7 @@ namespace Nop.Plugin.Company.Insights.Services
             }).ToListAsync();
 
             var names = await ResolveCustomerNamesAsync(rows.Select(x => x.CustomerId).Distinct().ToList());
+            var vendors = await ResolveVendorsAsync(rows.Select(x => x.VendorId).Distinct().ToList());
             var triagerEmails = await ResolveCustomerEmailsAsync(
                 rows.Where(x => x.TriagedByCustomerId.HasValue).Select(x => x.TriagedByCustomerId.Value).Distinct().ToList());
 
@@ -338,6 +339,8 @@ namespace Nop.Plugin.Company.Insights.Services
                     new InsightsReportColumn { Name = "Date", Type = "date" },
                     new InsightsReportColumn { Name = "Product", Type = "string" },
                     new InsightsReportColumn { Name = "VendorId", Type = "number" },
+                    new InsightsReportColumn { Name = "Vendor", Type = "string" },
+                    new InsightsReportColumn { Name = "VendorEmail", Type = "string" },
                     new InsightsReportColumn { Name = "Customer", Type = "string" },
                     new InsightsReportColumn { Name = "Email", Type = "string" },
                     new InsightsReportColumn { Name = "Rating", Type = "number" },
@@ -368,6 +371,8 @@ namespace Nop.Plugin.Company.Insights.Services
                     ["Date"] = x.CreatedOnUtc.ToString("yyyy-MM-dd"),
                     ["Product"] = x.ProductName,
                     ["VendorId"] = x.VendorId,
+                    ["Vendor"] = vendors.TryGetValue(x.VendorId, out var vr) ? vr.Name : "",
+                    ["VendorEmail"] = vendors.TryGetValue(x.VendorId, out var vre) ? vre.Email : "",
                     ["Customer"] = names.TryGetValue(x.CustomerId, out var n) ? n : "",
                     ["Email"] = x.Email,
                     ["Rating"] = x.Rating,
@@ -484,6 +489,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 {
                     new InsightsReportColumn { Name = "Category", Type = "string" },
                     new InsightsReportColumn { Name = "Vendor", Type = "string" },
+                    new InsightsReportColumn { Name = "VendorEmail", Type = "string" },
                     new InsightsReportColumn { Name = "Products", Type = "number" }
                 }
             };
@@ -491,7 +497,7 @@ namespace Nop.Plugin.Company.Insights.Services
             if (rows.Count == 0)
                 return result;
 
-            var vendorNames = await ResolveVendorNamesAsync(rows.Select(r => r.VendorId).Distinct().ToList());
+            var vendors = await ResolveVendorsAsync(rows.Select(r => r.VendorId).Distinct().ToList());
             foreach (var g in rows
                 .Where(r => r.VendorId > 0)
                 .GroupBy(r => new { r.Category, r.VendorId })
@@ -501,7 +507,8 @@ namespace Nop.Plugin.Company.Insights.Services
                 result.Rows.Add(new Dictionary<string, object>
                 {
                     ["Category"] = g.Category,
-                    ["Vendor"] = vendorNames.TryGetValue(g.VendorId, out var n) ? n : $"Vendor {g.VendorId}",
+                    ["Vendor"] = vendors.TryGetValue(g.VendorId, out var vr) ? vr.Name : $"Vendor {g.VendorId}",
+                    ["VendorEmail"] = vendors.TryGetValue(g.VendorId, out var vre) ? vre.Email : "",
                     ["Products"] = g.Count
                 });
             }
@@ -519,6 +526,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 Columns = new List<InsightsReportColumn>
                 {
                     new InsightsReportColumn { Name = "Vendor", Type = "string" },
+                    new InsightsReportColumn { Name = "VendorEmail", Type = "string" },
                     new InsightsReportColumn { Name = "Product", Type = "string" },
                     new InsightsReportColumn { Name = "Quantity", Type = "number" }
                 }
@@ -549,7 +557,7 @@ namespace Nop.Plugin.Company.Insights.Services
             if (!string.IsNullOrEmpty(slot) && TimeSpan.TryParse(slot, out var ts))
                 rows = rows.Where(x => x.ScheduleDate.Hour == ts.Hours && x.ScheduleDate.Minute == ts.Minutes).ToList();
 
-            var vendorNames = await ResolveVendorNamesAsync(rows.Select(r => r.VendorId).Distinct().ToList());
+            var vendors = await ResolveVendorsAsync(rows.Select(r => r.VendorId).Distinct().ToList());
 
             var grouped = rows
                 .GroupBy(r => new { r.VendorId, r.ProductName })
@@ -560,7 +568,8 @@ namespace Nop.Plugin.Company.Insights.Services
             foreach (var g in grouped)
                 result.Rows.Add(new Dictionary<string, object>
                 {
-                    ["Vendor"] = vendorNames.TryGetValue(g.VendorId, out var n) ? n : $"Vendor {g.VendorId}",
+                    ["Vendor"] = vendors.TryGetValue(g.VendorId, out var vr) ? vr.Name : $"Vendor {g.VendorId}",
+                    ["VendorEmail"] = vendors.TryGetValue(g.VendorId, out var vre) ? vre.Email : "",
                     ["Product"] = g.ProductName,
                     ["Quantity"] = g.Qty
                 });
@@ -592,7 +601,9 @@ namespace Nop.Plugin.Company.Insights.Services
                 Id = "vendor-delivery-reliability",
                 Columns = new List<InsightsReportColumn>
                 {
+                    new InsightsReportColumn { Name = "VendorId", Type = "number" },
                     new InsightsReportColumn { Name = "Vendor", Type = "string" },
+                    new InsightsReportColumn { Name = "VendorEmail", Type = "string" },
                     new InsightsReportColumn { Name = "Deliveries", Type = "number" },
                     new InsightsReportColumn { Name = "On-time %", Type = "number" },
                     new InsightsReportColumn { Name = "Avg delay (h)", Type = "number" },
@@ -640,7 +651,7 @@ namespace Nop.Plugin.Company.Insights.Services
             if (events.Count == 0)
                 return result;
 
-            var vendorNames = await ResolveVendorNamesAsync(events.Select(e => e.VendorId).Distinct().ToList());
+            var vendors = await ResolveVendorsAsync(events.Select(e => e.VendorId).Distinct().ToList());
 
             var perVendor = events
                 .GroupBy(e => e.VendorId)
@@ -664,7 +675,9 @@ namespace Nop.Plugin.Company.Insights.Services
             foreach (var v in perVendor)
                 result.Rows.Add(new Dictionary<string, object>
                 {
-                    ["Vendor"] = vendorNames.TryGetValue(v.VendorId, out var n) ? n : $"Vendor {v.VendorId}",
+                    ["VendorId"] = v.VendorId,
+                    ["Vendor"] = vendors.TryGetValue(v.VendorId, out var vr) ? vr.Name : $"Vendor {v.VendorId}",
+                    ["VendorEmail"] = vendors.TryGetValue(v.VendorId, out var vre) ? vre.Email : "",
                     ["Deliveries"] = v.Deliveries,
                     ["On-time %"] = v.OnTimePct,
                     ["Avg delay (h)"] = v.AvgDelayHours,
@@ -713,21 +726,34 @@ namespace Nop.Plugin.Company.Insights.Services
             return rows.Select(x => new CatalogRow { Category = x.Category, VendorId = x.VendorId, ProductId = x.ProductId }).ToList();
         }
 
-        /// <summary>Vendor display names for the given ids.</summary>
-        private async Task<Dictionary<int, string>> ResolveVendorNamesAsync(IList<int> vendorIds)
+        /// <summary>Vendor name + email for the given ids (every vendor-bearing report exposes both, never just the id).</summary>
+        private async Task<Dictionary<int, VendorRef>> ResolveVendorsAsync(IList<int> vendorIds)
         {
-            var result = new Dictionary<int, string>();
+            var result = new Dictionary<int, VendorRef>();
             var ids = vendorIds?.Where(v => v > 0).Distinct().ToList();
             if (ids == null || ids.Count == 0)
                 return result;
 
             var list = await _dataProvider.GetTable<Vendor>()
                 .Where(v => ids.Contains(v.Id))
-                .Select(v => new { v.Id, v.Name })
+                .Select(v => new { v.Id, v.Name, v.Email })
                 .ToListAsync();
             foreach (var v in list)
-                result[v.Id] = v.Name;
+                result[v.Id] = new VendorRef { Name = v.Name, Email = v.Email ?? "" };
             return result;
+        }
+
+        /// <summary>Vendor display names for the given ids (thin wrapper over <see cref="ResolveVendorsAsync"/>).</summary>
+        private async Task<Dictionary<int, string>> ResolveVendorNamesAsync(IList<int> vendorIds)
+        {
+            var vendors = await ResolveVendorsAsync(vendorIds);
+            return vendors.ToDictionary(kv => kv.Key, kv => kv.Value.Name);
+        }
+
+        private sealed class VendorRef
+        {
+            public string Name { get; set; }
+            public string Email { get; set; }
         }
 
         private static DateTime StartOfWeek(DateTime d)

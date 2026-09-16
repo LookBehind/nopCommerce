@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useWorkspace } from "../store/workspace";
 import { api } from "../api/client";
 import type { ProfileContext } from "../api/client";
@@ -336,9 +338,26 @@ function ResizeHandle({
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {
+  // Assistant replies are Markdown (bullets/bold/tables); user text and errors stay literal.
+  const asMarkdown = message.role === "assistant" && !message.error;
   return (
     <div className={`ins-msg ${message.role}`}>
-      <div className={`ins-msg-text ${message.error ? "err" : ""}`}>{message.content}</div>
+      <div className={`ins-msg-text ${message.error ? "err" : ""}`}>
+        {asMarkdown ? (
+          <div className="ins-md">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" />,
+              }}
+            >
+              {message.content || ""}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          message.content
+        )}
+      </div>
       {message.widgets && message.widgets.length > 0 && (
         <div className="ins-msg-widgets">
           {message.widgets.map((w, i) => (
