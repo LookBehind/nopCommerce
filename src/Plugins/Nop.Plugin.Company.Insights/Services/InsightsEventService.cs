@@ -68,6 +68,50 @@ namespace Nop.Plugin.Company.Insights.Services
             }
         }
 
+        public async Task<long> EnqueueUniqueAsync(string eventType, string entityType, int? entityId, int? companyId, string payloadJson, int dedupeWindowHours, CancellationToken cancellationToken = default)
+        {
+            if (!Enabled || string.IsNullOrWhiteSpace(eventType))
+                return 0;
+
+            try
+            {
+                await EnsureSchemaAsync(cancellationToken);
+                long id = 0;
+                await using (var conn = new NpgsqlConnection(_config.BuildConnectionString()))
+                {
+                    await conn.OpenAsync(cancellationToken);
+                    await using var cmd = new NpgsqlCommand(
+                        "INSERT INTO insights_agent_event (tenant, event_type, entity_type, entity_id, company_id, payload, status) " +
+                        "SELECT @tenant, @type, @etype, @eid, @cid, @payload::jsonb, 'new' " +
+                        "WHERE NOT EXISTS (SELECT 1 FROM insights_agent_event WHERE tenant = @tenant AND event_type = @type " +
+                        "  AND entity_id IS NOT DISTINCT FROM @eid AND occurred_at > now() - make_interval(hours => @win)) " +
+                        "RETURNING id", conn);
+                    cmd.Parameters.AddWithValue("tenant", _config.Tenant);
+                    cmd.Parameters.AddWithValue("type", eventType);
+                    cmd.Parameters.AddWithValue("etype", (object)entityType ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("eid", (object)entityId ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("cid", (object)companyId ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("payload", NpgsqlDbType.Text, string.IsNullOrWhiteSpace(payloadJson) ? "{}" : payloadJson);
+                    cmd.Parameters.AddWithValue("win", Math.Max(1, dedupeWindowHours));
+                    var scalar = await cmd.ExecuteScalarAsync(cancellationToken);
+                    if (scalar != null && scalar != DBNull.Value)
+                        id = Convert.ToInt64(scalar);
+                }
+
+                if (id > 0)
+                {
+                    try { BackgroundJob.Enqueue<IInsightsEventDispatcher>(d => d.DispatchAsync(id)); }
+                    catch (Exception ex) { await _logger.WarningAsync("Insights events: dispatch enqueue failed", ex); }
+                }
+                return id;
+            }
+            catch (Exception ex)
+            {
+                await _logger.WarningAsync("Insights events: unique enqueue failed", ex);
+                return 0;
+            }
+        }
+
         public async Task<InsightsAgentEvent> GetAsync(long id, CancellationToken cancellationToken = default)
         {
             if (!Enabled)

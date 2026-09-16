@@ -20,6 +20,13 @@ namespace Nop.Plugin.Company.Insights.Services
         /// <summary>Append a trigger event and enqueue its dispatch. Returns the new row id (0 on no-op/failure).</summary>
         Task<long> EnqueueAsync(string eventType, string entityType, int? entityId, int? companyId, string payloadJson, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Like <see cref="EnqueueAsync"/> but skips insertion if an event of the same (event_type,
+        /// entity_id) already occurred within <paramref name="dedupeWindowHours"/> — for idempotent
+        /// time-based fires (Hangfire retries, daily jobs). Returns 0 when deduped.
+        /// </summary>
+        Task<long> EnqueueUniqueAsync(string eventType, string entityType, int? entityId, int? companyId, string payloadJson, int dedupeWindowHours, CancellationToken cancellationToken = default);
+
         /// <summary>Load one event by id (for the dispatcher).</summary>
         Task<InsightsAgentEvent> GetAsync(long id, CancellationToken cancellationToken = default);
 
