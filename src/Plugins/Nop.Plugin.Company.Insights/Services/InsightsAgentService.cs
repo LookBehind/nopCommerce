@@ -417,12 +417,18 @@ namespace Nop.Plugin.Company.Insights.Services
             if (memories.Count == 0)
                 return;
 
-            var sb = new StringBuilder("Notes you saved in earlier conversations (use if relevant, ignore otherwise):\n");
+            var sb = new StringBuilder("\n\nNotes you saved in earlier conversations (use if relevant, ignore otherwise):\n");
             foreach (var m in memories)
                 sb.AppendLine("- " + m.Content);
 
-            // Insert just after the persona system prompt.
-            messages.Insert(1, new InsightsLlmClient.LlmMessage { Role = "system", Content = sb.ToString() });
+            // Append to the persona system prompt rather than adding a SECOND system message — the Qwen3
+            // chat template rejects more than one system message (returns HTTP 400), which would silently
+            // break every memory-augmented turn.
+            var system = messages.FirstOrDefault(m => string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase));
+            if (system != null)
+                system.Content += sb.ToString();
+            else
+                messages.Insert(0, new InsightsLlmClient.LlmMessage { Role = "system", Content = sb.ToString() });
         }
 
         private static string SummarizeDataset(InsightsReportResult result)
