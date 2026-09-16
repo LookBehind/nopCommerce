@@ -269,6 +269,31 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             return saved == null ? Json(new { ok = false, error = "save-failed" }) : Json(new { ok = true, agent = MapAgent(saved) });
         }
 
+        /// <summary>Meta-agent: draft a background-agent config from a natural-language description.</summary>
+        [HttpPost]
+        public async Task<IActionResult> DraftAgent([FromForm] string payload)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+
+            string description = null;
+            if (!string.IsNullOrWhiteSpace(payload))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(payload);
+                    if (doc.RootElement.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String)
+                        description = d.GetString();
+                }
+                catch { description = payload; }
+            }
+
+            var draft = await _agentService.DraftAgentAsync(description, HttpContext.RequestAborted);
+            if (string.IsNullOrWhiteSpace(draft))
+                return Json(new { ok = false, error = "no-draft" });
+            return Content("{\"ok\":true,\"draft\":" + draft + "}", "application/json");
+        }
+
         /// <summary>Delete a background-agent config.</summary>
         [HttpPost]
         public async Task<IActionResult> DeleteAgent([FromForm] string id)

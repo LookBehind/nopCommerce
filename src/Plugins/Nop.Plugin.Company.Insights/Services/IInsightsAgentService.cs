@@ -15,5 +15,12 @@ namespace Nop.Plugin.Company.Insights.Services
         /// every data tool so a Workplace Manager only ever sees their company's data.
         /// </summary>
         Task<AgentTurnResult> RunTurnAsync(ChatTurnRequest request, InsightsProfile profile, ReportScope scope, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Meta-agent: turn a natural-language description into a draft background-agent config JSON
+        /// (the main agent writes the background agent's system prompt). Returns the raw JSON object
+        /// string, or null if the model couldn't produce one. See docs/BACKGROUND-AGENTS.md §4.
+        /// </summary>
+        Task<string> DraftAgentAsync(string description, CancellationToken cancellationToken = default);
     }
 }

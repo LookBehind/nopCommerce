@@ -123,6 +123,39 @@ namespace Nop.Plugin.Company.Insights.Services
             }
         }
 
+        public async Task<string> DraftAgentAsync(string description, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(description))
+                return null;
+
+            var sb = new StringBuilder();
+            sb.AppendLine("You design a background automation for the MySnacks platform from the user's request.");
+            sb.AppendLine("Respond with EXACTLY ONE JSON object and nothing else — no markdown, no prose.");
+            sb.AppendLine("Shape:");
+            sb.AppendLine("{\"name\":\"short title\",\"triggerKind\":\"event\"|\"schedule\",\"eventType\":\"<one of the events, for event kind>\",\"cron\":\"<5-field cron, for schedule kind>\",\"filter\":{},\"systemPrompt\":\"the background agent's own system prompt (concise, read-only analyst persona for its task)\",\"instruction\":\"the task the agent performs each run\",\"outputSinks\":[\"dashboard\"|\"telegram\"|\"memory\"],\"outputTarget\":\"telegram chat id if telegram, else empty\"}");
+            sb.AppendLine("Event types: review-added, review-triaged, order-placed, order-cancelled, delivery-approaching (40 min before a delivery), day-closing (end of day), product-created, product-updated.");
+            sb.AppendLine("Filters (optional, event kind): {\"maxRating\":<int>} fires only for reviews at/below that rating; {\"vendorIds\":[<int>...]} restricts to those vendors.");
+            sb.AppendLine("Pick triggerKind \"schedule\" only if the user asks for a periodic/scheduled run; else \"event\". Choose the single best eventType. Default outputSinks to [\"dashboard\"].");
+            sb.AppendLine("Write a genuinely useful systemPrompt + instruction for the described task. The agent is READ-ONLY (it can never modify data).");
+
+            var messages = new List<InsightsLlmClient.LlmMessage>
+            {
+                new InsightsLlmClient.LlmMessage { Role = "system", Content = sb.ToString() },
+                new InsightsLlmClient.LlmMessage { Role = "user", Content = description.Trim() }
+            };
+
+            try
+            {
+                var content = await _llm.CompleteAsync(InsightsLlmClient.DefaultModel, messages, 0.2, 900, LlmTimeout, cancellationToken);
+                return ExtractJsonObject(content);
+            }
+            catch (Exception ex)
+            {
+                await _logger.WarningAsync("Insights meta-agent: draft failed (model may be warming up)", ex);
+                return null;
+            }
+        }
+
         #region Tools
 
         private async Task<(string observation, InsightsReportResult dataset)> ExecuteToolAsync(

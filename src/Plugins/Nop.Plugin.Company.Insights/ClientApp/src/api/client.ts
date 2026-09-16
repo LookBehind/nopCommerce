@@ -1,4 +1,7 @@
 import type {
+  AgentConfig,
+  AgentConfigInput,
+  AgentRun,
   Capabilities,
   ChatTurnResponse,
   Conversation,
@@ -136,4 +139,16 @@ export const api = {
   deleteSchedule: (id: string) => postForm<{ ok: boolean }>("/DeleteSchedule", { id }),
   testSchedule: (s: Partial<Schedule>) =>
     postForm<{ ok: boolean; error?: string }>("/TestSchedule", { payload: JSON.stringify(s) }),
+
+  // background agents (automations)
+  agents: () => getJson<AgentConfig[]>("/Agents"),
+  saveAgent: (a: AgentConfigInput) =>
+    postForm<{ ok: boolean; agent?: AgentConfig; error?: string }>("/SaveAgent", { payload: JSON.stringify(a) }),
+  deleteAgent: (id: string) => postForm<{ ok: boolean }>("/DeleteAgent", { id }),
+  draftAgent: (description: string) =>
+    postForm<{ ok: boolean; draft?: AgentConfigInput; error?: string }>("/DraftAgent", {
+      payload: JSON.stringify({ description }),
+    }),
+  agentRuns: (agentId?: string, limit = 50) =>
+    getJson<AgentRun[]>(`/AgentRuns?limit=${limit}${agentId ? `&agentId=${encodeURIComponent(agentId)}` : ""}`),
 };

@@ -328,6 +328,50 @@ body {
 
 @media (max-width: 560px) { .ins-form { grid-template-columns: 1fr; } }
 
+/* ---------- automations ---------- */
+.ins-modal-wide { width: min(1000px, 100%); }
+.ins-auto-grid { display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
+.ins-auto-list { display: flex; flex-direction: column; gap: 6px; }
+.ins-auto-row { display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
+.ins-auto-row.active { border-color: var(--accent); }
+.ins-auto-open { flex: 1 1 auto; background: transparent; border: none; color: var(--fg); font: inherit; cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 2px; }
+.ins-auto-name { font-size: 13.5px; font-weight: 600; }
+.ins-auto-sub { font-size: 11.5px; }
+.ins-auto-actions { display: flex; gap: 5px; flex: 0 0 auto; }
+.ins-auto-editor { min-width: 0; }
+
+.ins-flow { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; padding: 12px; margin-bottom: 14px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; }
+.ins-flow-node { border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 12px; min-width: 92px; background: var(--panel); }
+.ins-flow-node.trigger { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.ins-flow-node.filter { border-color: color-mix(in srgb, #d29922 55%, transparent); }
+.ins-flow-node.agent { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.ins-flow-node.output { border-color: var(--border-strong); }
+.ins-flow-kind { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--sub); }
+.ins-flow-title { font-size: 13px; font-weight: 600; margin-top: 2px; word-break: break-word; }
+.ins-flow-arrow { align-self: center; color: var(--sub); }
+
+.ins-describe { display: flex; gap: 8px; margin-bottom: 14px; }
+.ins-describe input { flex: 1 1 auto; background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--fg); padding: 9px 12px; font: inherit; outline: none; }
+
+.ins-runs { display: grid; gap: 6px; }
+.ins-run-row { display: grid; grid-template-columns: 72px 1fr 110px 150px 80px 2fr; gap: 8px; align-items: center;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 12.5px; }
+.ins-run-status { text-transform: uppercase; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; text-align: center;
+  border-radius: 6px; padding: 2px 4px; }
+.ins-run-status.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.ins-run-status.error { background: color-mix(in srgb, var(--err) 15%, transparent); color: var(--err); }
+.ins-run-status.running { background: color-mix(in srgb, #d29922 18%, transparent); color: #b07e12; }
+.ins-run-agent { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ins-run-out { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) {
+  .ins-auto-grid { grid-template-columns: 1fr; }
+  .ins-run-row { grid-template-columns: 60px 1fr; }
+  .ins-run-trigger, .ins-run-time, .ins-run-dur, .ins-run-out { display: none; }
+}
+
 /* ---------- toasts ---------- */
 .ins-toaster { position: fixed; top: 16px; right: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; }
 .ins-toast { padding: 10px 14px; border-radius: 10px; font-size: 13px; cursor: pointer; max-width: 340px;

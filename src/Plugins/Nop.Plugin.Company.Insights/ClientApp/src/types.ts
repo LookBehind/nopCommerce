@@ -151,6 +151,58 @@ export interface MemoryRow {
   createdAt: string;
 }
 
+// ---- Background agents (automations) ----
+
+/** As returned by /Agents (filter + outputSinks are raw JSON strings). */
+export interface AgentConfig {
+  id?: string;
+  name: string;
+  enabled: boolean;
+  builtIn?: boolean;
+  companyId?: number | null;
+  triggerKind: "event" | "schedule";
+  eventType?: string | null;
+  cron?: string | null;
+  filter?: string | null;
+  systemPrompt?: string | null;
+  instruction?: string | null;
+  outputSinks?: string | null;
+  outputTarget?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Shape sent to /SaveAgent (filter object + outputSinks array). */
+export interface AgentConfigInput {
+  id?: string;
+  name: string;
+  enabled: boolean;
+  companyId?: number | null;
+  triggerKind: "event" | "schedule";
+  eventType?: string;
+  cron?: string;
+  filter?: Record<string, unknown>;
+  systemPrompt?: string;
+  instruction?: string;
+  outputSinks?: string[];
+  outputTarget?: string;
+}
+
+export interface AgentRun {
+  id: number;
+  agentId: string;
+  agentName?: string;
+  eventId?: number | null;
+  triggerType?: string;
+  input?: string;
+  startedAt: string;
+  finishedAt?: string | null;
+  durationMs?: number | null;
+  status: string;
+  output?: string | null;
+  error?: string | null;
+}
+
 /** react-grid-layout item (subset we persist). */
 export interface GridItem {
   i: string;
