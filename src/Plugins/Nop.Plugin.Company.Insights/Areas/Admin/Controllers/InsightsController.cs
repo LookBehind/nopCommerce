@@ -477,7 +477,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                     await WriteSseAsync("status", note);
 
                 var result = await turnTask;
-                var payload = JsonSerializer.Serialize(new
+                var donePayload = JsonSerializer.Serialize(new
                 {
                     reply = result.Reply,
                     widgets = result.Widgets.Select(w => new
@@ -492,7 +492,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                         rows = w.Rows
                     })
                 });
-                await WriteSseAsync("done", payload);
+                await WriteSseAsync("done", donePayload);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
