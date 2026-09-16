@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -76,7 +77,12 @@ namespace Nop.Plugin.Company.Insights.Services
                     if (json == null)
                         return new AgentTurnResult { Reply = content.Trim() };
 
-                    using var doc = JsonDocument.Parse(json);
+                    // The model routinely writes Markdown (raw newlines, tabs, stray quotes) inside the
+                    // JSON string values, which is invalid JSON. Parse tolerantly; if it still won't parse,
+                    // recover the human answer instead of failing the whole turn with a misleading error.
+                    using var doc = TryParseJsonObject(json);
+                    if (doc == null)
+                        return new AgentTurnResult { Reply = RecoverFinalText(json) ?? content.Trim() };
                     var root = doc.RootElement;
 
                     if (root.TryGetProperty("final", out var finalEl))
@@ -95,7 +101,18 @@ namespace Nop.Plugin.Company.Insights.Services
                     {
                         var tool = actionEl.GetString() ?? "";
                         root.TryGetProperty("args", out var argsEl);
-                        var (observation, dataset) = await ExecuteToolAsync(tool, argsEl, memoryKey, scope, cancellationToken);
+                        string observation;
+                        InsightsReportResult dataset = null;
+                        try
+                        {
+                            (observation, dataset) = await ExecuteToolAsync(tool, argsEl, memoryKey, scope, cancellationToken);
+                        }
+                        catch (Exception toolEx) when (!(toolEx is OperationCanceledException && cancellationToken.IsCancellationRequested))
+                        {
+                            // A tool failure shouldn't sink the whole turn — feed it back so the model can adapt.
+                            await _logger.WarningAsync($"Insights agent tool '{tool}' failed", toolEx);
+                            observation = $"error: the '{tool}' tool failed ({toolEx.Message}). Try a different tool or answer with what you already have.";
+                        }
                         if (dataset != null)
                             lastDataset = dataset;
 
@@ -113,12 +130,22 @@ namespace Nop.Plugin.Company.Insights.Services
                     Reply = "I couldn't finish that within a few steps — try a more specific question."
                 };
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw; // the user cancelled (Stop) — let the controller handle it, don't show an error
+            }
             catch (Exception ex)
             {
                 await _logger.ErrorAsync("Insights agent turn failed", ex);
+                // Only blame the model warming up when it actually didn't respond (timeout/unreachable);
+                // a real bug must NOT masquerade as a cold start.
+                var modelUnreachable = ex is OperationCanceledException || ex is TaskCanceledException
+                    || ex is HttpRequestException || ex is TimeoutException;
                 return new AgentTurnResult
                 {
-                    Reply = "The analysis model is warming up (it scales to zero when idle). Please try again in a minute."
+                    Reply = modelUnreachable
+                        ? "The analysis model didn't respond in time — it may be scaling up from idle. Please try again in a minute."
+                        : "Something went wrong while answering that. Please try again, or rephrase your question."
                 };
             }
         }
@@ -147,7 +174,12 @@ namespace Nop.Plugin.Company.Insights.Services
             try
             {
                 var content = await _llm.CompleteAsync(InsightsLlmClient.DefaultModel, messages, 0.2, 900, LlmTimeout, cancellationToken);
-                return ExtractJsonObject(content);
+                var json = ExtractJsonObject(content);
+                if (json == null)
+                    return null;
+                // Re-emit as canonical JSON so raw newlines in systemPrompt/instruction don't break the caller's parse.
+                using var doc = TryParseJsonObject(json);
+                return doc?.RootElement.GetRawText() ?? json;
             }
             catch (Exception ex)
             {
@@ -371,6 +403,96 @@ namespace Nop.Plugin.Company.Insights.Services
                 }
             }
             return null;
+        }
+
+        /// <summary>Parses the model's JSON envelope, retrying once after escaping raw control chars that
+        /// LLMs leave inside Markdown string values. Returns null if it's unparseable even after repair.</summary>
+        private static JsonDocument TryParseJsonObject(string json)
+        {
+            try
+            {
+                return JsonDocument.Parse(json);
+            }
+            catch (JsonException)
+            {
+                try
+                {
+                    return JsonDocument.Parse(EscapeControlCharsInStrings(json));
+                }
+                catch (JsonException)
+                {
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Escapes literal newlines/tabs/control chars that appear INSIDE JSON string literals (models
+        /// emit Markdown with real newlines, which is invalid JSON). Chars outside strings are untouched.
+        /// </summary>
+        private static string EscapeControlCharsInStrings(string json)
+        {
+            if (string.IsNullOrEmpty(json))
+                return json;
+
+            var sb = new StringBuilder(json.Length + 32);
+            var inString = false;
+            var escape = false;
+            foreach (var c in json)
+            {
+                if (inString)
+                {
+                    if (escape) { sb.Append(c); escape = false; continue; }
+                    switch (c)
+                    {
+                        case '\\': sb.Append(c); escape = true; break;
+                        case '"': sb.Append(c); inString = false; break;
+                        case '\n': sb.Append("\\n"); break;
+                        case '\r': sb.Append("\\r"); break;
+                        case '\t': sb.Append("\\t"); break;
+                        default:
+                            if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4"));
+                            else sb.Append(c);
+                            break;
+                    }
+                }
+                else
+                {
+                    sb.Append(c);
+                    if (c == '"') inString = true;
+                }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Last-ditch recovery when the {"final":"..."} envelope won't parse even after repair (e.g. the
+        /// answer itself contains unescaped quotes). Pulls out the answer text so the user still sees it
+        /// rather than a misleading error. Returns null if there's no recognizable "final" field.
+        /// </summary>
+        private static string RecoverFinalText(string json)
+        {
+            if (string.IsNullOrEmpty(json))
+                return null;
+            var key = json.IndexOf("\"final\"", StringComparison.Ordinal);
+            if (key < 0)
+                return null;
+            var colon = json.IndexOf(':', key + 7);
+            if (colon < 0)
+                return null;
+            var open = json.IndexOf('"', colon + 1);
+            if (open < 0)
+                return null;
+            // End the value at the last quote before the "widgets" key (or the tail of the object).
+            var widgetsAt = json.IndexOf("\"widgets\"", open + 1, StringComparison.Ordinal);
+            var searchEnd = widgetsAt >= 0 ? widgetsAt : json.Length;
+            var close = json.LastIndexOf('"', searchEnd - 1, searchEnd - 1 - open);
+            if (close <= open)
+                return null;
+            var raw = json.Substring(open + 1, close - open - 1);
+            // Turn escaped sequences into their real characters for display (Markdown renders them).
+            return raw.Replace("\\n", "\n").Replace("\\r", "\r").Replace("\\t", "\t")
+                      .Replace("\\\"", "\"").Replace("\\/", "/").Replace("\\\\", "\\").Trim();
         }
 
         private static string GetString(JsonElement el, string prop)
