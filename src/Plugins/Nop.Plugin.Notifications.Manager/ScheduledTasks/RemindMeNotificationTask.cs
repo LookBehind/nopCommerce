@@ -53,7 +53,8 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         /// </summary>
         private const int SLOT_MINUTES = 15;
 
-        private const string LLM_MODEL = "gemma-4-31b-it-awq";
+        /// <summary>Env override for the KubeAI model id. Defaults to qwen3-8-27b-awq.</summary>
+        private static readonly string LLM_MODEL = Env("REMINDME_LLM_MODEL", "qwen3-8-27b-awq");
 
         /// <summary>
         /// Hard ceiling on the whole run, measured from ExecuteAsync entry. Leaves a 5-minute
@@ -67,20 +68,34 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         /// <summary>
         /// How long we're willing to wait, once, for the model to come out of a cold start before
         /// giving up on LLM recommendations for this entire run. Measured cold start (pod creation
-        /// to Ready) was ~6-10 minutes for gemma-4-31b-it-awq. Kept as a defensive fallback even
-        /// though the Model CR's minReplicas is now pinned to 1 specifically to avoid this path.
+        /// to Ready) was ~6-10 minutes for gemma-4-31b-it-awq; kept as-is for qwen3-8-27b-awq since
+        /// both are served the same way (KubeAI/vLLM, scale-to-zero) and cold start is dominated by
+        /// pod scheduling/model load rather than anything model-specific.
         /// </summary>
         private static readonly TimeSpan COLD_START_BUDGET = TimeSpan.FromMinutes(8);
 
         private static readonly TimeSpan READINESS_POLL_INTERVAL = TimeSpan.FromSeconds(15);
 
         /// <summary>
-        /// Per-customer LLM call timeout. Generous relative to the ~2s warm latency measured
-        /// against real prod order/candidate data - this is not the lever that protects the SLA
-        /// (GLOBAL_DEADLINE is), it just bounds how long a single stuck request can hold up the
-        /// loop before falling back to the generic reminder for that one customer.
+        /// Per-customer LLM call timeout. qwen3-8-27b-awq has thinking mode on by default, which
+        /// adds a reasoning preamble before the answer - warm-latency comparison against
+        /// gemma-4-31b-it-awq on representative order/candidate data showed gemma at ~2-3s but
+        /// qwen ranging ~6-16s for the same prompts, so this was raised from 15s to keep that
+        /// reasoning overhead from causing more frequent silent fallback to the generic reminder.
+        /// This is still not the lever that protects the SLA (GLOBAL_DEADLINE is) - it just bounds
+        /// how long a single stuck request can hold up the loop before falling back for that one
+        /// customer. Env-overridable so a timeout regression can be tuned without a redeploy.
         /// </summary>
-        private static readonly TimeSpan LLM_PER_CALL_TIMEOUT = TimeSpan.FromSeconds(15);
+        private static readonly TimeSpan LLM_PER_CALL_TIMEOUT =
+            TimeSpan.FromSeconds(int.TryParse(Env("REMINDME_LLM_PER_CALL_TIMEOUT_SECONDS", "30"), out var llmTimeoutSeconds)
+                ? llmTimeoutSeconds
+                : 30);
+
+        private static string Env(string name, string fallback)
+        {
+            var v = Environment.GetEnvironmentVariable(name);
+            return string.IsNullOrWhiteSpace(v) ? fallback : v;
+        }
 
         private const string SYSTEM_PROMPT = """
             You are a meal recommendation assistant. Use the user's previous orders to guess their meal preferences. Each previous order may include the customer's own rating (1-5) and comment for that product - weigh these over raw order frequency: a product ordered often but rated low, or with a negative comment, should NOT be treated as a preference and should not be recommended or used to justify a similar recommendation. Candidate products may include a rating: "you rated this" means the customer's own past rating/comment on that exact candidate and should be weighed the same way as previous-order ratings; "avg rating" is the average from all other customers on a candidate the customer has not personally reviewed, and should be used as a general quality signal, not a personal preference signal. Prefer higher-rated candidates when preferences are otherwise similar. Try to guess possible dietary restrictions and use that information when recommending. Use one sentence to explain to the user the reasoning behind your recommendation.
