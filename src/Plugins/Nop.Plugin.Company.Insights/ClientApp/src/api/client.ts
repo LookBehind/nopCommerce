@@ -201,7 +201,19 @@ export const api = {
     getJson<AgentRun[]>(
       `/AgentRuns?limit=${limit}${agentId ? `&agentId=${encodeURIComponent(agentId)}` : ""}${ctxQuery(ctx, true)}`
     ),
+
+  // Telegram target discovery (pick a group by name instead of a numeric chat id)
+  telegramChats: () => getJson<{ enabled: boolean; chats: TelegramChatOption[] }>("/TelegramChats"),
+  telegramDiscover: () =>
+    postForm<{ enabled: boolean; chats: TelegramChatOption[] }>("/TelegramDiscover", {}),
 };
+
+export interface TelegramChatOption {
+  id: string;
+  title: string;
+  type: string;
+  username?: string | null;
+}
 
 /** Profile context as a query-string fragment (leading "?" unless `append` prefixes with "&"). */
 function ctxQuery(ctx?: ProfileContext, append = false): string {

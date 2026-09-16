@@ -35,6 +35,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         private readonly IInsightsWorkspaceService _workspaceService;
         private readonly IInsightsScheduleService _scheduleService;
         private readonly IInsightsScheduleRunner _scheduleRunner;
+        private readonly IInsightsTelegramChatService _telegramChatService;
         private readonly InsightsLlmClient _llmClient;
         private readonly IWorkContext _workContext;
         private readonly InsightsMemoryConfig _config;
@@ -71,6 +72,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             IInsightsWorkspaceService workspaceService,
             IInsightsScheduleService scheduleService,
             IInsightsScheduleRunner scheduleRunner,
+            IInsightsTelegramChatService telegramChatService,
             InsightsLlmClient llmClient,
             IWorkContext workContext,
             InsightsMemoryConfig config,
@@ -87,6 +89,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             _workspaceService = workspaceService;
             _scheduleService = scheduleService;
             _scheduleRunner = scheduleRunner;
+            _telegramChatService = telegramChatService;
             _llmClient = llmClient;
             _workContext = workContext;
             _config = config;
@@ -352,6 +355,30 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             await _agentConfigService.DeleteAsync(id, HttpContext.RequestAborted);
             return Json(new { ok = true });
         }
+
+        /// <summary>Telegram chats the bot has been seen in (for the automation target dropdown).</summary>
+        [HttpGet]
+        public async Task<IActionResult> TelegramChats()
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+            var chats = await _telegramChatService.ListAsync(HttpContext.RequestAborted);
+            return Json(new { enabled = _telegramChatService.Enabled, chats = chats.Select(MapChat) });
+        }
+
+        /// <summary>Poll Telegram for recent chats, save them, and return the updated list.</summary>
+        [HttpPost]
+        public async Task<IActionResult> TelegramDiscover()
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+            if (!_telegramChatService.Enabled)
+                return Json(new { enabled = false, chats = System.Array.Empty<object>() });
+            var chats = await _telegramChatService.DiscoverAsync(HttpContext.RequestAborted);
+            return Json(new { enabled = true, chats = chats.Select(MapChat) });
+        }
+
+        private static object MapChat(TelegramChat c) => new { id = c.Id, title = c.Title, type = c.Type, username = c.Username };
 
         /// <summary>Recent agent runs (observability), optionally for one agent — scoped to the automations
         /// the caller may manage (a Workplace Manager only sees their own company's runs).</summary>

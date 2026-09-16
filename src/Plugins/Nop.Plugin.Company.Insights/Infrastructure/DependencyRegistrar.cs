@@ -31,6 +31,7 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
             services.AddScoped<IInsightsAgentRunner, InsightsAgentRunner>();
             services.AddScoped<IInsightsRetentionJob, InsightsRetentionJob>();
             services.AddScoped<Nop.Services.Tasks.IRecurringTaskRegistrar, InsightsAgentBootRegistrar>();
+            services.AddScoped<IInsightsTelegramChatService, InsightsTelegramChatService>();
             services.AddSingleton<InsightsMemoryConfig>();
 
             // Typed client for the in-cluster KubeAI/vLLM gateway (OpenAI-compatible).

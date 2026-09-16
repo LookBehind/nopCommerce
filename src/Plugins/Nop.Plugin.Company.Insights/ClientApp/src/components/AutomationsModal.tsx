@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { ProfileContext } from "../api/client";
+import type { ProfileContext, TelegramChatOption } from "../api/client";
 import type { AgentConfig, AgentConfigInput, AgentRun } from "../types";
 import { useWorkspace } from "../store/workspace";
 import { confirmDialog, toast } from "../ui/feedback";
@@ -16,6 +16,13 @@ const EVENT_TYPES = [
   "product-updated",
 ];
 const SINKS = ["dashboard", "telegram", "memory"];
+// Friendlier labels + where each output actually lands.
+const SINK_LABEL: Record<string, string> = { dashboard: "Runs history", telegram: "Telegram", memory: "Agent memory" };
+const SINK_HINT: Record<string, string> = {
+  dashboard: "shows here in the Runs tab",
+  telegram: "posts to a Telegram group",
+  memory: "saved to the agent's long-term memory",
+};
 
 interface Editor {
   id?: string;
@@ -139,7 +146,7 @@ function FlowDiagram({ e }: { e: Editor }) {
       <div className="ins-flow-arrow">▶</div>
       <div className="ins-flow-node output">
         <div className="ins-flow-kind">Output</div>
-        <div className="ins-flow-title">{e.sinks.join(", ") || "—"}</div>
+        <div className="ins-flow-title">{e.sinks.map((s) => SINK_LABEL[s] ?? s).join(", ") || "—"}</div>
       </div>
     </div>
   );
@@ -159,6 +166,36 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
   const selectedProfileId = useWorkspace((s) => s.selectedProfileId);
   const selectedCompanyId = useWorkspace((s) => s.selectedCompanyId);
   const ctx: ProfileContext = { profileId: selectedProfileId || undefined, companyId: selectedCompanyId };
+
+  // Telegram target discovery (pick a group by name; no need to hunt for a numeric chat id).
+  const [tgChats, setTgChats] = useState<TelegramChatOption[]>([]);
+  const [tgEnabled, setTgEnabled] = useState(true);
+  const [tgDiscovering, setTgDiscovering] = useState(false);
+  const [manualChat, setManualChat] = useState(false);
+
+  async function loadTgChats() {
+    try {
+      const res = await api.telegramChats();
+      setTgEnabled(res.enabled);
+      setTgChats(res.chats);
+    } catch {
+      /* ignore */
+    }
+  }
+  async function discoverTgChats() {
+    setTgDiscovering(true);
+    try {
+      const res = await api.telegramDiscover();
+      setTgEnabled(res.enabled);
+      setTgChats(res.chats);
+      if (res.enabled && res.chats.length === 0)
+        toast.info("No groups found yet — add the bot to a group (or send a command there), then refresh.");
+    } catch {
+      toast.error("Couldn't reach Telegram");
+    } finally {
+      setTgDiscovering(false);
+    }
+  }
 
   async function refresh() {
     try {
@@ -183,6 +220,12 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
     if (tab === "runs") void refreshRuns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  const editingTelegram = !!editor?.sinks.includes("telegram");
+  useEffect(() => {
+    if (editingTelegram && tgChats.length === 0) void loadTgChats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingTelegram]);
 
   async function save() {
     if (!editor) return;
@@ -231,7 +274,7 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
         setEditor((cur) => applyDraft(cur ?? blankEditor(), res.draft!));
         toast.success("Draft ready — review and save");
       } else {
-        toast.error("The assistant couldn't draft that (the model may be warming up) — fill the form manually.");
+        toast.error("The assistant couldn't draft that — fill the form manually.");
         setEditor((cur) => cur ?? blankEditor());
       }
     } catch {
@@ -365,6 +408,7 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
                             <button
                               key={s}
                               type="button"
+                              title={SINK_HINT[s]}
                               className={`ins-chip ${editor.sinks.includes(s) ? "on" : ""}`}
                               onClick={() =>
                                 setEditor({
@@ -373,16 +417,55 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
                                 })
                               }
                             >
-                              {s}
+                              {SINK_LABEL[s] ?? s}
                             </button>
                           ))}
                         </div>
+                        {editor.sinks.length > 0 && (
+                          <div className="ins-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                            {editor.sinks.map((s) => `${SINK_LABEL[s] ?? s} — ${SINK_HINT[s] ?? ""}`).join(" · ")}
+                          </div>
+                        )}
                       </div>
                       {editor.sinks.includes("telegram") && (
-                        <label style={{ gridColumn: "1 / -1" }}>
-                          Telegram chat id
-                          <input value={editor.outputTarget} onChange={(e) => setEditor({ ...editor, outputTarget: e.target.value })} placeholder="-1001234567890" />
-                        </label>
+                        <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <span>Telegram group</span>
+                            <button type="button" className="ins-btn subtle" disabled={tgDiscovering} onClick={() => void discoverTgChats()}>
+                              {tgDiscovering ? "Refreshing…" : "⟳ Refresh groups"}
+                            </button>
+                          </div>
+                          {!tgEnabled ? (
+                            <div className="ins-muted">Telegram isn't configured for this tenant.</div>
+                          ) : manualChat ||
+                            (!!editor.outputTarget && !tgChats.some((c) => c.id === editor.outputTarget)) ? (
+                            <input
+                              value={editor.outputTarget}
+                              onChange={(e) => setEditor({ ...editor, outputTarget: e.target.value })}
+                              placeholder="-1001234567890"
+                            />
+                          ) : (
+                            <select
+                              value={editor.outputTarget}
+                              onChange={(e) => setEditor({ ...editor, outputTarget: e.target.value })}
+                            >
+                              <option value="">— pick a group —</option>
+                              {tgChats.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.title} ({c.type})
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          <div className="ins-muted" style={{ fontSize: 12 }}>
+                            {tgChats.length === 0 && tgEnabled
+                              ? "No groups yet. Add the bot to a group (or send a command there), then Refresh."
+                              : "Don't see it? Add the bot to the group, then Refresh."}{" "}
+                            <button type="button" className="ins-linkbtn" onClick={() => setManualChat((v) => !v)}>
+                              {manualChat ? "pick from list" : "enter id manually"}
+                            </button>
+                          </div>
+                        </div>
                       )}
                       <div className="ins-form-actions">
                         <label className="ins-muted" style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
