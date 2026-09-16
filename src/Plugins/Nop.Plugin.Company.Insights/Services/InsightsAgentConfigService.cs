@@ -161,6 +161,70 @@ namespace Nop.Plugin.Company.Insights.Services
                 SyncScheduleJob(c);
         }
 
+        // Built-in agents shipped ready-to-enable (disabled by default so they don't run until the
+        // user turns them on). Fixed ids → seeded once, never overwriting user edits (ON CONFLICT DO NOTHING).
+        private static readonly InsightsAgentConfig[] BuiltIns = new[]
+        {
+            new InsightsAgentConfig
+            {
+                Id = "builtin-product-quality", Name = "Product-quality reviewer", BuiltIn = true, Enabled = false,
+                TriggerKind = "event", EventType = "product-created",
+                SystemPrompt = "You are a catalog quality assistant for MySnacks. You are READ-ONLY.",
+                Instruction = "Check this new product against catalog guidelines: a clear descriptive name, an assigned vendor, an intended published state, and a sensible category. Flag anything missing or non-compliant in one short note.",
+                OutputSinksJson = "[\"dashboard\"]"
+            },
+            new InsightsAgentConfig
+            {
+                Id = "builtin-vendor-analyzer", Name = "Vendor analyzer", BuiltIn = true, Enabled = false,
+                TriggerKind = "schedule", Cron = "0 6 * * 1",
+                SystemPrompt = "You are a vendor performance analyst for MySnacks. You are READ-ONLY.",
+                Instruction = "From recent reviews and ordering trends, recommend products to decommission (stale or poorly rated) and best-sellers to promote. Keep it to a short, actionable list.",
+                OutputSinksJson = "[\"dashboard\"]"
+            },
+            new InsightsAgentConfig
+            {
+                Id = "builtin-bad-review-responder", Name = "Bad-review responder", BuiltIn = true, Enabled = false,
+                TriggerKind = "event", EventType = "review-added", FilterJson = "{\"maxRating\":2}",
+                SystemPrompt = "You are a customer-care assistant for MySnacks. You are READ-ONLY.",
+                Instruction = "Summarize this low-rated review's complaint and suggest a concrete resolution the vendor can act on. Be brief and constructive.",
+                OutputSinksJson = "[\"dashboard\"]"
+            }
+        };
+
+        public async Task SeedBuiltInsAsync(CancellationToken cancellationToken = default)
+        {
+            if (!Enabled)
+                return;
+            try
+            {
+                await EnsureSchemaAsync(cancellationToken);
+                await using var conn = new NpgsqlConnection(_config.BuildConnectionString());
+                await conn.OpenAsync(cancellationToken);
+                foreach (var b in BuiltIns)
+                {
+                    await using var cmd = new NpgsqlCommand(
+                        "INSERT INTO insights_agent (id, tenant, name, enabled, built_in, trigger_kind, event_type, cron, filter, " +
+                        "system_prompt, instruction, output_sinks) VALUES (@id, @tenant, @name, false, true, @kind, @etype, @cron, " +
+                        "@filter::jsonb, @sys, @instr, @sinks::jsonb) ON CONFLICT (id) DO NOTHING", conn);
+                    cmd.Parameters.AddWithValue("id", b.Id);
+                    cmd.Parameters.AddWithValue("tenant", _config.Tenant);
+                    cmd.Parameters.AddWithValue("name", b.Name);
+                    cmd.Parameters.AddWithValue("kind", b.TriggerKind);
+                    cmd.Parameters.AddWithValue("etype", (object)b.EventType ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("cron", (object)b.Cron ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("filter", NpgsqlDbType.Text, string.IsNullOrWhiteSpace(b.FilterJson) ? "{}" : b.FilterJson);
+                    cmd.Parameters.AddWithValue("sys", b.SystemPrompt);
+                    cmd.Parameters.AddWithValue("instr", b.Instruction);
+                    cmd.Parameters.AddWithValue("sinks", NpgsqlDbType.Text, b.OutputSinksJson ?? "[\"dashboard\"]");
+                    await cmd.ExecuteNonQueryAsync(cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                await _logger.WarningAsync("Insights agent: seed built-ins failed", ex);
+            }
+        }
+
         private void SyncScheduleJob(InsightsAgentConfig c)
         {
             var jobId = JobId(c.Id);

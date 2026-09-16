@@ -26,6 +26,27 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
         }
     }
 
+    /// <summary>
+    /// Review-triaged: EntityUpdatedEvent can't see the null→set transition, so we treat a review
+    /// update whose TriagedOnUtc was stamped just now (within ~2 min) as a fresh triage. Deduped per
+    /// review (60 min) so only the triage save fires — later edits to an already-triaged review don't.
+    /// </summary>
+    public class InsightsReviewTriagedConsumer : IConsumer<EntityUpdatedEvent<ProductReview>>
+    {
+        private const int DedupeMinutes = 60;
+        private readonly IInsightsEventService _events;
+        public InsightsReviewTriagedConsumer(IInsightsEventService events) => _events = events;
+
+        public System.Threading.Tasks.Task HandleEventAsync(EntityUpdatedEvent<ProductReview> e)
+        {
+            var r = e.Entity;
+            if (!r.TriagedOnUtc.HasValue || (System.DateTime.UtcNow - r.TriagedOnUtc.Value).TotalSeconds > 120)
+                return System.Threading.Tasks.Task.CompletedTask;
+            var payload = JsonSerializer.Serialize(new { productId = r.ProductId, rating = r.Rating, triagedBy = r.TriagedByCustomerId });
+            return _events.EnqueueUniqueAsync(InsightsEventTypes.ReviewTriaged, "ProductReview", r.Id, null, payload, DedupeMinutes);
+        }
+    }
+
     public class InsightsOrderPlacedConsumer : IConsumer<OrderPlacedEvent>
     {
         private readonly IInsightsEventService _events;

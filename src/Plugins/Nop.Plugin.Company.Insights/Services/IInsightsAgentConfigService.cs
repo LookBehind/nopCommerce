@@ -23,5 +23,8 @@ namespace Nop.Plugin.Company.Insights.Services
 
         /// <summary>Re-register all enabled schedule-kind agents as Hangfire recurring jobs (boot).</summary>
         Task SyncSchedulesAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>Insert the built-in agents (ready-to-enable, disabled by default) if absent. Idempotent; never clobbers user edits.</summary>
+        Task SeedBuiltInsAsync(CancellationToken cancellationToken = default);
     }
 }

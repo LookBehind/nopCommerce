@@ -21,6 +21,7 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
 
         public async System.Threading.Tasks.Task RegisterAsync()
         {
+            await _configs.SeedBuiltInsAsync();
             await _configs.SyncSchedulesAsync();
             // Daily at 03:30 UTC.
             _recurringJobManager.AddOrUpdate<IInsightsRetentionJob>("insights-retention-cleanup", j => j.RunAsync(), "30 3 * * *");
