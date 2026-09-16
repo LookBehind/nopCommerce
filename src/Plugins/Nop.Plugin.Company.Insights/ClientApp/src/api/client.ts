@@ -100,17 +100,61 @@ export const api = {
   runReport: (id: string, params?: ReportParams, ctx?: ProfileContext) =>
     getJson<ReportResult>(`/Reports/${encodeURIComponent(id)}${reportQuery(params, ctx)}`),
 
-  // agent chat
-  chat: (
+  // agent chat — streamed as Server-Sent Events so long turns survive the proxy (Cloudflare ~100s).
+  // `onStatus` receives progress notes ("Running a report…"); the final `done` event carries the result.
+  chat: async (
     ctx: ProfileContext,
     messages: { role: string; content: string }[],
+    onStatus?: (note: string) => void,
     signal?: AbortSignal
-  ) =>
-    postForm<ChatTurnResponse>(
-      "/Chat",
-      { payload: JSON.stringify({ profileId: ctx.profileId, companyId: ctx.companyId, messages }) },
-      signal
-    ),
+  ): Promise<ChatTurnResponse> => {
+    const body = new URLSearchParams();
+    body.set("__RequestVerificationToken", antiforgeryToken());
+    body.set("payload", JSON.stringify({ profileId: ctx.profileId, companyId: ctx.companyId, messages }));
+
+    const res = await fetch(`${API_BASE}/Chat`, {
+      method: "POST",
+      headers: {
+        Accept: "text/event-stream",
+        "Content-Type": "application/x-www-form-urlencoded",
+        RequestVerificationToken: antiforgeryToken(),
+      },
+      credentials: "same-origin",
+      body: body.toString(),
+      signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let result: ChatTurnResponse | null = null;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      // SSE frames are separated by a blank line.
+      let sep: number;
+      while ((sep = buf.indexOf("\n\n")) >= 0) {
+        const frame = buf.slice(0, sep);
+        buf = buf.slice(sep + 2);
+        let event = "message";
+        const dataLines: string[] = [];
+        for (const raw of frame.split("\n")) {
+          const line = raw.replace(/\r$/, "");
+          if (!line || line.startsWith(":")) continue; // comment / heartbeat
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
+        }
+        const data = dataLines.join("\n");
+        if (event === "status") onStatus?.(data);
+        else if (event === "done") result = JSON.parse(data) as ChatTurnResponse;
+        else if (event === "error") throw new Error(data || "agent error");
+      }
+    }
+    if (!result) throw new Error("stream ended without a result");
+    return result;
+  },
   warmup: () => postForm<{ ready: boolean }>("/Warmup", {}),
 
   // workspace persistence (per user)

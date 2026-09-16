@@ -42,6 +42,7 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [warming, setWarming] = useState<number | null>(null); // elapsed seconds while warming
+  const [status, setStatus] = useState<string>(""); // live progress note streamed from the agent
   const [convId, setConvId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<ConversationHeader[]>([]);
@@ -115,6 +116,7 @@ export function ChatPanel() {
 
     const ac = new AbortController();
     abortRef.current = ac;
+    setStatus("");
     try {
       await ensureWarm(ac.signal);
       if (ac.signal.aborted) return;
@@ -122,6 +124,7 @@ export function ChatPanel() {
       const res = await api.chat(
         ctx,
         thread.map((m) => ({ role: m.role, content: m.content })),
+        (note) => setStatus(note),
         ac.signal
       );
       setLlmStatus("ready");
@@ -144,6 +147,7 @@ export function ChatPanel() {
     } finally {
       setBusy(false);
       setWarming(null);
+      setStatus("");
       abortRef.current = null;
     }
   }
@@ -269,7 +273,9 @@ export function ChatPanel() {
                 Waking the analysis model (it scales to zero when idle)… {warming}s
               </div>
             )}
-            {busy && warming === null && <div className="ins-chat-thinking">{profileName} is thinking…</div>}
+            {busy && warming === null && (
+              <div className="ins-chat-thinking">{status || `${profileName} is thinking…`}</div>
+            )}
           </div>
 
           <form

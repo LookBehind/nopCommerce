@@ -42,11 +42,12 @@ namespace Nop.Plugin.Company.Insights.Services
             _logger = logger;
         }
 
-        public async Task<AgentTurnResult> RunTurnAsync(ChatTurnRequest request, InsightsProfile profile, ReportScope scope, CancellationToken cancellationToken = default)
+        public async Task<AgentTurnResult> RunTurnAsync(ChatTurnRequest request, InsightsProfile profile, ReportScope scope, Action<string> reportStatus = null, CancellationToken cancellationToken = default)
         {
             profile ??= new InsightsProfile { Id = "analyst", Name = "Analyst", Persona = "a general BI analyst" };
             scope ??= ReportScope.Unscoped();
             var memoryKey = profile.Id;
+            void Report(string s) { try { reportStatus?.Invoke(s); } catch { /* status is best-effort */ } }
 
             var messages = new List<InsightsLlmClient.LlmMessage>
             {
@@ -72,6 +73,7 @@ namespace Nop.Plugin.Company.Insights.Services
             {
                 for (var i = 0; i < MaxIterations; i++)
                 {
+                    Report(i == 0 ? "Thinking…" : "Analyzing…");
                     var content = await _llm.CompleteAsync(
                         InsightsLlmClient.DefaultModel, messages, 0.0, null, LlmTimeout, cancellationToken);
 
@@ -103,6 +105,7 @@ namespace Nop.Plugin.Company.Insights.Services
                     {
                         var tool = actionEl.GetString() ?? "";
                         root.TryGetProperty("args", out var argsEl);
+                        Report(ToolStatusLabel(tool));
                         string observation;
                         InsightsReportResult dataset = null;
                         try
@@ -191,6 +194,18 @@ namespace Nop.Plugin.Company.Insights.Services
         }
 
         #region Tools
+
+        /// <summary>A short, user-facing label for the tool currently running (shown in the chat while it works).</summary>
+        private static string ToolStatusLabel(string tool) => tool switch
+        {
+            "list_reports" => "Looking up available reports…",
+            "run_report" => "Running a report…",
+            "query_orders" => "Querying orders…",
+            "list_reviews" => "Reading reviews…",
+            "recall" => "Recalling notes…",
+            "remember" => "Saving a note…",
+            _ => "Working…"
+        };
 
         private async Task<(string observation, InsightsReportResult dataset)> ExecuteToolAsync(
             string tool, JsonElement args, string memoryKey, ReportScope scope, CancellationToken ct)

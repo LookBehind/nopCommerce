@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -433,36 +434,50 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             var activeProfile = await _profileService.GetActiveProfileAsync(request.ProfileId, HttpContext.RequestAborted);
             var scope = await _profileService.ResolveScopeAsync(activeProfile, request.CompanyId, HttpContext.RequestAborted);
 
-            // The agent turn can take minutes on the self-hosted GPU (a reasoning model, uncapped). A plain
-            // synchronous response is cut by upstream proxies (Cloudflare ~100s -> 524), so stream whitespace
-            // heartbeats while the turn runs to keep the connection alive, then write the final JSON. Leading
-            // whitespace is valid JSON, so the browser parses the body unchanged (no client changes needed).
+            // The agent turn can take minutes on the self-hosted GPU. A plain synchronous response is cut by
+            // upstream proxies (Cloudflare ~100s -> 524), so we stream the turn as Server-Sent Events:
+            // `status` events report progress, `:` comment lines are heartbeats, and a final `done` event
+            // carries the reply + widgets. Continuous bytes keep the proxy connection alive for any duration.
             var ct = HttpContext.RequestAborted;
             HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
             Response.StatusCode = StatusCodes.Status200OK;
-            Response.ContentType = "application/json";
+            Response.ContentType = "text/event-stream";
             Response.Headers["Cache-Control"] = "no-cache";
             Response.Headers["X-Accel-Buffering"] = "no"; // ask any nginx hop not to buffer the stream
 
+            async Task WriteSseAsync(string @event, string data)
+            {
+                var frame = (@event != null ? $"event: {@event}\n" : string.Empty) + $"data: {data}\n\n";
+                await Response.WriteAsync(frame, ct);
+                await Response.Body.FlushAsync(ct);
+            }
+
+            // Agent progress notes land here (thread-safe); the loop below drains and streams them. Only this
+            // loop ever writes to the response, so there are no concurrent writes.
+            var statusQueue = new ConcurrentQueue<string>();
+
             try
             {
-                // Flush headers + a first byte right away so the proxy sees the response has started.
-                await Response.WriteAsync(" ", ct);
+                await Response.WriteAsync(": open\n\n", ct); // open the stream immediately
                 await Response.Body.FlushAsync(ct);
 
-                var turnTask = _agentService.RunTurnAsync(request, activeProfile, scope, ct);
+                var turnTask = _agentService.RunTurnAsync(request, activeProfile, scope, s => statusQueue.Enqueue(s), ct);
                 while (!turnTask.IsCompleted)
                 {
-                    var finished = await Task.WhenAny(turnTask, Task.Delay(TimeSpan.FromSeconds(10), ct));
+                    var finished = await Task.WhenAny(turnTask, Task.Delay(TimeSpan.FromSeconds(2), ct));
+                    while (statusQueue.TryDequeue(out var note))
+                        await WriteSseAsync("status", note);
                     if (finished != turnTask)
                     {
-                        await Response.WriteAsync(" ", ct); // heartbeat: keeps the proxy connection alive
+                        await Response.WriteAsync(": ping\n\n", ct); // heartbeat keeps the proxy alive
                         await Response.Body.FlushAsync(ct);
                     }
                 }
+                while (statusQueue.TryDequeue(out var note))
+                    await WriteSseAsync("status", note);
 
                 var result = await turnTask;
-                var json = JsonSerializer.Serialize(new
+                var payload = JsonSerializer.Serialize(new
                 {
                     reply = result.Reply,
                     widgets = result.Widgets.Select(w => new
@@ -477,8 +492,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                         rows = w.Rows
                     })
                 });
-                await Response.WriteAsync(json, ct);
-                await Response.Body.FlushAsync(ct);
+                await WriteSseAsync("done", payload);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

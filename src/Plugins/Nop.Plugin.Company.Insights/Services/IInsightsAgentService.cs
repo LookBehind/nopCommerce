@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Nop.Plugin.Company.Insights.Models;
@@ -12,9 +13,11 @@ namespace Nop.Plugin.Company.Insights.Services
     {
         /// <summary>
         /// Runs one turn under the given profile (persona) and data scope. The scope is applied to
-        /// every data tool so a Workplace Manager only ever sees their company's data.
+        /// every data tool so a Workplace Manager only ever sees their company's data. Optional
+        /// <paramref name="reportStatus"/> is invoked with short progress notes (e.g. "Running a report…")
+        /// which the SSE endpoint streams to the client so the connection stays alive on slow turns.
         /// </summary>
-        Task<AgentTurnResult> RunTurnAsync(ChatTurnRequest request, InsightsProfile profile, ReportScope scope, CancellationToken cancellationToken = default);
+        Task<AgentTurnResult> RunTurnAsync(ChatTurnRequest request, InsightsProfile profile, ReportScope scope, Action<string> reportStatus = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Meta-agent: turn a natural-language description into a draft background-agent config JSON
