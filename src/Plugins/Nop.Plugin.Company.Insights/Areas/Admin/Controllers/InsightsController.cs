@@ -26,6 +26,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         private readonly IInsightsReportService _reportService;
         private readonly IInsightsAgentService _agentService;
         private readonly IInsightsProfileService _profileService;
+        private readonly IInsightsEventService _eventService;
         private readonly IInsightsMemoryService _memoryService;
         private readonly IInsightsWorkspaceService _workspaceService;
         private readonly IInsightsScheduleService _scheduleService;
@@ -59,6 +60,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             IInsightsReportService reportService,
             IInsightsAgentService agentService,
             IInsightsProfileService profileService,
+            IInsightsEventService eventService,
             IInsightsMemoryService memoryService,
             IInsightsWorkspaceService workspaceService,
             IInsightsScheduleService scheduleService,
@@ -72,6 +74,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             _reportService = reportService;
             _agentService = agentService;
             _profileService = profileService;
+            _eventService = eventService;
             _memoryService = memoryService;
             _workspaceService = workspaceService;
             _scheduleService = scheduleService;
@@ -174,6 +177,28 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                 }),
                 companies = resolved.SelectableCompanies.Select(c => new { id = c.Id, name = c.Name })
             });
+        }
+
+        /// <summary>Recent background-agent trigger events (the durable stream) — observability.</summary>
+        [HttpGet]
+        public async Task<IActionResult> Events(int? limit)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+
+            var items = await _eventService.ListRecentAsync(limit ?? 50, HttpContext.RequestAborted);
+            return Json(items.Select(e => new
+            {
+                id = e.Id,
+                eventType = e.EventType,
+                entityType = e.EntityType,
+                entityId = e.EntityId,
+                companyId = e.CompanyId,
+                payload = e.Payload,
+                status = e.Status,
+                occurredAt = e.OccurredAt,
+                processedAt = e.ProcessedAt
+            }));
         }
 
         /// <summary>

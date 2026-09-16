@@ -21,6 +21,8 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
             services.AddScoped<IInsightsWorkspaceService, InsightsWorkspaceService>();
             services.AddScoped<IInsightsScheduleService, InsightsScheduleService>();
             services.AddScoped<IInsightsScheduleRunner, InsightsScheduleRunner>();
+            services.AddScoped<IInsightsEventService, InsightsEventService>();
+            services.AddScoped<IInsightsEventDispatcher, InsightsEventDispatcher>();
             services.AddSingleton<InsightsMemoryConfig>();
 
             // Typed client for the in-cluster KubeAI/vLLM gateway (OpenAI-compatible).
