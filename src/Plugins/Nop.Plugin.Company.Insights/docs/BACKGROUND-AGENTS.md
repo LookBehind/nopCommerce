@@ -181,6 +181,10 @@ the registry so users pick from supported types only.
 - **Cost / cold-start**: cap concurrent agent runs (Hangfire queue + concurrency limit); batch where
   possible; the model scales to zero, so prefer batched scheduled runs over many tiny event runs.
 - **Failure**: dispatcher/agent jobs are Hangfire-retried; the event row stays until processed.
+- **Retention / cleanup**: a Hangfire **daily recurring job** purges `insights_agent_event` and
+  `insights_agent_run` rows older than **30 days** (per tenant, in its Postgres) — bounded, auditable
+  history without unbounded growth. Batched deletes; only terminal (processed / finished) rows are
+  eligible so nothing in-flight is dropped.
 
 ---
 
@@ -251,7 +255,8 @@ high-volume events; (4) which built-ins ship enabled vs. ready-to-enable.
    the triage-action hook + the dispatcher skeleton (log-only sink). Prove events land + dispatch.
 2. **Time triggers** — delivery-approaching + day-closing per-slot jobs (reuse the nudge reconciler).
 3. **Agent config + runner + run ledger** — `insights_agent` store, matching, the scoped read-only
-   LLM run, sinks (feed + Telegram + memory), and `insights_agent_run` logging every execution.
+   LLM run, sinks (feed + Telegram + memory), `insights_agent_run` logging every execution, and the
+   daily 30-day retention cleanup for both the event stream and run history (§7).
 4. **Conversational authoring** — main-chat meta-agent that drafts a config + writes the background
    agent's system prompt, returning it for confirmation.
 5. **Automations UI** — flow-graph editor (view/edit nodes) + the run-history/observability page,
