@@ -18,7 +18,6 @@ const SUGGESTIONS = [
   "recent product reviews needing triage",
 ];
 
-const WARMUP_MAX_MS = 8 * 60 * 1000;
 
 export function ChatPanel() {
   const chatOpen = useWorkspace((s) => s.chatOpen);
@@ -41,7 +40,6 @@ export function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [warming, setWarming] = useState<number | null>(null); // elapsed seconds while warming
   const [status, setStatus] = useState<string>(""); // live progress note streamed from the agent
   const [convId, setConvId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -54,7 +52,7 @@ export function ChatPanel() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, busy, warming]);
+  }, [messages, busy, status]);
 
   const refreshHistory = useCallback(async () => {
     if (!persistence) return;
@@ -85,26 +83,6 @@ export function ChatPanel() {
     [persistence, convId, selectedProfileId]
   );
 
-  async function ensureWarm(signal: AbortSignal): Promise<void> {
-    if (useLlmStatus.getState().status === "ready") return;
-    setWarming(0);
-    setLlmStatus("warming");
-    const start = Date.now();
-    try {
-      while (!signal.aborted && Date.now() - start < WARMUP_MAX_MS) {
-        const { ready } = await api.warmup();
-        if (ready) {
-          setLlmStatus("ready");
-          return;
-        }
-        setWarming(Math.round((Date.now() - start) / 1000));
-        await new Promise((r) => setTimeout(r, 2500));
-      }
-    } finally {
-      setWarming(null);
-    }
-  }
-
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || busy) return;
@@ -118,9 +96,6 @@ export function ChatPanel() {
     abortRef.current = ac;
     setStatus("");
     try {
-      await ensureWarm(ac.signal);
-      if (ac.signal.aborted) return;
-
       const res = await api.chat(
         ctx,
         thread.map((m) => ({ role: m.role, content: m.content })),
@@ -146,7 +121,6 @@ export function ChatPanel() {
       }
     } finally {
       setBusy(false);
-      setWarming(null);
       setStatus("");
       abortRef.current = null;
     }
@@ -268,12 +242,7 @@ export function ChatPanel() {
             {messages.map((m, i) => (
               <MessageBubble key={i} message={m} />
             ))}
-            {warming !== null && (
-              <div className="ins-chat-thinking">
-                Waking the analysis model (it scales to zero when idle)… {warming}s
-              </div>
-            )}
-            {busy && warming === null && (
+            {busy && (
               <div className="ins-chat-thinking">{status || `${profileName} is thinking…`}</div>
             )}
           </div>

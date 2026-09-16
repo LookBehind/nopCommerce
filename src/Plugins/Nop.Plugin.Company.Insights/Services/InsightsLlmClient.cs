@@ -138,9 +138,8 @@ namespace Nop.Plugin.Company.Insights.Services
 
         /// <summary>
         /// Cheap readiness probe: a 1-token completion under a short timeout. Returns true if the model
-        /// answered (warm), false if it timed out or errored (still scaling up). Sending it also nudges
-        /// KubeAI to scale the model from zero, so the SPA can poll this to wake the model without
-        /// holding a long request open through the CDN.
+        /// answered, false if it timed out or errored. Kept as a health check — the model is pinned
+        /// warm (minReplicas 1, no scale-to-zero), so the SPA no longer needs to warm it before chatting.
         /// </summary>
         public async Task<bool> ProbeAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
         {

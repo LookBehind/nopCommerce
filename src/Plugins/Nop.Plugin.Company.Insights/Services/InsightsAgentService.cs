@@ -145,14 +145,14 @@ namespace Nop.Plugin.Company.Insights.Services
             catch (Exception ex)
             {
                 await _logger.ErrorAsync("Insights agent turn failed", ex);
-                // Only blame the model warming up when it actually didn't respond (timeout/unreachable);
-                // a real bug must NOT masquerade as a cold start.
+                // Distinguish a slow/unreachable model from a real bug (the model is pinned warm — no cold
+                // start — so a timeout means the request genuinely ran long or the gateway was unreachable).
                 var modelUnreachable = ex is OperationCanceledException || ex is TaskCanceledException
                     || ex is HttpRequestException || ex is TimeoutException;
                 return new AgentTurnResult
                 {
                     Reply = modelUnreachable
-                        ? "The analysis model didn't respond in time — it may be scaling up from idle. Please try again in a minute."
+                        ? "The analysis model didn't respond in time — that question may be too heavy. Try narrowing it or asking again."
                         : "Something went wrong while answering that. Please try again, or rephrase your question."
                 };
             }
@@ -191,7 +191,7 @@ namespace Nop.Plugin.Company.Insights.Services
             }
             catch (Exception ex)
             {
-                await _logger.WarningAsync("Insights meta-agent: draft failed (model may be warming up)", ex);
+                await _logger.WarningAsync("Insights meta-agent: draft failed", ex);
                 return null;
             }
         }

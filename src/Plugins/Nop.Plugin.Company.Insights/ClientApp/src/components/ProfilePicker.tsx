@@ -3,9 +3,9 @@ import { useLlmStatus } from "../ui/llmStatus";
 
 const STATUS_LABEL: Record<string, string> = {
   unknown: "Model status unknown",
-  warming: "Model is warming up…",
+  warming: "Model is busy…",
   ready: "Model is ready",
-  cold: "Model is asleep — first question will wake it",
+  cold: "Last request didn't complete — try again",
 };
 
 /**
