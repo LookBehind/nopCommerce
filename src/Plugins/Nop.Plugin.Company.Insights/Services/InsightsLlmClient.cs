@@ -111,8 +111,10 @@ namespace Nop.Plugin.Company.Insights.Services
                 Stream = false,
                 Temperature = temperature,
                 MaxTokens = maxTokens,
-                Messages = messages.ToList(),
-                ChatTemplateKwargs = new Dictionary<string, object> { ["enable_thinking"] = false }
+                Messages = messages.ToList()
+                // Thinking left ON (model default): richer reasoning. Long turns are safe now — the token cap
+                // is removed (the think block can't truncate the answer) and /Chat streams over SSE so slow
+                // turns don't hit Cloudflare's ~100s. To disable, set ChatTemplateKwargs { enable_thinking = false }.
             };
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
