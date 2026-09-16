@@ -27,6 +27,8 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         private readonly IInsightsAgentService _agentService;
         private readonly IInsightsProfileService _profileService;
         private readonly IInsightsEventService _eventService;
+        private readonly IInsightsAgentConfigService _agentConfigService;
+        private readonly IInsightsAgentRunService _agentRunService;
         private readonly IInsightsMemoryService _memoryService;
         private readonly IInsightsWorkspaceService _workspaceService;
         private readonly IInsightsScheduleService _scheduleService;
@@ -61,6 +63,8 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             IInsightsAgentService agentService,
             IInsightsProfileService profileService,
             IInsightsEventService eventService,
+            IInsightsAgentConfigService agentConfigService,
+            IInsightsAgentRunService agentRunService,
             IInsightsMemoryService memoryService,
             IInsightsWorkspaceService workspaceService,
             IInsightsScheduleService scheduleService,
@@ -75,6 +79,8 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             _agentService = agentService;
             _profileService = profileService;
             _eventService = eventService;
+            _agentConfigService = agentConfigService;
+            _agentRunService = agentRunService;
             _memoryService = memoryService;
             _workspaceService = workspaceService;
             _scheduleService = scheduleService;
@@ -200,6 +206,121 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                 processedAt = e.ProcessedAt
             }));
         }
+
+        // ---- Background agents (automations) ----
+
+        /// <summary>List background-agent configs.</summary>
+        [HttpGet]
+        public async Task<IActionResult> Agents()
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+            var items = await _agentConfigService.ListAsync(HttpContext.RequestAborted);
+            return Json(items.Select(MapAgent));
+        }
+
+        /// <summary>Create or update a background-agent config.</summary>
+        [HttpPost]
+        public async Task<IActionResult> SaveAgent([FromForm] string payload)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+            if (!_agentConfigService.Enabled)
+                return Json(new { ok = false, error = "persistence-disabled" });
+            if (string.IsNullOrWhiteSpace(payload))
+                return Json(new { ok = false, error = "empty" });
+
+            InsightsAgentConfig config;
+            try
+            {
+                using var doc = JsonDocument.Parse(payload);
+                var root = doc.RootElement;
+                string Str(string k) => root.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+                int? Int(string k) => root.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : (int?)null;
+                bool Bool(string k, bool d) => root.TryGetProperty(k, out var v) && (v.ValueKind == JsonValueKind.True || v.ValueKind == JsonValueKind.False) ? v.GetBoolean() : d;
+                string Raw(string k) => root.TryGetProperty(k, out var v) && (v.ValueKind == JsonValueKind.Object || v.ValueKind == JsonValueKind.Array) ? v.GetRawText() : null;
+
+                config = new InsightsAgentConfig
+                {
+                    Id = Str("id"),
+                    Name = Str("name"),
+                    Enabled = Bool("enabled", true),
+                    CompanyId = Int("companyId"),
+                    TriggerKind = Str("triggerKind") ?? "event",
+                    EventType = Str("eventType"),
+                    Cron = Str("cron"),
+                    FilterJson = Raw("filter"),
+                    SystemPrompt = Str("systemPrompt"),
+                    Instruction = Str("instruction"),
+                    OutputSinksJson = Raw("outputSinks"),
+                    OutputTarget = Str("outputTarget"),
+                    OwnerUserId = await CurrentUserIdAsync()
+                };
+            }
+            catch
+            {
+                return Json(new { ok = false, error = "bad-payload" });
+            }
+
+            if (string.IsNullOrWhiteSpace(config.Name))
+                return Json(new { ok = false, error = "missing-name" });
+
+            var saved = await _agentConfigService.UpsertAsync(config, HttpContext.RequestAborted);
+            return saved == null ? Json(new { ok = false, error = "save-failed" }) : Json(new { ok = true, agent = MapAgent(saved) });
+        }
+
+        /// <summary>Delete a background-agent config.</summary>
+        [HttpPost]
+        public async Task<IActionResult> DeleteAgent([FromForm] string id)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+            await _agentConfigService.DeleteAsync(id, HttpContext.RequestAborted);
+            return Json(new { ok = true });
+        }
+
+        /// <summary>Recent agent runs (observability), optionally for one agent.</summary>
+        [HttpGet]
+        public async Task<IActionResult> AgentRuns(string agentId, int? limit)
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+            var runs = await _agentRunService.ListRecentAsync(limit ?? 50, agentId, HttpContext.RequestAborted);
+            return Json(runs.Select(r => new
+            {
+                id = r.Id,
+                agentId = r.AgentId,
+                agentName = r.AgentName,
+                eventId = r.EventId,
+                triggerType = r.TriggerType,
+                input = r.InputJson,
+                startedAt = r.StartedAt,
+                finishedAt = r.FinishedAt,
+                durationMs = r.DurationMs,
+                status = r.Status,
+                output = r.OutputJson,
+                error = r.Error
+            }));
+        }
+
+        private static object MapAgent(InsightsAgentConfig a) => new
+        {
+            id = a.Id,
+            name = a.Name,
+            enabled = a.Enabled,
+            builtIn = a.BuiltIn,
+            companyId = a.CompanyId,
+            triggerKind = a.TriggerKind,
+            eventType = a.EventType,
+            cron = a.Cron,
+            filter = a.FilterJson,
+            systemPrompt = a.SystemPrompt,
+            instruction = a.Instruction,
+            outputSinks = a.OutputSinksJson,
+            outputTarget = a.OutputTarget,
+            createdAt = a.CreatedAt,
+            updatedAt = a.UpdatedAt
+        };
 
         /// <summary>
         /// Report catalog (no id) or a report result (with id). Matches the

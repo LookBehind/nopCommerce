@@ -23,7 +23,7 @@ namespace Nop.Plugin.Company.Insights.Services
     public class InsightsDeliveryTriggerJob : IInsightsDeliveryTriggerJob
     {
         private const int LocalUtcOffsetHours = 4;   // ScheduleDate is UTC+4 wall-clock
-        private const int DedupeWindowHours = 12;
+        private const int DedupeWindowMinutes = 12 * 60;
 
         private readonly INopDataProvider _dataProvider;
         private readonly IInsightsEventService _events;
@@ -57,7 +57,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 foreach (var o in orders)
                 {
                     var payload = JsonSerializer.Serialize(new { slot = slotHHmm, scheduleDate = o.ScheduleDate, total = o.OrderTotal, storeId });
-                    await _events.EnqueueUniqueAsync(InsightsEventTypes.DeliveryApproaching, "Order", o.Id, o.CompanyId, payload, DedupeWindowHours);
+                    await _events.EnqueueUniqueAsync(InsightsEventTypes.DeliveryApproaching, "Order", o.Id, o.CompanyId, payload, DedupeWindowMinutes);
                 }
             }
             catch (Exception ex)
@@ -86,7 +86,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 foreach (var c in byCompany)
                 {
                     var payload = JsonSerializer.Serialize(new { date = today.ToString("yyyy-MM-dd"), orders = c.Orders, storeId });
-                    await _events.EnqueueUniqueAsync(InsightsEventTypes.DayClosing, "Company", c.CompanyId, c.CompanyId, payload, DedupeWindowHours);
+                    await _events.EnqueueUniqueAsync(InsightsEventTypes.DayClosing, "Company", c.CompanyId, c.CompanyId, payload, DedupeWindowMinutes);
                 }
             }
             catch (Exception ex)

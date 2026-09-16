@@ -54,6 +54,8 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
 
     public class InsightsProductCreatedConsumer : IConsumer<EntityInsertedEvent<Product>>
     {
+        // Debounce: a product save can fire the entity event several times — collapse per product.
+        private const int DebounceMinutes = 2;
         private readonly IInsightsEventService _events;
         public InsightsProductCreatedConsumer(IInsightsEventService events) => _events = events;
 
@@ -61,12 +63,13 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
         {
             var p = e.Entity;
             var payload = JsonSerializer.Serialize(new { name = p.Name, vendorId = p.VendorId, published = p.Published });
-            return _events.EnqueueAsync(InsightsEventTypes.ProductCreated, "Product", p.Id, null, payload);
+            return _events.EnqueueUniqueAsync(InsightsEventTypes.ProductCreated, "Product", p.Id, null, payload, DebounceMinutes);
         }
     }
 
     public class InsightsProductUpdatedConsumer : IConsumer<EntityUpdatedEvent<Product>>
     {
+        private const int DebounceMinutes = 2;
         private readonly IInsightsEventService _events;
         public InsightsProductUpdatedConsumer(IInsightsEventService events) => _events = events;
 
@@ -74,7 +77,7 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
         {
             var p = e.Entity;
             var payload = JsonSerializer.Serialize(new { name = p.Name, vendorId = p.VendorId, published = p.Published });
-            return _events.EnqueueAsync(InsightsEventTypes.ProductUpdated, "Product", p.Id, null, payload);
+            return _events.EnqueueUniqueAsync(InsightsEventTypes.ProductUpdated, "Product", p.Id, null, payload, DebounceMinutes);
         }
     }
 }

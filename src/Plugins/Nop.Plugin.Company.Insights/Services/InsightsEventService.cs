@@ -68,7 +68,7 @@ namespace Nop.Plugin.Company.Insights.Services
             }
         }
 
-        public async Task<long> EnqueueUniqueAsync(string eventType, string entityType, int? entityId, int? companyId, string payloadJson, int dedupeWindowHours, CancellationToken cancellationToken = default)
+        public async Task<long> EnqueueUniqueAsync(string eventType, string entityType, int? entityId, int? companyId, string payloadJson, int dedupeWindowMinutes, CancellationToken cancellationToken = default)
         {
             if (!Enabled || string.IsNullOrWhiteSpace(eventType))
                 return 0;
@@ -84,7 +84,7 @@ namespace Nop.Plugin.Company.Insights.Services
                         "INSERT INTO insights_agent_event (tenant, event_type, entity_type, entity_id, company_id, payload, status) " +
                         "SELECT @tenant, @type, @etype, @eid, @cid, @payload::jsonb, 'new' " +
                         "WHERE NOT EXISTS (SELECT 1 FROM insights_agent_event WHERE tenant = @tenant AND event_type = @type " +
-                        "  AND entity_id IS NOT DISTINCT FROM @eid AND occurred_at > now() - make_interval(hours => @win)) " +
+                        "  AND entity_id IS NOT DISTINCT FROM @eid AND occurred_at > now() - make_interval(mins => @win)) " +
                         "RETURNING id", conn);
                     cmd.Parameters.AddWithValue("tenant", _config.Tenant);
                     cmd.Parameters.AddWithValue("type", eventType);
@@ -92,7 +92,7 @@ namespace Nop.Plugin.Company.Insights.Services
                     cmd.Parameters.AddWithValue("eid", (object)entityId ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("cid", (object)companyId ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("payload", NpgsqlDbType.Text, string.IsNullOrWhiteSpace(payloadJson) ? "{}" : payloadJson);
-                    cmd.Parameters.AddWithValue("win", Math.Max(1, dedupeWindowHours));
+                    cmd.Parameters.AddWithValue("win", Math.Max(1, dedupeWindowMinutes));
                     var scalar = await cmd.ExecuteScalarAsync(cancellationToken);
                     if (scalar != null && scalar != DBNull.Value)
                         id = Convert.ToInt64(scalar);

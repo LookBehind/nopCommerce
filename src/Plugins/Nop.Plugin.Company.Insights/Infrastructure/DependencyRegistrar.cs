@@ -26,6 +26,11 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
             services.AddScoped<InsightsDeliveryTriggerReconciler>();
             services.AddScoped<IInsightsDeliveryTriggerJob, InsightsDeliveryTriggerJob>();
             services.AddScoped<Nop.Services.Tasks.IRecurringTaskRegistrar, InsightsDeliveryTriggerBootReconciler>();
+            services.AddScoped<IInsightsAgentConfigService, InsightsAgentConfigService>();
+            services.AddScoped<IInsightsAgentRunService, InsightsAgentRunService>();
+            services.AddScoped<IInsightsAgentRunner, InsightsAgentRunner>();
+            services.AddScoped<IInsightsRetentionJob, InsightsRetentionJob>();
+            services.AddScoped<Nop.Services.Tasks.IRecurringTaskRegistrar, InsightsAgentBootRegistrar>();
             services.AddSingleton<InsightsMemoryConfig>();
 
             // Typed client for the in-cluster KubeAI/vLLM gateway (OpenAI-compatible).
