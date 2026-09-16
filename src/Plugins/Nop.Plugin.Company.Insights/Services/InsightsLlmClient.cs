@@ -58,6 +58,13 @@ namespace Nop.Plugin.Company.Insights.Services
             [JsonPropertyName("max_tokens")]
             [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
             public int? MaxTokens { get; set; }
+
+            // Qwen3 chat-template controls. We disable the <think> block for this agent: it uses a strict
+            // JSON tool protocol that doesn't need chain-of-thought, and thinking burns huge token budgets
+            // (slow on the self-hosted GPU, and it truncated to empty content). Omitted when null.
+            [JsonPropertyName("chat_template_kwargs")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public Dictionary<string, object> ChatTemplateKwargs { get; set; }
         }
 
         private class CompletionChoice
@@ -104,7 +111,8 @@ namespace Nop.Plugin.Company.Insights.Services
                 Stream = false,
                 Temperature = temperature,
                 MaxTokens = maxTokens,
-                Messages = messages.ToList()
+                Messages = messages.ToList(),
+                ChatTemplateKwargs = new Dictionary<string, object> { ["enable_thinking"] = false }
             };
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
