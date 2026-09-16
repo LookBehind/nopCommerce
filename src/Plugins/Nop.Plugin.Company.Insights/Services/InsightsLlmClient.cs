@@ -52,14 +52,31 @@ namespace Nop.Plugin.Company.Insights.Services
             [JsonPropertyName("temperature")]
             public double Temperature { get; set; }
 
+            // Omit entirely when null so vLLM lets the model generate up to its context limit. A fixed cap
+            // truncates unpredictable reasoning-model "thinking" mid-stream, which returns EMPTY content
+            // (finish_reason=length). We bound cost by wall-clock time instead, never by a token count.
             [JsonPropertyName("max_tokens")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
             public int? MaxTokens { get; set; }
         }
 
         private class CompletionChoice
         {
             [JsonPropertyName("message")]
-            public LlmMessage Message { get; set; }
+            public ChoiceMessage Message { get; set; }
+
+            [JsonPropertyName("finish_reason")]
+            public string FinishReason { get; set; }
+        }
+
+        private class ChoiceMessage
+        {
+            [JsonPropertyName("content")]
+            public string Content { get; set; }
+
+            // Reasoning models (Qwen3) return their <think> block here, separate from the answer.
+            [JsonPropertyName("reasoning")]
+            public string Reasoning { get; set; }
         }
 
         private class CompletionResponse
@@ -69,8 +86,9 @@ namespace Nop.Plugin.Company.Insights.Services
         }
 
         /// <summary>
-        /// Posts a chat completion and returns the assistant content. Throws on HTTP error/timeout/
-        /// missing content — callers catch and surface a warming-up message (models scale to zero).
+        /// Posts a chat completion and returns the assistant content. Pass maxTokens=null (the default for
+        /// the agent) to leave the completion uncapped so a reasoning model can finish thinking AND answer;
+        /// a cap that truncates the think block yields empty content. Throws on HTTP error/timeout/empty.
         /// </summary>
         public async Task<string> CompleteAsync(
             string model,
@@ -96,8 +114,16 @@ namespace Nop.Plugin.Company.Insights.Services
             response.EnsureSuccessStatusCode();
 
             var parsed = await response.Content.ReadFromJsonAsync<CompletionResponse>(cancellationToken: cts.Token);
-            return parsed?.Choices?.FirstOrDefault()?.Message?.Content
-                ?? throw new InvalidOperationException("KubeAI chat completion returned no content");
+            var choice = parsed?.Choices?.FirstOrDefault();
+            var content = choice?.Message?.Content;
+            if (!string.IsNullOrWhiteSpace(content))
+                return content;
+
+            // Empty content: with the cap removed this should be rare. If it still happens because the model
+            // hit its context limit while thinking, say so specifically instead of a generic failure.
+            if (string.Equals(choice?.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("KubeAI chat completion was truncated (hit the context limit while reasoning) and returned no answer.");
+            throw new InvalidOperationException("KubeAI chat completion returned no content");
         }
 
         /// <summary>

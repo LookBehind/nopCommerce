@@ -21,7 +21,9 @@ namespace Nop.Plugin.Company.Insights.Services
     {
         private const int MaxIterations = 6;
         private const int MaxObservationRows = 50;
-        private static readonly TimeSpan LlmTimeout = TimeSpan.FromSeconds(120);
+        // No token cap on the model (reasoning length is unpredictable), so time is the only bound. A
+        // reasoning-heavy answer on the gfx906 GPU can take a while to stream — keep this generous.
+        private static readonly TimeSpan LlmTimeout = TimeSpan.FromSeconds(240);
 
         private readonly InsightsLlmClient _llm;
         private readonly IInsightsReportService _reportService;
@@ -71,7 +73,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 for (var i = 0; i < MaxIterations; i++)
                 {
                     var content = await _llm.CompleteAsync(
-                        InsightsLlmClient.DefaultModel, messages, 0.0, 1200, LlmTimeout, cancellationToken);
+                        InsightsLlmClient.DefaultModel, messages, 0.0, null, LlmTimeout, cancellationToken);
 
                     var json = ExtractJsonObject(content);
                     if (json == null)
@@ -173,7 +175,7 @@ namespace Nop.Plugin.Company.Insights.Services
 
             try
             {
-                var content = await _llm.CompleteAsync(InsightsLlmClient.DefaultModel, messages, 0.2, 900, LlmTimeout, cancellationToken);
+                var content = await _llm.CompleteAsync(InsightsLlmClient.DefaultModel, messages, 0.2, null, LlmTimeout, cancellationToken);
                 var json = ExtractJsonObject(content);
                 if (json == null)
                     return null;

@@ -17,7 +17,8 @@ namespace Nop.Plugin.Company.Insights.Services
 
     public class InsightsAgentRunner : IInsightsAgentRunner
     {
-        private static readonly TimeSpan LlmTimeout = TimeSpan.FromSeconds(170);
+        // No token cap (a fixed limit truncates a reasoning model mid-think → empty output); bound by time.
+        private static readonly TimeSpan LlmTimeout = TimeSpan.FromSeconds(240);
 
         private readonly IInsightsAgentConfigService _configs;
         private readonly IInsightsEventService _events;
@@ -87,7 +88,7 @@ namespace Nop.Plugin.Company.Insights.Services
                     new InsightsLlmClient.LlmMessage { Role = "user", Content = user }
                 };
 
-                var output = await _llm.CompleteAsync(InsightsLlmClient.DefaultModel, messages, 0.2, 800, LlmTimeout);
+                var output = await _llm.CompleteAsync(InsightsLlmClient.DefaultModel, messages, 0.2, null, LlmTimeout);
                 output = (output ?? string.Empty).Trim();
 
                 var sinks = ParseSinks(config.OutputSinksJson);
