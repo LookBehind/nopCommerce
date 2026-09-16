@@ -28,17 +28,20 @@ namespace Nop.Plugin.Company.Insights.Services
         private readonly InsightsLlmClient _llm;
         private readonly IInsightsReportService _reportService;
         private readonly IInsightsMemoryService _memory;
+        private readonly IInsightsAgentConfigService _agents;
         private readonly ILogger _logger;
 
         public InsightsAgentService(
             InsightsLlmClient llm,
             IInsightsReportService reportService,
             IInsightsMemoryService memory,
+            IInsightsAgentConfigService agents,
             ILogger logger)
         {
             _llm = llm;
             _reportService = reportService;
             _memory = memory;
+            _agents = agents;
             _logger = logger;
         }
 
@@ -51,7 +54,7 @@ namespace Nop.Plugin.Company.Insights.Services
 
             var messages = new List<InsightsLlmClient.LlmMessage>
             {
-                new InsightsLlmClient.LlmMessage { Role = "system", Content = BuildSystemPrompt(profile, scope, _memory.Enabled) }
+                new InsightsLlmClient.LlmMessage { Role = "system", Content = BuildSystemPrompt(profile, scope, _memory.Enabled, _agents.Enabled) }
             };
 
             foreach (var m in request.Messages ?? new List<AgentChatMessage>())
@@ -204,6 +207,10 @@ namespace Nop.Plugin.Company.Insights.Services
             "list_reviews" => "Reading reviews…",
             "recall" => "Recalling notes…",
             "remember" => "Saving a note…",
+            "list_automations" => "Listing automations…",
+            "create_automation" => "Creating an automation…",
+            "update_automation" => "Updating an automation…",
+            "delete_automation" => "Deleting an automation…",
             _ => "Working…"
         };
 
@@ -273,9 +280,125 @@ namespace Nop.Plugin.Company.Insights.Services
                     var result = await _reportService.GetReviewsAsync(days, vendorId, customerEmail, customerName, orderBy, limit, scope);
                     return (SummarizeDataset(result), result);
                 }
+                case "list_automations":
+                {
+                    if (!_agents.Enabled)
+                        return ("error: automations are unavailable (no database configured)", null);
+                    var all = await _agents.ListAsync(ct);
+                    var visible = all.Where(c => CanManageAutomation(c, scope)).Select(c => new
+                    {
+                        c.Id, c.Name, c.Enabled, c.BuiltIn, triggerKind = c.TriggerKind, eventType = c.EventType,
+                        c.Cron, companyId = c.CompanyId, filter = c.FilterJson, outputSinks = c.OutputSinksJson, c.Instruction
+                    });
+                    return (JsonSerializer.Serialize(visible), null);
+                }
+                case "create_automation":
+                {
+                    if (!_agents.Enabled)
+                        return ("error: automations are unavailable (no database configured)", null);
+                    if (scope != null && scope.Denied)
+                        return ("error: not permitted", null);
+                    var c = BuildAutomationFromArgs(args);
+                    if (string.IsNullOrWhiteSpace(c.Name))
+                        return ("error: missing 'name'", null);
+                    if (c.TriggerKind == "event" && string.IsNullOrWhiteSpace(c.EventType))
+                        return ("error: an event automation needs an 'eventType'", null);
+                    if (c.TriggerKind == "schedule" && string.IsNullOrWhiteSpace(c.Cron))
+                        return ("error: a schedule automation needs a 'cron'", null);
+                    if (string.IsNullOrWhiteSpace(c.Instruction))
+                        return ("error: missing 'instruction' (what the automation should do each run)", null);
+                    // Company-scoped user (Workplace Manager) can only create automations for their own company;
+                    // Backoffice may leave it global (null) or target a specific company.
+                    c.CompanyId = scope?.CompanyId ?? GetInt(args, "companyId");
+                    var saved = await _agents.UpsertAsync(c, ct);
+                    return saved == null ? ("error: could not save the automation", null)
+                        : ($"created automation '{saved.Name}' (id {saved.Id}, {(saved.Enabled ? "enabled" : "disabled")}).", null);
+                }
+                case "update_automation":
+                {
+                    if (!_agents.Enabled)
+                        return ("error: automations are unavailable (no database configured)", null);
+                    var id = GetString(args, "id");
+                    if (string.IsNullOrWhiteSpace(id))
+                        return ("error: missing 'id'", null);
+                    var existing = await _agents.GetAsync(id, ct);
+                    if (existing == null)
+                        return ($"error: no automation with id '{id}'", null);
+                    if (!CanManageAutomation(existing, scope))
+                        return ("error: that automation belongs to another company — not permitted", null);
+                    if (existing.BuiltIn && scope?.CompanyId != null)
+                        return ("error: built-in automations can only be managed by backoffice support", null);
+                    // Merge only the fields the caller actually supplied.
+                    var patch = BuildAutomationFromArgs(args);
+                    if (!string.IsNullOrWhiteSpace(patch.Name)) existing.Name = patch.Name;
+                    if (HasProp(args, "enabled")) existing.Enabled = GetBool(args, "enabled") ?? existing.Enabled;
+                    if (HasProp(args, "triggerKind")) existing.TriggerKind = patch.TriggerKind;
+                    if (HasProp(args, "eventType")) existing.EventType = patch.EventType;
+                    if (HasProp(args, "cron")) existing.Cron = patch.Cron;
+                    if (HasProp(args, "filter")) existing.FilterJson = patch.FilterJson;
+                    if (!string.IsNullOrWhiteSpace(patch.SystemPrompt)) existing.SystemPrompt = patch.SystemPrompt;
+                    if (!string.IsNullOrWhiteSpace(patch.Instruction)) existing.Instruction = patch.Instruction;
+                    if (HasProp(args, "outputSinks")) existing.OutputSinksJson = patch.OutputSinksJson;
+                    if (HasProp(args, "outputTarget")) existing.OutputTarget = patch.OutputTarget;
+                    // A company user cannot move an automation to another company.
+                    if (scope?.CompanyId != null) existing.CompanyId = scope.CompanyId;
+                    var saved = await _agents.UpsertAsync(existing, ct);
+                    return ($"updated automation '{saved.Name}' (id {saved.Id}, {(saved.Enabled ? "enabled" : "disabled")}).", null);
+                }
+                case "delete_automation":
+                {
+                    if (!_agents.Enabled)
+                        return ("error: automations are unavailable (no database configured)", null);
+                    var id = GetString(args, "id");
+                    if (string.IsNullOrWhiteSpace(id))
+                        return ("error: missing 'id'", null);
+                    var existing = await _agents.GetAsync(id, ct);
+                    if (existing == null)
+                        return ($"error: no automation with id '{id}'", null);
+                    if (!CanManageAutomation(existing, scope))
+                        return ("error: that automation belongs to another company — not permitted", null);
+                    if (existing.BuiltIn && scope?.CompanyId != null)
+                        return ("error: built-in automations can only be managed by backoffice support", null);
+                    await _agents.DeleteAsync(id, ct);
+                    return ($"deleted automation '{existing.Name}'.", null);
+                }
                 default:
                     return ($"error: unknown tool '{tool}'", null);
             }
+        }
+
+        /// <summary>Automation access rule: backoffice (unscoped) manages all; a company-scoped user (Workplace
+        /// Manager) manages only automations tied to their own company. Denied scope manages nothing.</summary>
+        private static bool CanManageAutomation(InsightsAgentConfig c, ReportScope scope)
+        {
+            if (scope == null || scope.CompanyId == null) return scope == null || !scope.Denied;
+            if (scope.Denied) return false;
+            return c.CompanyId == scope.CompanyId;
+        }
+
+        /// <summary>Builds an automation config from tool args (fields the caller omits stay null/default).</summary>
+        private static InsightsAgentConfig BuildAutomationFromArgs(JsonElement args)
+        {
+            var kind = (GetString(args, "triggerKind") ?? "event").Trim().ToLowerInvariant();
+            var c = new InsightsAgentConfig
+            {
+                Name = GetString(args, "name"),
+                TriggerKind = kind == "schedule" ? "schedule" : "event",
+                EventType = GetString(args, "eventType"),
+                Cron = GetString(args, "cron"),
+                SystemPrompt = GetString(args, "systemPrompt"),
+                Instruction = GetString(args, "instruction"),
+                OutputTarget = GetString(args, "outputTarget"),
+                Enabled = GetBool(args, "enabled") ?? true
+            };
+            if (args.ValueKind == JsonValueKind.Object)
+            {
+                if (args.TryGetProperty("filter", out var f) && f.ValueKind == JsonValueKind.Object)
+                    c.FilterJson = f.GetRawText();
+                if (args.TryGetProperty("outputSinks", out var s) && s.ValueKind == JsonValueKind.Array)
+                    c.OutputSinksJson = s.GetRawText();
+            }
+            return c;
         }
 
         /// <summary>Auto-recalls relevant saved notes for the latest user message and injects them as context.</summary>
@@ -341,7 +464,7 @@ namespace Nop.Plugin.Company.Insights.Services
 
         #region Prompt & JSON helpers
 
-        private static string BuildSystemPrompt(InsightsProfile profile, ReportScope scope, bool memoryEnabled)
+        private static string BuildSystemPrompt(InsightsProfile profile, ReportScope scope, bool memoryEnabled, bool automationsEnabled)
         {
             var sb = new StringBuilder();
             sb.AppendLine($"You are {profile.Name}, {profile.Persona} on the MySnacks food-ordering platform.");
@@ -364,6 +487,20 @@ namespace Nop.Plugin.Company.Insights.Services
             {
                 sb.AppendLine("- recall {\"query\":\"...\"}  -> retrieve notes you saved in earlier conversations.");
                 sb.AppendLine("- remember {\"content\":\"...\",\"kind\":\"note\"}  -> save a durable, reusable learning for future conversations.");
+            }
+            if (automationsEnabled)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Automations (background agents that run on a trigger and write to an output sink). You can fully manage them:");
+                sb.AppendLine("- list_automations {}  -> the automations you can manage (id, name, enabled, trigger, schedule/event, filter, instruction).");
+                sb.AppendLine("- create_automation {\"name\":\"...\",\"triggerKind\":\"event\"|\"schedule\",\"eventType\":\"<event, for event kind>\",\"cron\":\"<5-field cron Asia/Yerevan, for schedule kind>\",\"filter\":{...optional},\"systemPrompt\":\"the background agent's own concise READ-ONLY persona\",\"instruction\":\"what it does each run\",\"outputSinks\":[\"dashboard\"|\"telegram\"|\"memory\"],\"outputTarget\":\"telegram chat id if telegram\"}  -> creates it. YOU write a good systemPrompt + instruction for the described task.");
+                sb.AppendLine("- update_automation {\"id\":\"...\", ...only the fields to change, e.g. \"enabled\":false or a new \"cron\"}  -> edits it.");
+                sb.AppendLine("- delete_automation {\"id\":\"...\"}  -> removes it.");
+                sb.AppendLine("Event types: review-added, review-triaged, order-placed, order-cancelled, delivery-approaching, day-closing, product-created, product-updated. Filters (event kind): {\"maxRating\":<int>} and/or {\"vendorIds\":[<int>...]}.");
+                if (scope != null && scope.CompanyId.HasValue)
+                    sb.AppendLine("You may only manage automations for your own company; new ones you create are automatically scoped to it. Confirm destructive actions (delete) with the user first.");
+                else
+                    sb.AppendLine("You manage automations across all companies (leave companyId unset for a global automation). Confirm destructive actions (delete) with the user first.");
             }
             sb.AppendLine();
             sb.AppendLine("Widget (optional; visualizes the MOST RECENT dataset you fetched this turn):");
@@ -530,6 +667,19 @@ namespace Nop.Plugin.Company.Insights.Services
                 return s;
             return null;
         }
+
+        private static bool? GetBool(JsonElement el, string prop)
+        {
+            if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var v))
+                return null;
+            if (v.ValueKind == JsonValueKind.True) return true;
+            if (v.ValueKind == JsonValueKind.False) return false;
+            if (v.ValueKind == JsonValueKind.String && bool.TryParse(v.GetString(), out var b)) return b;
+            return null;
+        }
+
+        private static bool HasProp(JsonElement el, string prop) =>
+            el.ValueKind == JsonValueKind.Object && el.TryGetProperty(prop, out _);
 
         #endregion
     }

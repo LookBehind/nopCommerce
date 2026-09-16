@@ -211,19 +211,38 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
 
         // ---- Background agents (automations) ----
 
-        /// <summary>List background-agent configs.</summary>
+        /// <summary>List background-agent configs the caller may manage (scoped by profile: a Workplace
+        /// Manager only sees their own company's automations; backoffice sees all).</summary>
         [HttpGet]
-        public async Task<IActionResult> Agents()
+        public async Task<IActionResult> Agents(string profile, int? companyId)
         {
             if (!await HasAccessAsync())
                 return StatusCode(StatusCodes.Status403Forbidden);
+            var scope = await ResolveAgentScopeAsync(profile, companyId);
             var items = await _agentConfigService.ListAsync(HttpContext.RequestAborted);
-            return Json(items.Select(MapAgent));
+            return Json(items.Where(a => CanManageAgent(a, scope)).Select(MapAgent));
         }
 
-        /// <summary>Create or update a background-agent config.</summary>
+        /// <summary>Resolves the caller's data scope for automation management from the active profile.</summary>
+        private async Task<ReportScope> ResolveAgentScopeAsync(string profile, int? companyId)
+        {
+            var activeProfile = await _profileService.GetActiveProfileAsync(profile, HttpContext.RequestAborted);
+            return await _profileService.ResolveScopeAsync(activeProfile, companyId, HttpContext.RequestAborted);
+        }
+
+        /// <summary>Backoffice (unscoped) manages every automation; a company-scoped user manages only
+        /// automations tied to their own company. Denied scope manages nothing. Mirrors the agent-tool rule.</summary>
+        private static bool CanManageAgent(InsightsAgentConfig a, ReportScope scope)
+        {
+            if (scope == null || scope.CompanyId == null) return scope == null || !scope.Denied;
+            if (scope.Denied) return false;
+            return a.CompanyId == scope.CompanyId;
+        }
+
+        /// <summary>Create or update a background-agent config (scoped: a Workplace Manager can only touch
+        /// their own company's automations; new ones are stamped with their company).</summary>
         [HttpPost]
-        public async Task<IActionResult> SaveAgent([FromForm] string payload)
+        public async Task<IActionResult> SaveAgent([FromForm] string payload, [FromForm] string profile, [FromForm] int? companyId)
         {
             if (!await HasAccessAsync())
                 return StatusCode(StatusCodes.Status403Forbidden);
@@ -231,6 +250,10 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                 return Json(new { ok = false, error = "persistence-disabled" });
             if (string.IsNullOrWhiteSpace(payload))
                 return Json(new { ok = false, error = "empty" });
+
+            var scope = await ResolveAgentScopeAsync(profile, companyId);
+            if (scope != null && scope.Denied)
+                return Json(new { ok = false, error = "not-permitted" });
 
             InsightsAgentConfig config;
             try
@@ -267,6 +290,21 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             if (string.IsNullOrWhiteSpace(config.Name))
                 return Json(new { ok = false, error = "missing-name" });
 
+            // On edit, verify the caller may manage the existing automation; on create, stamp the company.
+            if (!string.IsNullOrWhiteSpace(config.Id))
+            {
+                var existing = await _agentConfigService.GetAsync(config.Id, HttpContext.RequestAborted);
+                if (existing == null)
+                    return Json(new { ok = false, error = "not-found" });
+                if (!CanManageAgent(existing, scope))
+                    return Json(new { ok = false, error = "not-permitted" });
+                if (existing.BuiltIn && scope?.CompanyId != null)
+                    return Json(new { ok = false, error = "builtin-readonly" });
+            }
+            // A company-scoped user's automations are always tied to their own company (client value ignored).
+            if (scope?.CompanyId != null)
+                config.CompanyId = scope.CompanyId;
+
             var saved = await _agentConfigService.UpsertAsync(config, HttpContext.RequestAborted);
             return saved == null ? Json(new { ok = false, error = "save-failed" }) : Json(new { ok = true, agent = MapAgent(saved) });
         }
@@ -296,24 +334,39 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             return Content("{\"ok\":true,\"draft\":" + draft + "}", "application/json");
         }
 
-        /// <summary>Delete a background-agent config.</summary>
+        /// <summary>Delete a background-agent config (scoped: a Workplace Manager can only delete their own
+        /// company's automations; built-ins are backoffice-only).</summary>
         [HttpPost]
-        public async Task<IActionResult> DeleteAgent([FromForm] string id)
+        public async Task<IActionResult> DeleteAgent([FromForm] string id, [FromForm] string profile, [FromForm] int? companyId)
         {
             if (!await HasAccessAsync())
                 return StatusCode(StatusCodes.Status403Forbidden);
+            var scope = await ResolveAgentScopeAsync(profile, companyId);
+            var existing = await _agentConfigService.GetAsync(id, HttpContext.RequestAborted);
+            if (existing == null)
+                return Json(new { ok = true }); // already gone — idempotent
+            if (!CanManageAgent(existing, scope))
+                return Json(new { ok = false, error = "not-permitted" });
+            if (existing.BuiltIn && scope?.CompanyId != null)
+                return Json(new { ok = false, error = "builtin-readonly" });
             await _agentConfigService.DeleteAsync(id, HttpContext.RequestAborted);
             return Json(new { ok = true });
         }
 
-        /// <summary>Recent agent runs (observability), optionally for one agent.</summary>
+        /// <summary>Recent agent runs (observability), optionally for one agent — scoped to the automations
+        /// the caller may manage (a Workplace Manager only sees their own company's runs).</summary>
         [HttpGet]
-        public async Task<IActionResult> AgentRuns(string agentId, int? limit)
+        public async Task<IActionResult> AgentRuns(string agentId, int? limit, string profile, int? companyId)
         {
             if (!await HasAccessAsync())
                 return StatusCode(StatusCodes.Status403Forbidden);
+            var scope = await ResolveAgentScopeAsync(profile, companyId);
+            var manageable = (await _agentConfigService.ListAsync(HttpContext.RequestAborted))
+                .Where(a => CanManageAgent(a, scope)).Select(a => a.Id).ToHashSet();
+            if (!string.IsNullOrWhiteSpace(agentId) && !manageable.Contains(agentId))
+                return Json(System.Array.Empty<object>());
             var runs = await _agentRunService.ListRecentAsync(limit ?? 50, agentId, HttpContext.RequestAborted);
-            return Json(runs.Select(r => new
+            return Json(runs.Where(r => manageable.Contains(r.AgentId)).Select(r => new
             {
                 id = r.Id,
                 agentId = r.AgentId,

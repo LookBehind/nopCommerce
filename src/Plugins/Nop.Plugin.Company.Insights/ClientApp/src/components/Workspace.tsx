@@ -5,7 +5,6 @@ import { Canvas } from "./Canvas";
 import { ChatPanel } from "./ChatPanel";
 import { ProfilePicker } from "./ProfilePicker";
 import { AddWidgetMenu } from "./AddWidgetMenu";
-import { ScheduleModal } from "./ScheduleModal";
 import { AutomationsModal } from "./AutomationsModal";
 import { confirmDialog } from "../ui/feedback";
 import type { ThemePref } from "../types";
@@ -23,7 +22,6 @@ export function Workspace() {
   const theme = useWorkspace((s) => s.theme);
   const setTheme = useWorkspace((s) => s.setTheme);
   const caps = useWorkspace((s) => s.capabilities);
-  const [showSchedule, setShowSchedule] = useState(false);
   const [showAutomations, setShowAutomations] = useState(false);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
@@ -43,16 +41,7 @@ export function Workspace() {
           {caps?.scheduling && (
             <button
               className="ins-btn"
-              title="Scheduled reports to Telegram"
-              onClick={() => setShowSchedule(true)}
-            >
-              ⏰ Schedule
-            </button>
-          )}
-          {caps?.scheduling && (
-            <button
-              className="ins-btn"
-              title="Background automations"
+              title="Background automations (scheduled + event-driven)"
               onClick={() => setShowAutomations(true)}
             >
               🤖 Automations
@@ -93,7 +82,6 @@ export function Workspace() {
 
       <ChatPanel />
 
-      {showSchedule && <ScheduleModal onClose={() => setShowSchedule(false)} />}
       {showAutomations && <AutomationsModal onClose={() => setShowAutomations(false)} />}
     </div>
   );

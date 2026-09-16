@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import type { ProfileContext } from "../api/client";
 import type { AgentConfig, AgentConfigInput, AgentRun } from "../types";
+import { useWorkspace } from "../store/workspace";
 import { confirmDialog, toast } from "../ui/feedback";
 
 const EVENT_TYPES = [
@@ -153,16 +155,21 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Profile context scopes what the caller may manage (Workplace Manager: own company; backoffice: all).
+  const selectedProfileId = useWorkspace((s) => s.selectedProfileId);
+  const selectedCompanyId = useWorkspace((s) => s.selectedCompanyId);
+  const ctx: ProfileContext = { profileId: selectedProfileId || undefined, companyId: selectedCompanyId };
+
   async function refresh() {
     try {
-      setAgents(await api.agents());
+      setAgents(await api.agents(ctx));
     } catch (e) {
       setError(String(e));
     }
   }
   async function refreshRuns() {
     try {
-      setRuns(await api.agentRuns(undefined, 100));
+      setRuns(await api.agentRuns(undefined, 100, ctx));
     } catch {
       /* ignore */
     }
@@ -185,7 +192,7 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
     }
     setBusy(true);
     try {
-      const res = await api.saveAgent(toInput(editor));
+      const res = await api.saveAgent(toInput(editor), ctx);
       if (!res.ok) toast.error(res.error ?? "Save failed");
       else {
         toast.success("Automation saved");
@@ -200,13 +207,18 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
   async function remove(a: AgentConfig) {
     const ok = await confirmDialog({ title: `Delete “${a.name}”?`, confirmLabel: "Delete", danger: true });
     if (!ok || !a.id) return;
-    await api.deleteAgent(a.id);
+    const res = await api.deleteAgent(a.id, ctx);
+    if (!res.ok) {
+      toast.error(res.error === "not-permitted" ? "You can't manage that automation" : res.error ?? "Delete failed");
+      return;
+    }
     await refresh();
     toast.success("Deleted");
   }
 
   async function toggle(a: AgentConfig) {
-    await api.saveAgent({ ...toInput(toEditor(a)), enabled: !a.enabled });
+    const res = await api.saveAgent({ ...toInput(toEditor(a)), enabled: !a.enabled }, ctx);
+    if (!res.ok) toast.error(res.error ?? "Update failed");
     await refresh();
   }
 

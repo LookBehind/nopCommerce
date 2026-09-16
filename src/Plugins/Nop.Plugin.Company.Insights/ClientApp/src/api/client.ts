@@ -184,15 +184,38 @@ export const api = {
   testSchedule: (s: Partial<Schedule>) =>
     postForm<{ ok: boolean; error?: string }>("/TestSchedule", { payload: JSON.stringify(s) }),
 
-  // background agents (automations)
-  agents: () => getJson<AgentConfig[]>("/Agents"),
-  saveAgent: (a: AgentConfigInput) =>
-    postForm<{ ok: boolean; agent?: AgentConfig; error?: string }>("/SaveAgent", { payload: JSON.stringify(a) }),
-  deleteAgent: (id: string) => postForm<{ ok: boolean }>("/DeleteAgent", { id }),
+  // background agents (automations) — profile context scopes them (WM: own company; backoffice: all)
+  agents: (ctx?: ProfileContext) => getJson<AgentConfig[]>(`/Agents${ctxQuery(ctx)}`),
+  saveAgent: (a: AgentConfigInput, ctx?: ProfileContext) =>
+    postForm<{ ok: boolean; agent?: AgentConfig; error?: string }>("/SaveAgent", {
+      payload: JSON.stringify(a),
+      ...ctxFields(ctx),
+    }),
+  deleteAgent: (id: string, ctx?: ProfileContext) =>
+    postForm<{ ok: boolean; error?: string }>("/DeleteAgent", { id, ...ctxFields(ctx) }),
   draftAgent: (description: string) =>
     postForm<{ ok: boolean; draft?: AgentConfigInput; error?: string }>("/DraftAgent", {
       payload: JSON.stringify({ description }),
     }),
-  agentRuns: (agentId?: string, limit = 50) =>
-    getJson<AgentRun[]>(`/AgentRuns?limit=${limit}${agentId ? `&agentId=${encodeURIComponent(agentId)}` : ""}`),
+  agentRuns: (agentId?: string, limit = 50, ctx?: ProfileContext) =>
+    getJson<AgentRun[]>(
+      `/AgentRuns?limit=${limit}${agentId ? `&agentId=${encodeURIComponent(agentId)}` : ""}${ctxQuery(ctx, true)}`
+    ),
 };
+
+/** Profile context as a query-string fragment (leading "?" unless `append` prefixes with "&"). */
+function ctxQuery(ctx?: ProfileContext, append = false): string {
+  const qs = new URLSearchParams();
+  if (ctx?.profileId) qs.set("profile", ctx.profileId);
+  if (ctx?.companyId != null) qs.set("companyId", String(ctx.companyId));
+  const s = qs.toString();
+  return s ? `${append ? "&" : "?"}${s}` : "";
+}
+
+/** Profile context as form fields for POSTs. */
+function ctxFields(ctx?: ProfileContext): Record<string, string> {
+  const f: Record<string, string> = {};
+  if (ctx?.profileId) f.profile = ctx.profileId;
+  if (ctx?.companyId != null) f.companyId = String(ctx.companyId);
+  return f;
+}
