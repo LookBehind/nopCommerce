@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Plugin.Company.Insights.Models;
@@ -431,23 +432,60 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
 
             var activeProfile = await _profileService.GetActiveProfileAsync(request.ProfileId, HttpContext.RequestAborted);
             var scope = await _profileService.ResolveScopeAsync(activeProfile, request.CompanyId, HttpContext.RequestAborted);
-            var result = await _agentService.RunTurnAsync(request, activeProfile, scope, HttpContext.RequestAborted);
 
-            return Json(new
+            // The agent turn can take minutes on the self-hosted GPU (a reasoning model, uncapped). A plain
+            // synchronous response is cut by upstream proxies (Cloudflare ~100s -> 524), so stream whitespace
+            // heartbeats while the turn runs to keep the connection alive, then write the final JSON. Leading
+            // whitespace is valid JSON, so the browser parses the body unchanged (no client changes needed).
+            var ct = HttpContext.RequestAborted;
+            HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+            Response.StatusCode = StatusCodes.Status200OK;
+            Response.ContentType = "application/json";
+            Response.Headers["Cache-Control"] = "no-cache";
+            Response.Headers["X-Accel-Buffering"] = "no"; // ask any nginx hop not to buffer the stream
+
+            try
             {
-                reply = result.Reply,
-                widgets = result.Widgets.Select(w => new
+                // Flush headers + a first byte right away so the proxy sees the response has started.
+                await Response.WriteAsync(" ", ct);
+                await Response.Body.FlushAsync(ct);
+
+                var turnTask = _agentService.RunTurnAsync(request, activeProfile, scope, ct);
+                while (!turnTask.IsCompleted)
                 {
-                    type = w.Type,
-                    title = w.Title,
-                    chartKind = w.ChartKind,
-                    xField = w.XField,
-                    yField = w.YField,
-                    categoryField = w.CategoryField,
-                    columns = w.Columns.Select(c => new { name = c.Name, type = c.Type }),
-                    rows = w.Rows
-                })
-            });
+                    var finished = await Task.WhenAny(turnTask, Task.Delay(TimeSpan.FromSeconds(10), ct));
+                    if (finished != turnTask)
+                    {
+                        await Response.WriteAsync(" ", ct); // heartbeat: keeps the proxy connection alive
+                        await Response.Body.FlushAsync(ct);
+                    }
+                }
+
+                var result = await turnTask;
+                var json = JsonSerializer.Serialize(new
+                {
+                    reply = result.Reply,
+                    widgets = result.Widgets.Select(w => new
+                    {
+                        type = w.Type,
+                        title = w.Title,
+                        chartKind = w.ChartKind,
+                        xField = w.XField,
+                        yField = w.YField,
+                        categoryField = w.CategoryField,
+                        columns = w.Columns.Select(c => new { name = c.Name, type = c.Type }),
+                        rows = w.Rows
+                    })
+                });
+                await Response.WriteAsync(json, ct);
+                await Response.Body.FlushAsync(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Client navigated away or hit Stop — nothing left to send.
+            }
+
+            return new EmptyResult();
         }
 
         /// <summary>List scheduled reports for this tenant.</summary>
