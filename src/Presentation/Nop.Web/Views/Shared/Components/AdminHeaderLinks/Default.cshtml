@@ -1,5 +1,5 @@
 ﻿@model AdminHeaderLinksModel
-@if (Model.IsCustomerImpersonated || Model.DisplayAdminLink)
+@if (Model.IsCustomerImpersonated || Model.DisplayAdminLink || Model.DisplayInsightsLink)
 {
     <div class="admin-header-links">
         @if (Model.IsCustomerImpersonated)
@@ -12,6 +12,10 @@
         @if (Model.DisplayAdminLink)
         {
             <a href="@Url.Content("~/Admin")" class="administration">@T("Account.Administration")</a>
+        }
+        @if (Model.DisplayInsightsLink)
+        {
+            <a href="@Url.Content("~/Admin/Insights")" class="administration">Insights</a>
         }
         @if (!string.IsNullOrEmpty(Model.EditPageUrl))
         {

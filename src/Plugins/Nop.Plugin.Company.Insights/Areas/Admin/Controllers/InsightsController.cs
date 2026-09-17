@@ -15,6 +15,7 @@ using Nop.Plugin.Company.Insights.Security;
 using Nop.Plugin.Company.Insights.Services;
 using Nop.Services.Security;
 using Nop.Web.Areas.Admin.Controllers;
+using Nop.Web.Framework.Mvc.Filters;
 
 namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
 {
@@ -22,6 +23,10 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
     /// Hosts the Insights SPA bootstrap page and its JSON API.
     /// All actions require the <c>AccessInsights</c> permission.
     /// </summary>
+    // Ignore the inherited AccessAdminPanel gate: a Workplace Manager granted AccessInsights (but not full
+    // admin access) must be able to reach this page. Every action still enforces AccessInsights via
+    // HasAccessAsync, so this only lifts the admin-panel requirement, nothing else.
+    [AuthorizeAdmin(true)]
     public class InsightsController : BaseAdminController
     {
         private readonly IPermissionService _permissionService;
