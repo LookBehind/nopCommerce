@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Hangfire;
@@ -63,21 +64,23 @@ namespace Nop.Plugin.Company.Insights.Services
             return await reader.ReadAsync(cancellationToken) ? Map(reader) : null;
         }
 
-        public async Task<IList<InsightsAgentConfig>> GetEnabledForEventAsync(string eventType, int? companyId, CancellationToken cancellationToken = default)
+        public async Task<IList<InsightsAgentConfig>> GetEnabledForEventAsync(string eventType, IList<int> companyIds, CancellationToken cancellationToken = default)
         {
             var list = new List<InsightsAgentConfig>();
             if (!Enabled || string.IsNullOrWhiteSpace(eventType))
                 return list;
+            var cids = (companyIds ?? new List<int>()).Where(c => c > 0).Distinct().ToArray();
             await EnsureSchemaAsync(cancellationToken);
             await using var conn = new NpgsqlConnection(_config.BuildConnectionString());
             await conn.OpenAsync(cancellationToken);
-            // Global agents (company_id null) match any event; company-scoped agents match only their company's events.
+            // Global agents (company_id null) match any event; company-scoped agents match if their company is
+            // among those the event fans out to. Each agent row is returned once (no dup for a global agent).
             await using var cmd = new NpgsqlCommand(
                 $"SELECT {Cols} FROM insights_agent WHERE tenant = @tenant AND enabled AND trigger_kind = 'event' " +
-                "AND event_type = @etype AND (company_id IS NULL OR company_id = @cid)", conn);
+                "AND event_type = @etype AND (company_id IS NULL OR company_id = ANY(@cids))", conn);
             cmd.Parameters.AddWithValue("tenant", _config.Tenant);
             cmd.Parameters.AddWithValue("etype", eventType);
-            cmd.Parameters.AddWithValue("cid", (object)companyId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("cids", cids);
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
                 list.Add(Map(reader));

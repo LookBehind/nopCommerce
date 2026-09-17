@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Hangfire;
@@ -42,10 +43,10 @@ namespace Nop.Plugin.Company.Insights.Services
                     return;
 
                 // Product/review events aren't inherently company-scoped (they carry no company_id), so a
-                // company-scoped automation could never match. Resolve the owning company from the entity's
-                // vendor so those automations fire — while global (unscoped) automations still match too.
-                var companyId = await ResolveCompanyAsync(ev);
-                var agents = await _configs.GetEnabledForEventAsync(ev.EventType, companyId);
+                // company-scoped automation could never match. Resolve the owning companies from the entity's
+                // vendor (fans out to all of them) so those automations fire — global automations still match.
+                var companies = await ResolveCompaniesAsync(ev);
+                var agents = await _configs.GetEnabledForEventAsync(ev.EventType, companies);
                 foreach (var agent in agents)
                 {
                     if (!PassesFilter(agent.FilterJson, ev))
@@ -62,12 +63,13 @@ namespace Nop.Plugin.Company.Insights.Services
             }
         }
 
-        /// <summary>Company that owns the event's entity: orders already carry it; product/review events are
-        /// resolved via vendor (payload vendorId for products, payload/entity productId for reviews).</summary>
-        private async Task<int?> ResolveCompanyAsync(InsightsAgentEvent ev)
+        /// <summary>Companies that own the event's entity: orders already carry one; product/review events fan
+        /// out to every company mapped to the entity's vendor (payload vendorId for products, payload/entity
+        /// productId for reviews). Empty means "global automations only".</summary>
+        private async Task<IList<int>> ResolveCompaniesAsync(InsightsAgentEvent ev)
         {
             if (ev.CompanyId.HasValue)
-                return ev.CompanyId;
+                return new List<int> { ev.CompanyId.Value };
             try
             {
                 int vendorId = 0, productId = 0;
@@ -86,13 +88,13 @@ namespace Nop.Plugin.Company.Insights.Services
                 if (vendorId <= 0 && productId > 0)
                     vendorId = await _companies.VendorForProductAsync(productId);
                 if (vendorId > 0)
-                    return await _companies.CompanyForVendorAsync(vendorId);
+                    return await _companies.CompaniesForVendorAsync(vendorId);
             }
             catch (Exception ex)
             {
                 await _logger.WarningAsync($"Insights dispatch: company resolve failed for event {ev.Id}", ex);
             }
-            return null;
+            return new List<int>();
         }
 
         /// <summary>Minimal, fail-open filter: supports {"maxRating":n} and {"vendorIds":[...]} against the payload.</summary>

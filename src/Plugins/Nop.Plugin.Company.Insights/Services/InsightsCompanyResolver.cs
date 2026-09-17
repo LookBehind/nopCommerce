@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,13 +20,12 @@ namespace Nop.Plugin.Company.Insights.Services
             _dataProvider = dataProvider;
         }
 
-        public async Task<int?> CompanyForVendorAsync(int vendorId, CancellationToken cancellationToken = default)
+        public async Task<IList<int>> CompaniesForVendorAsync(int vendorId, CancellationToken cancellationToken = default)
         {
             if (vendorId <= 0)
-                return null;
+                return new List<int>();
             var maps = await _companyService.GetCompanyVendorsByVendorIdAsync(vendorId);
-            var companyId = maps?.Select(m => m.CompanyId).FirstOrDefault(id => id > 0) ?? 0;
-            return companyId > 0 ? companyId : (int?)null;
+            return maps?.Select(m => m.CompanyId).Where(id => id > 0).Distinct().ToList() ?? new List<int>();
         }
 
         public async Task<int> VendorForProductAsync(int productId, CancellationToken cancellationToken = default)

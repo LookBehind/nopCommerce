@@ -18,8 +18,10 @@ namespace Nop.Plugin.Company.Insights.Services
         Task<InsightsAgentConfig> UpsertAsync(InsightsAgentConfig config, CancellationToken cancellationToken = default);
         Task DeleteAsync(string id, CancellationToken cancellationToken = default);
 
-        /// <summary>Enabled event-kind agents matching an event type + scope (company null = global agents only match null; a company event matches global + that company's agents).</summary>
-        Task<IList<InsightsAgentConfig>> GetEnabledForEventAsync(string eventType, int? companyId, CancellationToken cancellationToken = default);
+        /// <summary>Enabled event-kind agents matching an event type + the companies it fans out to: global
+        /// agents (company_id null) always match; a company-scoped agent matches if its company is in the set.
+        /// An empty set matches only global agents. Each agent is returned once.</summary>
+        Task<IList<InsightsAgentConfig>> GetEnabledForEventAsync(string eventType, IList<int> companyIds, CancellationToken cancellationToken = default);
 
         /// <summary>Re-register all enabled schedule-kind agents as Hangfire recurring jobs (boot).</summary>
         Task SyncSchedulesAsync(CancellationToken cancellationToken = default);
