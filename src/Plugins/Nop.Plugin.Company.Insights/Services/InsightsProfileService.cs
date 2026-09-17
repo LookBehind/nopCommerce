@@ -162,6 +162,13 @@ namespace Nop.Plugin.Company.Insights.Services
             return Models.ReportScope.DeniedScope();
         }
 
+        public async Task<Models.ReportScope> ScopeForCompanyAsync(int? companyId, CancellationToken cancellationToken = default)
+        {
+            if (companyId is not int cid || cid <= 0)
+                return Models.ReportScope.Unscoped();
+            return await BuildScopeAsync(cid);
+        }
+
         private async Task<Models.ReportScope> BuildScopeAsync(int companyId)
         {
             var vendors = await _companyService.GetCompanyVendorsByCompanyAsync(companyId);

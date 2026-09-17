@@ -36,5 +36,13 @@ namespace Nop.Plugin.Company.Insights.Services
         /// Includes triage columns (who/when/resolution + triage hours).
         /// </summary>
         Task<InsightsReportResult> GetReviewsAsync(int days, int? vendorId, string customerEmail, string customerName, string orderBy, int? limit, ReportScope scope = null);
+
+        /// <summary>Product lookup (agent tool): filter by id/vendor/name/category, orderBy name|price|created|id,
+        /// with short/full description, weight, SKU, price, categories and picture URLs. Company-scoped.</summary>
+        Task<InsightsReportResult> ListProductsAsync(int? id, int? vendorId, string name, string category, string orderBy, int? limit, ReportScope scope = null);
+
+        /// <summary>Order lookup (agent tool): by delivery-date range + status, with customer name/email and item
+        /// summary. Company-scoped via Order.CompanyId.</summary>
+        Task<InsightsReportResult> ListOrdersAsync(string from, string to, string status, int? limit, ReportScope scope = null);
     }
 }

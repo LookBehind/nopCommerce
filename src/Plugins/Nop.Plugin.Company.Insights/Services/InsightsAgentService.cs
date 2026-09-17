@@ -50,7 +50,6 @@ namespace Nop.Plugin.Company.Insights.Services
             profile ??= new InsightsProfile { Id = "analyst", Name = "Analyst", Persona = "a general BI analyst" };
             scope ??= ReportScope.Unscoped();
             var memoryKey = profile.Id;
-            void Report(string s) { try { reportStatus?.Invoke(s); } catch { /* status is best-effort */ } }
 
             var messages = new List<InsightsLlmClient.LlmMessage>
             {
@@ -70,6 +69,43 @@ namespace Nop.Plugin.Company.Insights.Services
 
             await InjectMemoryContextAsync(messages, request, memoryKey, cancellationToken);
 
+            return await RunLoopAsync(messages, memoryKey, scope, allowWidgets: true, readOnly: false, reportStatus, cancellationToken);
+        }
+
+        public async Task<string> RunBackgroundAsync(InsightsAgentConfig config, string triggerJson, ReportScope scope, CancellationToken cancellationToken = default)
+        {
+            scope ??= ReportScope.Unscoped();
+            var sb = new StringBuilder();
+            sb.AppendLine((config.SystemPrompt ?? "You are a background analytics agent for the MySnacks platform. You are READ-ONLY.").Trim());
+            if (scope.CompanyId.HasValue)
+                sb.AppendLine("Your scope is a single company; every tool already returns only that company's data.");
+            sb.AppendLine("Ground your answer in real data: use the read-only tools to look up the products / orders / reviews the trigger refers to before drawing conclusions. Do not invent facts (e.g. never claim a product is missing an image or description without checking with list_products).");
+            AppendProtocolAndTools(sb, scope, _memory.Enabled, automationsEnabled: false, includeWidgets: false);
+
+            var messages = new List<InsightsLlmClient.LlmMessage>
+            {
+                new InsightsLlmClient.LlmMessage { Role = "system", Content = sb.ToString() },
+                new InsightsLlmClient.LlmMessage
+                {
+                    Role = "user",
+                    Content = (config.Instruction ?? "Analyse the trigger and produce a concise, actionable note.").Trim()
+                              + "\n\nTrigger context (JSON):\n" + triggerJson
+                }
+            };
+
+            var result = await RunLoopAsync(messages, config.Id, scope, allowWidgets: false, readOnly: true, null, cancellationToken);
+            return result.Reply;
+        }
+
+        // Read-only agents can't call these write tools even if the model tries.
+        private static readonly HashSet<string> WriteTools = new(StringComparer.OrdinalIgnoreCase)
+        { "remember", "create_automation", "update_automation", "delete_automation" };
+
+        /// <summary>The shared JSON-action tool loop used by both the interactive chat and background agents.</summary>
+        private async Task<AgentTurnResult> RunLoopAsync(List<InsightsLlmClient.LlmMessage> messages, string memoryKey,
+            ReportScope scope, bool allowWidgets, bool readOnly, Action<string> reportStatus, CancellationToken cancellationToken)
+        {
+            void Report(string s) { try { reportStatus?.Invoke(s); } catch { /* status is best-effort */ } }
             InsightsReportResult lastDataset = null;
 
             try
@@ -94,7 +130,7 @@ namespace Nop.Plugin.Company.Insights.Services
 
                     if (root.TryGetProperty("final", out var finalEl))
                     {
-                        var widgets = root.TryGetProperty("widgets", out var widgetsEl)
+                        var widgets = allowWidgets && root.TryGetProperty("widgets", out var widgetsEl)
                             ? BuildWidgets(widgetsEl, lastDataset)
                             : new List<WidgetProposal>();
                         return new AgentTurnResult
@@ -111,15 +147,22 @@ namespace Nop.Plugin.Company.Insights.Services
                         Report(ToolStatusLabel(tool));
                         string observation;
                         InsightsReportResult dataset = null;
-                        try
+                        if (readOnly && WriteTools.Contains(tool))
                         {
-                            (observation, dataset) = await ExecuteToolAsync(tool, argsEl, memoryKey, scope, cancellationToken);
+                            observation = $"error: '{tool}' is not available to a background automation (read-only). Use it only to read data.";
                         }
-                        catch (Exception toolEx) when (!(toolEx is OperationCanceledException && cancellationToken.IsCancellationRequested))
+                        else
                         {
-                            // A tool failure shouldn't sink the whole turn — feed it back so the model can adapt.
-                            await _logger.WarningAsync($"Insights agent tool '{tool}' failed", toolEx);
-                            observation = $"error: the '{tool}' tool failed ({toolEx.Message}). Try a different tool or answer with what you already have.";
+                            try
+                            {
+                                (observation, dataset) = await ExecuteToolAsync(tool, argsEl, memoryKey, scope, cancellationToken);
+                            }
+                            catch (Exception toolEx) when (!(toolEx is OperationCanceledException && cancellationToken.IsCancellationRequested))
+                            {
+                                // A tool failure shouldn't sink the whole turn — feed it back so the model can adapt.
+                                await _logger.WarningAsync($"Insights agent tool '{tool}' failed", toolEx);
+                                observation = $"error: the '{tool}' tool failed ({toolEx.Message}). Try a different tool or answer with what you already have.";
+                            }
                         }
                         if (dataset != null)
                             lastDataset = dataset;
@@ -205,6 +248,8 @@ namespace Nop.Plugin.Company.Insights.Services
             "run_report" => "Running a report…",
             "query_orders" => "Querying orders…",
             "list_reviews" => "Reading reviews…",
+            "list_products" => "Looking up products…",
+            "list_orders" => "Looking up orders…",
             "recall" => "Recalling notes…",
             "remember" => "Saving a note…",
             "list_automations" => "Listing automations…",
@@ -278,6 +323,20 @@ namespace Nop.Plugin.Company.Insights.Services
                     var orderBy = GetString(args, "orderBy") ?? "date";
                     var limit = GetInt(args, "limit");
                     var result = await _reportService.GetReviewsAsync(days, vendorId, customerEmail, customerName, orderBy, limit, scope);
+                    return (SummarizeDataset(result), result);
+                }
+                case "list_products":
+                {
+                    var result = await _reportService.ListProductsAsync(
+                        GetInt(args, "id"), GetInt(args, "vendorId"), GetString(args, "name"),
+                        GetString(args, "category"), GetString(args, "orderBy"), GetInt(args, "limit"), scope);
+                    return (SummarizeDataset(result), result);
+                }
+                case "list_orders":
+                {
+                    var result = await _reportService.ListOrdersAsync(
+                        GetString(args, "from"), GetString(args, "to"), GetString(args, "status"),
+                        GetInt(args, "limit"), scope);
                     return (SummarizeDataset(result), result);
                 }
                 case "list_automations":
@@ -477,22 +536,33 @@ namespace Nop.Plugin.Company.Insights.Services
             sb.AppendLine("You help backoffice staff explore this tenant's order data. You are READ-ONLY: you can only read data through the tools below, never modify anything.");
             if (scope != null && scope.CompanyId.HasValue)
                 sb.AppendLine("IMPORTANT: your data is already restricted to a single company — every tool only returns that company's data. Do not claim to see other companies.");
-            if (memoryEnabled)
-                sb.AppendLine("You have long-term memory across conversations: consult it with recall, and save durable, reusable learnings (not one-off facts) with remember.");
+            AppendProtocolAndTools(sb, scope, memoryEnabled, automationsEnabled, includeWidgets: true);
+            return sb.ToString();
+        }
+
+        /// <summary>The JSON-action protocol + read-only tool catalog + rules, shared by the interactive chat and
+        /// the background automations. Background agents pass includeWidgets:false and automationsEnabled:false.</summary>
+        private static void AppendProtocolAndTools(StringBuilder sb, ReportScope scope, bool memoryEnabled, bool automationsEnabled, bool includeWidgets)
+        {
             sb.AppendLine();
             sb.AppendLine("Respond with EXACTLY ONE JSON object per turn and nothing else — no text or fences outside the JSON. Use one of two shapes:");
             sb.AppendLine("1) Call a tool: {\"action\":\"<tool>\",\"args\":{...}}");
-            sb.AppendLine("2) Finish: {\"final\":\"<answer, in Markdown>\",\"widgets\":[<widget>...]}");
+            sb.AppendLine(includeWidgets
+                ? "2) Finish: {\"final\":\"<answer, in Markdown>\",\"widgets\":[<widget>...]}"
+                : "2) Finish: {\"final\":\"<answer, in Markdown>\"}");
             sb.AppendLine();
-            sb.AppendLine("Tools:");
+            sb.AppendLine("Tools (all READ-ONLY):");
             sb.AppendLine("- list_reports {}  -> available named reports.");
             sb.AppendLine("- run_report {\"id\":\"<reportId>\",\"days\":<int, optional>}  -> a report's columns and rows. list_reports shows each report's parameters and their min/max; \"days\" is clamped to the report's allowed range (e.g. up to 90).");
             sb.AppendLine("- query_orders {\"days\":<int, optional, default 30, max 365>,\"groupBy\":\"day\"|\"status\",\"metric\":\"count\"|\"revenue\"}  -> aggregated orders over the last N days.");
             sb.AppendLine("- list_reviews {\"days\":<int, optional, default 30, max 90>,\"vendorId\":<int, optional>,\"customerEmail\":\"...\"(optional),\"customerName\":\"...\"(optional),\"orderBy\":\"date\"|\"rating\"|\"helpful\"(optional),\"limit\":<int, optional, default 50, max 200>}  -> product reviews (date, product, vendor name+email, customer full name+email, rating, approved, title, review, and triage: who/when/hours/resolution). Refer to customers AND vendors by their name and email, never by a bare id.");
+            sb.AppendLine("- list_products {\"id\":<int, optional>,\"vendorId\":<int, optional>,\"name\":\"...\"(optional, substring),\"category\":\"<name or id>\"(optional),\"orderBy\":\"name\"|\"price\"|\"created\"|\"id\"(optional),\"limit\":<int, optional, default 20, max 50>}  -> products with vendor name+email, SKU, price, weight, published, categories, short + full description (HTML stripped) and picture URLs. Use this to check a product's real details before commenting on it.");
+            sb.AppendLine("- list_orders {\"from\":\"YYYY-MM-DD\"(optional),\"to\":\"YYYY-MM-DD\"(optional),\"status\":\"<order status id, optional>\",\"limit\":<int, optional, default 25, max 100>}  -> orders by delivery date (id, created, delivery time, status, total, customer name+email, and an item summary).");
             if (memoryEnabled)
             {
-                sb.AppendLine("- recall {\"query\":\"...\"}  -> retrieve notes you saved in earlier conversations.");
-                sb.AppendLine("- remember {\"content\":\"...\",\"kind\":\"note\"}  -> save a durable, reusable learning for future conversations.");
+                sb.AppendLine("- recall {\"query\":\"...\"}  -> retrieve notes saved in earlier runs/conversations.");
+                if (includeWidgets)
+                    sb.AppendLine("- remember {\"content\":\"...\",\"kind\":\"note\"}  -> save a durable, reusable learning for future conversations.");
             }
             if (automationsEnabled)
             {
@@ -508,13 +578,17 @@ namespace Nop.Plugin.Company.Insights.Services
                 else
                     sb.AppendLine("You manage automations across all companies (leave companyId unset for a global automation). Confirm destructive actions (delete) with the user first.");
             }
+            if (includeWidgets)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Widget (optional; visualizes the MOST RECENT dataset you fetched this turn):");
+                sb.AppendLine("{\"kind\":\"chart\"|\"table\",\"chartKind\":\"line\"|\"area\"|\"bar\"|\"pie\",\"title\":\"...\",\"xField\":\"<column>\",\"yField\":\"<column>\",\"categoryField\":\"<column>\"}");
+            }
             sb.AppendLine();
-            sb.AppendLine("Widget (optional; visualizes the MOST RECENT dataset you fetched this turn):");
-            sb.AppendLine("{\"kind\":\"chart\"|\"table\",\"chartKind\":\"line\"|\"area\"|\"bar\"|\"pie\",\"title\":\"...\",\"xField\":\"<column>\",\"yField\":\"<column>\",\"categoryField\":\"<column>\"}");
-            sb.AppendLine();
-            sb.AppendLine("Rules: always fetch real data with a tool before answering; never invent numbers. Field names in widgets must match the dataset columns. Only add widgets when a chart or table genuinely helps.");
-            sb.AppendLine("Formatting the \"final\" answer (it is rendered as Markdown): keep it short and skimmable. Lead with a one-line takeaway, then a bulleted list ('- ') of the key points — one figure or finding per bullet. Use **bold** for the important numbers, names, and labels. Use a Markdown table only for small comparisons; for anything larger, add a widget instead of a big table. Write the Markdown inside the JSON string with real newlines (\\n).");
-            return sb.ToString();
+            sb.AppendLine("Rules: always fetch real data with a tool before answering; never invent numbers, product details, images or descriptions.");
+            if (includeWidgets)
+                sb.AppendLine("Field names in widgets must match the dataset columns. Only add widgets when a chart or table genuinely helps.");
+            sb.AppendLine("Formatting the \"final\" answer (it is rendered as Markdown): keep it short and skimmable. Lead with a one-line takeaway, then a bulleted list ('- ') of the key points — one figure or finding per bullet. Use **bold** for the important numbers, names, and labels." + (includeWidgets ? " Use a Markdown table only for small comparisons; for anything larger, add a widget instead of a big table." : "") + " Write the Markdown inside the JSON string with real newlines (\\n).");
         }
 
         /// <summary>Extracts the first balanced JSON object from model output (tolerates ``` fences and stray prose).</summary>

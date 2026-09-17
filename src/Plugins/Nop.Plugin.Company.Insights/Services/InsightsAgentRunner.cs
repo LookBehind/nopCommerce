@@ -17,13 +17,11 @@ namespace Nop.Plugin.Company.Insights.Services
 
     public class InsightsAgentRunner : IInsightsAgentRunner
     {
-        // No token cap (a fixed limit truncates a reasoning model mid-think → empty output); bound by time.
-        private static readonly TimeSpan LlmTimeout = TimeSpan.FromSeconds(240);
-
         private readonly IInsightsAgentConfigService _configs;
         private readonly IInsightsEventService _events;
         private readonly IInsightsAgentRunService _runs;
-        private readonly InsightsLlmClient _llm;
+        private readonly IInsightsAgentService _agentService;
+        private readonly IInsightsProfileService _profiles;
         private readonly InsightsTelegramClient _telegram;
         private readonly IInsightsMemoryService _memory;
         private readonly ILogger _logger;
@@ -32,7 +30,8 @@ namespace Nop.Plugin.Company.Insights.Services
             IInsightsAgentConfigService configs,
             IInsightsEventService events,
             IInsightsAgentRunService runs,
-            InsightsLlmClient llm,
+            IInsightsAgentService agentService,
+            IInsightsProfileService profiles,
             InsightsTelegramClient telegram,
             IInsightsMemoryService memory,
             ILogger logger)
@@ -40,7 +39,8 @@ namespace Nop.Plugin.Company.Insights.Services
             _configs = configs;
             _events = events;
             _runs = runs;
-            _llm = llm;
+            _agentService = agentService;
+            _profiles = profiles;
             _telegram = telegram;
             _memory = memory;
             _logger = logger;
@@ -75,21 +75,10 @@ namespace Nop.Plugin.Company.Insights.Services
             var runId = await _runs.StartAsync(config.Id, config.Name, eventId, triggerType, inputJson);
             try
             {
-                var system = (config.SystemPrompt ?? "You are a background analytics agent for the MySnacks platform. You are READ-ONLY.").Trim();
-                if (config.CompanyId.HasValue)
-                    system += "\nYour scope is a single company; the trigger context below is already limited to it.";
-
-                var user = (config.Instruction ?? "Analyse the trigger and produce a concise, actionable note.").Trim()
-                           + "\n\nTrigger context (JSON):\n" + inputJson;
-
-                var messages = new List<InsightsLlmClient.LlmMessage>
-                {
-                    new InsightsLlmClient.LlmMessage { Role = "system", Content = system },
-                    new InsightsLlmClient.LlmMessage { Role = "user", Content = user }
-                };
-
-                var output = await _llm.CompleteAsync(InsightsLlmClient.DefaultModel, messages, 0.2, null, LlmTimeout);
-                output = (output ?? string.Empty).Trim();
+                // Run as a read-only tool-using agent so it can look up the products/orders/reviews the trigger
+                // refers to and ground its output in real data (scoped to the automation's company).
+                var scope = await _profiles.ScopeForCompanyAsync(config.CompanyId);
+                var output = (await _agentService.RunBackgroundAsync(config, inputJson, scope)).Trim();
 
                 var sinks = ParseSinks(config.OutputSinksJson);
                 await DispatchSinksAsync(config, sinks, output);

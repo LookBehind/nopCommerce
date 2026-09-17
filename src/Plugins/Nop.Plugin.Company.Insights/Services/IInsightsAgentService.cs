@@ -20,6 +20,14 @@ namespace Nop.Plugin.Company.Insights.Services
         Task<AgentTurnResult> RunTurnAsync(ChatTurnRequest request, InsightsProfile profile, ReportScope scope, Action<string> reportStatus = null, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Runs a background automation as a read-only tool-using agent: the config's system prompt +
+        /// instruction + trigger context, with the same data tools as the chat (run_report, list_products,
+        /// list_orders, list_reviews, query_orders, recall) so it grounds its output in real data. No writes,
+        /// no widgets. Returns the answer text (which the runner then routes to the automation's sinks).
+        /// </summary>
+        Task<string> RunBackgroundAsync(InsightsAgentConfig config, string triggerJson, ReportScope scope, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Meta-agent: turn a natural-language description into a draft background-agent config JSON
         /// (the main agent writes the background agent's system prompt). Returns the raw JSON object
         /// string, or null if the model couldn't produce one. See docs/BACKGROUND-AGENTS.md §4.

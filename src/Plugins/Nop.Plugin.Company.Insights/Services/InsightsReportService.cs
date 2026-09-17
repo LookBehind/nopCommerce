@@ -134,10 +134,12 @@ namespace Nop.Plugin.Company.Insights.Services
         }
 
         private readonly INopDataProvider _dataProvider;
+        private readonly Nop.Services.Media.IPictureService _pictureService;
 
-        public InsightsReportService(INopDataProvider dataProvider)
+        public InsightsReportService(INopDataProvider dataProvider, Nop.Services.Media.IPictureService pictureService)
         {
             _dataProvider = dataProvider;
+            _pictureService = pictureService;
         }
 
         public async Task<InsightsReportResult> RunAsync(string id, IDictionary<string, string> parameters, ReportScope scope = null)
@@ -701,6 +703,240 @@ namespace Nop.Plugin.Company.Insights.Services
             public int VendorId { get; set; }
             public int ProductId { get; set; }
         }
+
+        // ---- Shared agent data tools (products / orders) ----
+
+        /// <summary>Product lookup for the agents — filter by id/vendor/name/category, ordered, with short +
+        /// full description, weight, SKU, price, categories and picture URLs. Company-scoped to the caller's vendors.</summary>
+        public async Task<InsightsReportResult> ListProductsAsync(int? id, int? vendorId, string name, string category, string orderBy, int? limit, ReportScope scope = null)
+        {
+            var take = Math.Clamp(limit ?? 20, 1, 50);
+            var result = new InsightsReportResult
+            {
+                Id = "products",
+                Columns = new List<InsightsReportColumn>
+                {
+                    new InsightsReportColumn { Name = "Id", Type = "number" },
+                    new InsightsReportColumn { Name = "Name", Type = "string" },
+                    new InsightsReportColumn { Name = "Vendor", Type = "string" },
+                    new InsightsReportColumn { Name = "VendorEmail", Type = "string" },
+                    new InsightsReportColumn { Name = "Sku", Type = "string" },
+                    new InsightsReportColumn { Name = "Price", Type = "number" },
+                    new InsightsReportColumn { Name = "Weight", Type = "number" },
+                    new InsightsReportColumn { Name = "Published", Type = "string" },
+                    new InsightsReportColumn { Name = "Categories", Type = "string" },
+                    new InsightsReportColumn { Name = "ShortDescription", Type = "string" },
+                    new InsightsReportColumn { Name = "FullDescription", Type = "string" },
+                    new InsightsReportColumn { Name = "Pictures", Type = "string" }
+                }
+            };
+            if (scope != null && scope.Denied)
+                return result;
+            IList<int> scopedVendorIds = scope?.CompanyId != null ? (scope.VendorIds ?? new List<int>()) : null;
+            if (scopedVendorIds != null && scopedVendorIds.Count == 0)
+                return result;
+
+            var query = _dataProvider.GetTable<Product>().Where(p => !p.Deleted);
+            if (id.HasValue) query = query.Where(p => p.Id == id.Value);
+            if (vendorId.HasValue) query = query.Where(p => p.VendorId == vendorId.Value);
+            if (scopedVendorIds != null) query = query.Where(p => scopedVendorIds.Contains(p.VendorId));
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                var n = name.Trim().ToLower();
+                query = query.Where(p => p.Name.ToLower().Contains(n));
+            }
+            if (!string.IsNullOrWhiteSpace(category))
+            {
+                var cat = category.Trim();
+                if (int.TryParse(cat, out var catId))
+                {
+                    var pids = _dataProvider.GetTable<ProductCategory>().Where(pc => pc.CategoryId == catId).Select(pc => pc.ProductId);
+                    query = query.Where(p => pids.Contains(p.Id));
+                }
+                else
+                {
+                    var cl = cat.ToLower();
+                    var pids = from pc in _dataProvider.GetTable<ProductCategory>()
+                               join c in _dataProvider.GetTable<Category>() on pc.CategoryId equals c.Id
+                               where c.Name.ToLower().Contains(cl)
+                               select pc.ProductId;
+                    query = query.Where(p => pids.Contains(p.Id));
+                }
+            }
+
+            query = orderBy?.ToLowerInvariant() switch
+            {
+                "name" => query.OrderBy(p => p.Name),
+                "price" => query.OrderByDescending(p => p.Price),
+                "created" => query.OrderByDescending(p => p.CreatedOnUtc),
+                _ => query.OrderByDescending(p => p.Id)
+            };
+
+            var rows = await query.Take(take).Select(p => new ProductSlim
+            {
+                Id = p.Id, Name = p.Name, VendorId = p.VendorId, Sku = p.Sku, Price = p.Price, Weight = p.Weight,
+                Published = p.Published, ShortDescription = p.ShortDescription, FullDescription = p.FullDescription
+            }).ToListAsync();
+
+            var vendors = await ResolveVendorsAsync(rows.Select(r => r.VendorId).Distinct().ToList());
+            var cats = await ResolveCategoriesForProductsAsync(rows.Select(r => r.Id).ToList());
+
+            foreach (var p in rows)
+            {
+                var pics = await BuildPictureUrlsAsync(p.Id);
+                result.Rows.Add(new Dictionary<string, object>
+                {
+                    ["Id"] = p.Id,
+                    ["Name"] = p.Name,
+                    ["Vendor"] = vendors.TryGetValue(p.VendorId, out var vr) ? vr.Name : "",
+                    ["VendorEmail"] = vendors.TryGetValue(p.VendorId, out var vre) ? vre.Email : "",
+                    ["Sku"] = p.Sku,
+                    ["Price"] = p.Price,
+                    ["Weight"] = p.Weight,
+                    ["Published"] = p.Published ? "Yes" : "No",
+                    ["Categories"] = cats.TryGetValue(p.Id, out var cn) ? string.Join(", ", cn) : "",
+                    ["ShortDescription"] = Truncate(StripHtml(p.ShortDescription), 400),
+                    ["FullDescription"] = Truncate(StripHtml(p.FullDescription), 2000),
+                    ["Pictures"] = string.Join(" ", pics)
+                });
+            }
+            return result;
+        }
+
+        /// <summary>Order lookup for the agents — by delivery-date range and status, with customer name/email and
+        /// an item summary. Company-scoped via Order.CompanyId.</summary>
+        public async Task<InsightsReportResult> ListOrdersAsync(string from, string to, string status, int? limit, ReportScope scope = null)
+        {
+            var take = Math.Clamp(limit ?? 25, 1, 100);
+            var result = new InsightsReportResult
+            {
+                Id = "orders",
+                Columns = new List<InsightsReportColumn>
+                {
+                    new InsightsReportColumn { Name = "Id", Type = "number" },
+                    new InsightsReportColumn { Name = "Created", Type = "date" },
+                    new InsightsReportColumn { Name = "Delivery", Type = "date" },
+                    new InsightsReportColumn { Name = "Status", Type = "string" },
+                    new InsightsReportColumn { Name = "Total", Type = "number" },
+                    new InsightsReportColumn { Name = "Customer", Type = "string" },
+                    new InsightsReportColumn { Name = "Email", Type = "string" },
+                    new InsightsReportColumn { Name = "Items", Type = "string" }
+                }
+            };
+            if (scope != null && scope.Denied)
+                return result;
+
+            var today = DateTime.UtcNow.Date;
+            var fromDate = ParseDateString(from) ?? today.AddDays(-30);
+            var toDate = ParseDateString(to) ?? today.AddDays(1);
+            var toEnd = toDate.Date.AddDays(1).AddTicks(-1);
+
+            var query = _dataProvider.GetTable<Order>().Where(o => !o.Deleted && o.ScheduleDate >= fromDate && o.ScheduleDate <= toEnd);
+            if (scope?.CompanyId is int cid)
+                query = query.Where(o => o.CompanyId == cid);
+            if (!string.IsNullOrWhiteSpace(status) && int.TryParse(status.Trim(), out var st))
+                query = query.Where(o => o.OrderStatusId == st);
+
+            var orders = await query.OrderByDescending(o => o.ScheduleDate).Take(take)
+                .Select(o => new { o.Id, o.CreatedOnUtc, o.ScheduleDate, o.OrderStatusId, o.OrderTotal, o.CustomerId })
+                .ToListAsync();
+
+            var custIds = orders.Select(o => o.CustomerId).Distinct().ToList();
+            var names = await ResolveCustomerNamesAsync(custIds);
+            var emails = await ResolveCustomerEmailsAsync(custIds);
+            var items = await ResolveOrderItemsSummaryAsync(orders.Select(o => o.Id).ToList());
+
+            foreach (var o in orders)
+                result.Rows.Add(new Dictionary<string, object>
+                {
+                    ["Id"] = o.Id,
+                    ["Created"] = o.CreatedOnUtc.ToString("yyyy-MM-dd"),
+                    ["Delivery"] = o.ScheduleDate.ToString("yyyy-MM-dd HH:mm"),
+                    ["Status"] = ((OrderStatus)o.OrderStatusId).ToString(),
+                    ["Total"] = o.OrderTotal,
+                    ["Customer"] = names.TryGetValue(o.CustomerId, out var n) ? n : "",
+                    ["Email"] = emails.TryGetValue(o.CustomerId, out var e) ? e : "",
+                    ["Items"] = items.TryGetValue(o.Id, out var it) ? it : ""
+                });
+            return result;
+        }
+
+        private sealed class ProductSlim
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+            public int VendorId { get; set; }
+            public string Sku { get; set; }
+            public decimal Price { get; set; }
+            public decimal Weight { get; set; }
+            public bool Published { get; set; }
+            public string ShortDescription { get; set; }
+            public string FullDescription { get; set; }
+        }
+
+        private async Task<Dictionary<int, List<string>>> ResolveCategoriesForProductsAsync(IList<int> productIds)
+        {
+            var map = new Dictionary<int, List<string>>();
+            if (productIds == null || productIds.Count == 0)
+                return map;
+            var rows = await (from pc in _dataProvider.GetTable<ProductCategory>()
+                              join c in _dataProvider.GetTable<Category>() on pc.CategoryId equals c.Id
+                              where productIds.Contains(pc.ProductId)
+                              orderby pc.DisplayOrder
+                              select new { pc.ProductId, c.Name }).ToListAsync();
+            foreach (var r in rows)
+            {
+                if (!map.TryGetValue(r.ProductId, out var l)) { l = new List<string>(); map[r.ProductId] = l; }
+                l.Add(r.Name);
+            }
+            return map;
+        }
+
+        private async Task<List<string>> BuildPictureUrlsAsync(int productId)
+        {
+            var urls = new List<string>();
+            try
+            {
+                var picIds = await _dataProvider.GetTable<ProductPicture>()
+                    .Where(pp => pp.ProductId == productId).OrderBy(pp => pp.DisplayOrder)
+                    .Select(pp => pp.PictureId).Take(5).ToListAsync();
+                foreach (var pid in picIds)
+                {
+                    var url = await _pictureService.GetPictureUrlAsync(pid);
+                    if (!string.IsNullOrWhiteSpace(url))
+                        urls.Add(url);
+                }
+            }
+            catch { /* pictures are best-effort */ }
+            return urls;
+        }
+
+        private async Task<Dictionary<int, string>> ResolveOrderItemsSummaryAsync(IList<int> orderIds)
+        {
+            var map = new Dictionary<int, string>();
+            if (orderIds == null || orderIds.Count == 0)
+                return map;
+            var rows = await (from oi in _dataProvider.GetTable<OrderItem>()
+                              join p in _dataProvider.GetTable<Product>() on oi.ProductId equals p.Id
+                              where orderIds.Contains(oi.OrderId)
+                              select new { oi.OrderId, p.Name, oi.Quantity }).ToListAsync();
+            foreach (var g in rows.GroupBy(r => r.OrderId))
+                map[g.Key] = string.Join("; ", g.Select(x => $"{x.Name} ×{x.Quantity}"));
+            return map;
+        }
+
+        private static string StripHtml(string html)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+                return "";
+            var text = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ");
+            text = System.Net.WebUtility.HtmlDecode(text);
+            return System.Text.RegularExpressions.Regex.Replace(text, "\\s+", " ").Trim();
+        }
+
+        private static DateTime? ParseDateString(string s) =>
+            !string.IsNullOrWhiteSpace(s) && DateTime.TryParse(s.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
+                ? d : (DateTime?)null;
 
         /// <summary>Published, non-deleted products mapped to categories, scoped to the company's vendors when scoped.</summary>
         private async Task<List<CatalogRow>> LoadCatalogRowsAsync(ReportScope scope)

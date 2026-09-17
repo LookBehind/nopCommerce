@@ -45,5 +45,9 @@ namespace Nop.Plugin.Company.Insights.Services
         /// <paramref name="requestedCompanyId"/> or the scope is denied (fail-closed).
         /// </summary>
         Task<ReportScope> ResolveScopeAsync(InsightsProfile profile, int? requestedCompanyId, CancellationToken cancellationToken = default);
+
+        /// <summary>Data scope for a company by id (no current user needed) — used by background automations.
+        /// Null companyId = unscoped (all companies); otherwise scoped to that company + its vendors.</summary>
+        Task<ReportScope> ScopeForCompanyAsync(int? companyId, CancellationToken cancellationToken = default);
     }
 }
