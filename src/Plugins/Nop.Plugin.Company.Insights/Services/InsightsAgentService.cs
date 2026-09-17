@@ -27,6 +27,9 @@ namespace Nop.Plugin.Company.Insights.Services
         // bound is wall-clock: a per-call timeout (above) plus this whole-turn safety ceiling so a stuck
         // model can't loop forever (the user can also Stop). When hit, we do a final tool-free synthesis.
         private static readonly TimeSpan TurnBudget = TimeSpan.FromMinutes(20);
+        // Not a cap — after this many tool rounds the model gets a one-time nudge to converge (answer or
+        // say the data isn't available) so it doesn't spin forever on an unanswerable question.
+        private const int SoftNudgeAfter = 6;
 
         private readonly InsightsLlmClient _llm;
         private readonly IInsightsReportService _reportService;
@@ -116,6 +119,7 @@ namespace Nop.Plugin.Company.Insights.Services
             InsightsReportResult lastDataset = null;
             var pendingWidgets = new List<WidgetProposal>();
             var pendingCombined = new List<string>();
+            var nudged = false;
             var tools = BuildToolSchemas(scope, _memory.Enabled, automationsEnabled, allowWidgets);
 
             try
@@ -221,6 +225,20 @@ namespace Nop.Plugin.Company.Insights.Services
                         {
                             argsDoc?.Dispose();
                         }
+                    }
+
+                    // Soft nudge (once): the loop is uncapped, but after a good number of tool calls, prompt
+                    // the model to converge — answer if it can, or say the data isn't available — so it doesn't
+                    // keep exploring indefinitely on an unanswerable question. It MAY still continue if needed.
+                    if (!nudged && i + 1 >= SoftNudgeAfter)
+                    {
+                        nudged = true;
+                        messages.Add(new InsightsLlmClient.LlmMessage
+                        {
+                            Role = "user",
+                            Content = "You've made several tool calls. If you now have enough to answer, give your answer. "
+                                + "If the data needed isn't available from these tools, say so plainly (name the closest data you did find) instead of continuing to search."
+                        });
                     }
                 }
 
