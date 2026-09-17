@@ -19,11 +19,14 @@ namespace Nop.Plugin.Company.Insights.Services
     /// </summary>
     public class InsightsAgentService : IInsightsAgentService
     {
-        private const int MaxIterations = 9;
         private const int MaxObservationRows = 50;
         // No token cap on the model (reasoning length is unpredictable), so time is the only bound. A
         // reasoning-heavy answer on the gfx906 GPU can take a while to stream — keep this generous.
         private static readonly TimeSpan LlmTimeout = TimeSpan.FromSeconds(240);
+        // The tool loop is NOT capped by an iteration count — it runs until the model answers. The only
+        // bound is wall-clock: a per-call timeout (above) plus this whole-turn safety ceiling so a stuck
+        // model can't loop forever (the user can also Stop). When hit, we do a final tool-free synthesis.
+        private static readonly TimeSpan TurnBudget = TimeSpan.FromMinutes(20);
 
         private readonly InsightsLlmClient _llm;
         private readonly IInsightsReportService _reportService;
@@ -117,8 +120,11 @@ namespace Nop.Plugin.Company.Insights.Services
 
             try
             {
-                for (var i = 0; i < MaxIterations; i++)
+                var deadline = DateTime.UtcNow + TurnBudget;
+                for (var i = 0; ; i++)
                 {
+                    if (DateTime.UtcNow >= deadline)
+                        break; // whole-turn safety ceiling reached → final tool-free synthesis below
                     Report(i == 0 ? "Thinking…" : "Analyzing…");
                     var completion = await _llm.CompleteWithToolsAsync(
                         InsightsLlmClient.DefaultModel, messages, 0.0, tools, LlmTimeout, cancellationToken);
@@ -218,13 +224,13 @@ namespace Nop.Plugin.Company.Insights.Services
                     }
                 }
 
-                // Tool budget exhausted. Make ONE final call with NO tools so the model must answer with
+                // Time ceiling reached. Make ONE final call with NO tools so the model must answer with
                 // what it gathered (or explain what data is missing) instead of a canned give-up.
                 Report("Summarizing…");
                 messages.Add(new InsightsLlmClient.LlmMessage
                 {
                     Role = "user",
-                    Content = "You've reached the tool-call limit. Answer now in Markdown using the data you've already gathered. "
+                    Content = "Time to wrap up. Answer now in Markdown using the data you've already gathered. "
                         + "If the data needed to answer isn't available from the tools, say so plainly and suggest the closest thing you can show or how to narrow the question. Do NOT call any more tools."
                 });
                 try
@@ -247,7 +253,7 @@ namespace Nop.Plugin.Company.Insights.Services
 
                 return new AgentTurnResult
                 {
-                    Reply = "I couldn't finish that within a few steps — try narrowing the question.",
+                    Reply = "That question took too long to work through — try narrowing it.",
                     CombinedReports = pendingCombined
                 };
             }
