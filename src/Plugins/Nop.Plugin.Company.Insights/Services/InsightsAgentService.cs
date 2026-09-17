@@ -336,7 +336,9 @@ namespace Nop.Plugin.Company.Insights.Services
                 {
                     var result = await _reportService.ListOrdersAsync(
                         GetString(args, "from"), GetString(args, "to"), GetString(args, "status"),
-                        GetInt(args, "limit"), scope);
+                        GetInt(args, "limit"), scope,
+                        GetString(args, "customerEmail"), GetString(args, "customerName"),
+                        GetInt(args, "vendorId"), GetInt(args, "productId"));
                     return (SummarizeDataset(result), result);
                 }
                 case "list_automations":
@@ -557,7 +559,7 @@ namespace Nop.Plugin.Company.Insights.Services
             sb.AppendLine("- query_orders {\"days\":<int, optional, default 30, max 365>,\"groupBy\":\"day\"|\"status\",\"metric\":\"count\"|\"revenue\"}  -> aggregated orders over the last N days.");
             sb.AppendLine("- list_reviews {\"days\":<int, optional, default 30, max 90>,\"vendorId\":<int, optional>,\"customerEmail\":\"...\"(optional),\"customerName\":\"...\"(optional),\"orderBy\":\"date\"|\"rating\"|\"helpful\"(optional),\"limit\":<int, optional, default 50, max 200>}  -> product reviews (date, product, vendor name+email, customer full name+email, rating, approved, title, review, and triage: who/when/hours/resolution). Refer to customers AND vendors by their name and email, never by a bare id.");
             sb.AppendLine("- list_products {\"id\":<int, optional>,\"vendorId\":<int, optional>,\"name\":\"...\"(optional, substring),\"category\":\"<name or id>\"(optional),\"orderBy\":\"name\"|\"price\"|\"created\"|\"id\"(optional),\"limit\":<int, optional, default 20, max 50>}  -> products with vendor name+email, SKU, price, weight, published, categories, short + full description (HTML stripped) and picture URLs. Use this to check a product's real details before commenting on it.");
-            sb.AppendLine("- list_orders {\"from\":\"YYYY-MM-DD\"(optional),\"to\":\"YYYY-MM-DD\"(optional),\"status\":\"<order status id, optional>\",\"limit\":<int, optional, default 25, max 100>}  -> orders by delivery date (id, created, delivery time, status, total, customer name+email, and an item summary).");
+            sb.AppendLine("- list_orders {\"from\":\"YYYY-MM-DD\"(optional),\"to\":\"YYYY-MM-DD\"(optional),\"status\":\"<order status id, optional>\",\"customerEmail\":\"...\"(optional),\"customerName\":\"...\"(optional),\"vendorId\":<int, optional — orders containing that vendor's products>,\"productId\":<int, optional — orders containing that product>,\"limit\":<int, optional, default 25, max 100>}  -> orders by delivery date (id, created, delivery time, status, total, customer name+email, and an item summary).");
             if (memoryEnabled)
             {
                 sb.AppendLine("- recall {\"query\":\"...\"}  -> retrieve notes saved in earlier runs/conversations.");

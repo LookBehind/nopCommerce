@@ -805,7 +805,8 @@ namespace Nop.Plugin.Company.Insights.Services
 
         /// <summary>Order lookup for the agents — by delivery-date range and status, with customer name/email and
         /// an item summary. Company-scoped via Order.CompanyId.</summary>
-        public async Task<InsightsReportResult> ListOrdersAsync(string from, string to, string status, int? limit, ReportScope scope = null)
+        public async Task<InsightsReportResult> ListOrdersAsync(string from, string to, string status, int? limit, ReportScope scope = null,
+            string customerEmail = null, string customerName = null, int? vendorId = null, int? productId = null)
         {
             var take = Math.Clamp(limit ?? 25, 1, 100);
             var result = new InsightsReportResult
@@ -836,6 +837,36 @@ namespace Nop.Plugin.Company.Insights.Services
                 query = query.Where(o => o.CompanyId == cid);
             if (!string.IsNullOrWhiteSpace(status) && int.TryParse(status.Trim(), out var st))
                 query = query.Where(o => o.OrderStatusId == st);
+
+            // Customer filters
+            if (!string.IsNullOrWhiteSpace(customerEmail))
+            {
+                var email = customerEmail.Trim().ToLower();
+                var emailIds = _dataProvider.GetTable<Customer>().Where(c => c.Email.ToLower() == email).Select(c => c.Id);
+                query = query.Where(o => emailIds.Contains(o.CustomerId));
+            }
+            if (!string.IsNullOrWhiteSpace(customerName))
+            {
+                var nameIds = await ResolveCustomerIdsByNameAsync(customerName.Trim());
+                if (nameIds.Count == 0)
+                    return result; // named customer not found → no orders
+                query = query.Where(o => nameIds.Contains(o.CustomerId));
+            }
+
+            // "Orders containing …" filters (via order items)
+            if (vendorId.HasValue)
+            {
+                var orderIdsWithVendor = from oi in _dataProvider.GetTable<OrderItem>()
+                                         join p in _dataProvider.GetTable<Product>() on oi.ProductId equals p.Id
+                                         where p.VendorId == vendorId.Value
+                                         select oi.OrderId;
+                query = query.Where(o => orderIdsWithVendor.Contains(o.Id));
+            }
+            if (productId.HasValue)
+            {
+                var orderIdsWithProduct = _dataProvider.GetTable<OrderItem>().Where(oi => oi.ProductId == productId.Value).Select(oi => oi.OrderId);
+                query = query.Where(o => orderIdsWithProduct.Contains(o.Id));
+            }
 
             var orders = await query.OrderByDescending(o => o.ScheduleDate).Take(take)
                 .Select(o => new { o.Id, o.CreatedOnUtc, o.ScheduleDate, o.OrderStatusId, o.OrderTotal, o.CustomerId })

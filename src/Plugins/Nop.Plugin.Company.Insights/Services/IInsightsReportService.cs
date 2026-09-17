@@ -41,8 +41,10 @@ namespace Nop.Plugin.Company.Insights.Services
         /// with short/full description, weight, SKU, price, categories and picture URLs. Company-scoped.</summary>
         Task<InsightsReportResult> ListProductsAsync(int? id, int? vendorId, string name, string category, string orderBy, int? limit, ReportScope scope = null);
 
-        /// <summary>Order lookup (agent tool): by delivery-date range + status, with customer name/email and item
-        /// summary. Company-scoped via Order.CompanyId.</summary>
-        Task<InsightsReportResult> ListOrdersAsync(string from, string to, string status, int? limit, ReportScope scope = null);
+        /// <summary>Order lookup (agent tool): by delivery-date range + status, and optional filters — customer
+        /// email / full name, orders containing a vendor's products (vendorId) or a specific product (productId).
+        /// Returns customer name/email + item summary. Company-scoped via Order.CompanyId.</summary>
+        Task<InsightsReportResult> ListOrdersAsync(string from, string to, string status, int? limit, ReportScope scope = null,
+            string customerEmail = null, string customerName = null, int? vendorId = null, int? productId = null);
     }
 }
