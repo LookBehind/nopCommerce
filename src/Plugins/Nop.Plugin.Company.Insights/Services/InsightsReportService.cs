@@ -135,11 +135,14 @@ namespace Nop.Plugin.Company.Insights.Services
 
         private readonly INopDataProvider _dataProvider;
         private readonly Nop.Services.Media.IPictureService _pictureService;
+        private readonly Nop.Services.Stores.IStoreService _storeService;
 
-        public InsightsReportService(INopDataProvider dataProvider, Nop.Services.Media.IPictureService pictureService)
+        public InsightsReportService(INopDataProvider dataProvider, Nop.Services.Media.IPictureService pictureService,
+            Nop.Services.Stores.IStoreService storeService)
         {
             _dataProvider = dataProvider;
             _pictureService = pictureService;
+            _storeService = storeService;
         }
 
         public async Task<InsightsReportResult> RunAsync(string id, IDictionary<string, string> parameters, ReportScope scope = null)
@@ -926,20 +929,48 @@ namespace Nop.Plugin.Company.Insights.Services
         private async Task<List<string>> BuildPictureUrlsAsync(int productId)
         {
             var urls = new List<string>();
+            List<int> picIds;
             try
             {
-                var picIds = await _dataProvider.GetTable<ProductPicture>()
+                picIds = await _dataProvider.GetTable<ProductPicture>()
                     .Where(pp => pp.ProductId == productId).OrderBy(pp => pp.DisplayOrder)
                     .Select(pp => pp.PictureId).Take(5).ToListAsync();
-                foreach (var pid in picIds)
+            }
+            catch { return urls; }
+            if (picIds.Count == 0)
+                return urls;
+
+            // Pass an explicit store location so URL building works without an HTTP request — background
+            // automations run in Hangfire where GetPictureUrlAsync's default GetStoreLocation() would throw.
+            var storeLocation = await ResolveStoreLocationAsync();
+            foreach (var pid in picIds)
+            {
+                try
                 {
-                    var url = await _pictureService.GetPictureUrlAsync(pid);
+                    var url = await _pictureService.GetPictureUrlAsync(pid, storeLocation: storeLocation);
                     if (!string.IsNullOrWhiteSpace(url))
                         urls.Add(url);
                 }
+                catch { /* one picture failing shouldn't drop the rest */ }
             }
-            catch { /* pictures are best-effort */ }
+            // The product HAS pictures even if URL generation failed — never let the agent conclude "no image".
+            if (urls.Count == 0)
+                urls.Add($"[{picIds.Count} picture(s) attached — URL unavailable]");
             return urls;
+        }
+
+        private string _storeLocationCache;
+        private async Task<string> ResolveStoreLocationAsync()
+        {
+            if (_storeLocationCache != null)
+                return _storeLocationCache;
+            try
+            {
+                var stores = await _storeService.GetAllStoresAsync();
+                _storeLocationCache = stores.FirstOrDefault()?.Url?.TrimEnd('/') ?? "";
+            }
+            catch { _storeLocationCache = ""; }
+            return _storeLocationCache;
         }
 
         private async Task<Dictionary<int, string>> ResolveOrderItemsSummaryAsync(IList<int> orderIds)
