@@ -23,6 +23,7 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
             services.AddScoped<IInsightsScheduleRunner, InsightsScheduleRunner>();
             services.AddScoped<IInsightsEventService, InsightsEventService>();
             services.AddScoped<IInsightsEventDispatcher, InsightsEventDispatcher>();
+            services.AddScoped<IInsightsCompanyResolver, InsightsCompanyResolver>();
             services.AddScoped<InsightsDeliveryTriggerReconciler>();
             services.AddScoped<IInsightsDeliveryTriggerJob, InsightsDeliveryTriggerJob>();
             services.AddScoped<Nop.Services.Tasks.IRecurringTaskRegistrar, InsightsDeliveryTriggerBootReconciler>();
