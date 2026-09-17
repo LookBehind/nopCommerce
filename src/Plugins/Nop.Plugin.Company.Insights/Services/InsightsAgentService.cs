@@ -112,6 +112,7 @@ namespace Nop.Plugin.Company.Insights.Services
             void Report(string s) { try { reportStatus?.Invoke(s); } catch { /* status is best-effort */ } }
             InsightsReportResult lastDataset = null;
             var pendingWidgets = new List<WidgetProposal>();
+            var pendingCombined = new List<string>();
             var tools = BuildToolSchemas(scope, _memory.Enabled, automationsEnabled, allowWidgets);
 
             try
@@ -125,7 +126,11 @@ namespace Nop.Plugin.Company.Insights.Services
                     // Model answered (no tool calls) → that content is the reply (plain Markdown). Keep a
                     // tolerant fallback for the old {"final":...} JSON envelope and any stray native markup.
                     if (!completion.HasToolCalls)
-                        return FinishAnswer(completion.Content ?? "", allowWidgets, pendingWidgets, lastDataset);
+                    {
+                        var answer = FinishAnswer(completion.Content ?? "", allowWidgets, pendingWidgets, lastDataset);
+                        answer.CombinedReports = pendingCombined;
+                        return answer;
+                    }
 
                     // Echo the assistant tool-call message, then run each tool and feed the result back as a
                     // role:"tool" message (required by the tool-calling protocol) so the model can continue.
@@ -157,6 +162,24 @@ namespace Nop.Plugin.Company.Insights.Services
                                 {
                                     pendingWidgets.Add(widget);
                                     observation = $"ok: '{widget.Title}' widget attached to your answer.";
+                                }
+                            }
+                            else if (allowWidgets && tool == "combine_reports")
+                            {
+                                // Meta-tool: the recipe (which reports + join/computed columns) is passed straight to
+                                // the browser, which fetches the sources and compiles the combined report in JS — the
+                                // backend does NO joining. We only validate that it names sources.
+                                if (argsEl.ValueKind == JsonValueKind.Object
+                                    && argsEl.TryGetProperty("sources", out var srcs)
+                                    && srcs.ValueKind == JsonValueKind.Array && srcs.GetArrayLength() > 0)
+                                {
+                                    pendingCombined.Add(argsEl.GetRawText());
+                                    var title = GetString(argsEl, "title") ?? "Combined report";
+                                    observation = $"ok: '{title}' will be compiled in the browser from {srcs.GetArrayLength()} report(s) and shown as a widget. Give the user a one-line description of it.";
+                                }
+                                else
+                                {
+                                    observation = "error: combine_reports needs a non-empty 'sources' array (each with a reportId). Inspect reports with list_reports/run_report first to get valid ids, columns and join keys.";
                                 }
                             }
                             else if (readOnly && WriteTools.Contains(tool))
@@ -594,7 +617,10 @@ namespace Nop.Plugin.Company.Insights.Services
                     sb.AppendLine("You manage automations across all companies (leave companyId unset for a global automation). Confirm deletes with the user first.");
             }
             if (includeWidgets)
+            {
                 sb.AppendLine("To attach a chart or table to your answer, call propose_widget (it visualizes the MOST RECENT dataset you fetched); its field names must match that dataset's columns. Only do so when a chart or table genuinely helps.");
+                sb.AppendLine("To build a NEW report by joining two or more existing reports (e.g. vendor revenue joined with vendor review ratings), call combine_reports with the join recipe — the browser compiles it from the source reports, so first inspect the reports (list_reports / run_report) to use real report ids, columns and join keys.");
+            }
             sb.AppendLine();
             sb.AppendLine("When you have enough data, STOP calling tools and write your answer directly as Markdown (no JSON, no envelope): lead with a one-line takeaway, then a bulleted list ('- ') of the key points — one figure or finding per bullet, with **bold** on the important numbers, names and labels." + (includeWidgets ? " Prefer a widget over a large Markdown table." : ""));
         }
@@ -616,6 +642,7 @@ namespace Nop.Plugin.Company.Insights.Services
             Dictionary<string, object> Sel(string desc, params string[] vals) => new() { ["type"] = "string", ["description"] = desc, ["enum"] = vals };
             Dictionary<string, object> StrArray(string desc) => new() { ["type"] = "array", ["items"] = new Dictionary<string, object> { ["type"] = "string" }, ["description"] = desc };
             Dictionary<string, object> Obj(string desc) => new() { ["type"] = "object", ["description"] = desc };
+            Dictionary<string, object> ObjArray(string desc, Dictionary<string, object> props) => new() { ["type"] = "array", ["description"] = desc, ["items"] = new Dictionary<string, object> { ["type"] = "object", ["properties"] = props } };
 
             var tools = new List<InsightsLlmClient.LlmTool>
             {
@@ -674,6 +701,7 @@ namespace Nop.Plugin.Company.Insights.Services
             }
 
             if (includeWidgets)
+            {
                 tools.Add(Fn("propose_widget", "Attach a chart or table (of the MOST RECENT dataset you fetched) to your answer. Field names must match that dataset's columns.", new Dictionary<string, object>
                 {
                     ["kind"] = Sel("widget kind", "chart", "table"),
@@ -683,6 +711,31 @@ namespace Nop.Plugin.Company.Insights.Services
                     ["yField"] = Str("y-axis column"),
                     ["categoryField"] = Str("optional series/category column")
                 }));
+                tools.Add(Fn("combine_reports", "Compile a NEW report by joining two or more existing reports in the browser (no backend compute). Inspect each report's id and columns first (list_reports / run_report). Join keys must be real column names of their respective reports.", new Dictionary<string, object>
+                {
+                    ["title"] = Str("title for the combined report"),
+                    ["sources"] = ObjArray("the reports to combine, in join order", new Dictionary<string, object>
+                    {
+                        ["reportId"] = Str("a report id from list_reports"),
+                        ["alias"] = Str("short alias to disambiguate colliding column names, e.g. 'a', 'reviews'"),
+                        ["days"] = Int("optional lookback for this source, if the report takes days")
+                    }),
+                    ["joins"] = ObjArray("joins[k] joins the running result with sources[k+1]; omit for a single source", new Dictionary<string, object>
+                    {
+                        ["leftField"] = Str("column in the running (already-joined) result"),
+                        ["rightField"] = Str("column in the next source"),
+                        ["type"] = Sel("join type", "inner", "left", "full")
+                    }),
+                    ["computed"] = ObjArray("optional derived columns", new Dictionary<string, object>
+                    {
+                        ["name"] = Str("new column name"),
+                        ["expr"] = Str("arithmetic over columns: + - * / %, parentheses, numbers, and [Column Name] references, e.g. '[Revenue] / [Reviews]'")
+                    }),
+                    ["select"] = StrArray("optional output columns to keep, in order (defaults to all)"),
+                    ["sort"] = Obj("optional {\"by\":\"<column>\",\"dir\":\"asc\"|\"desc\"}"),
+                    ["chart"] = Obj("optional default view {\"chartKind\":\"line|area|bar|pie\",\"xField\":\"...\",\"yField\":\"...\",\"categoryField\":\"...\"}; omit for a table")
+                }, new[] { "sources" }));
+            }
 
             if (automationsEnabled)
             {

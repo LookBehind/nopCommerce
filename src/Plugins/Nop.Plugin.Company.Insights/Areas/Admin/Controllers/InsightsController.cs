@@ -618,7 +618,9 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                         categoryField = w.CategoryField,
                         columns = w.Columns.Select(c => new { name = c.Name, type = c.Type }),
                         rows = w.Rows
-                    })
+                    }),
+                    // Recipes the browser compiles into new reports by joining existing ones (raw pass-through).
+                    combinedReports = result.CombinedReports.Select(j => JsonSerializer.Deserialize<JsonElement>(j))
                 });
                 await WriteSseAsync("done", donePayload);
             }

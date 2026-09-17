@@ -82,6 +82,47 @@ export interface Widget {
   dividerLabel?: string;
 }
 
+// ---- Combined reports (client-side report joining) ----
+
+export interface CombineSource {
+  reportId: string;
+  /** Short alias used to disambiguate colliding column names (e.g. "a", "reviews"). */
+  alias?: string;
+  days?: number;
+  limit?: number;
+  from?: string;
+  to?: string;
+  slot?: string;
+}
+
+export interface CombineJoin {
+  /** Column in the running (already-joined) result. */
+  leftField: string;
+  /** Column in the next source being joined in. */
+  rightField: string;
+  type?: "inner" | "left" | "full";
+}
+
+export interface CombineComputed {
+  name: string;
+  /** Arithmetic over columns: + - * / %, parentheses, numbers, and [Column Name] refs. */
+  expr: string;
+}
+
+/** A recipe for compiling a new report by joining existing ones — computed entirely in the browser. */
+export interface CombinedReportRecipe {
+  title?: string;
+  sources: CombineSource[];
+  /** joins[k] joins the running result with sources[k+1]; omit for a single source. */
+  joins?: CombineJoin[];
+  computed?: CombineComputed[];
+  /** Output columns, in order (defaults to all). */
+  select?: string[];
+  sort?: { by: string; dir?: "asc" | "desc" };
+  /** Optional default visualization for the result. */
+  chart?: { chartKind?: ChartKind; xField?: string; yField?: string; categoryField?: string } | null;
+}
+
 // ---- Agent chat ----
 
 export interface ChatWidget {
@@ -93,11 +134,15 @@ export interface ChatWidget {
   categoryField?: string;
   columns: ReportColumn[];
   rows: Record<string, unknown>[];
+  /** When present, this widget is a client-compiled combined report (recomputable from the recipe). */
+  combinedRecipe?: CombinedReportRecipe;
 }
 
 export interface ChatTurnResponse {
   reply: string;
   widgets: ChatWidget[];
+  /** Recipes to compile into new report widgets in the browser (joined from existing reports). */
+  combinedReports?: CombinedReportRecipe[];
 }
 
 export interface ChatMessage {

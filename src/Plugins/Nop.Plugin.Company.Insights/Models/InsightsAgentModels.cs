@@ -38,5 +38,9 @@ namespace Nop.Plugin.Company.Insights.Models
     {
         public string Reply { get; set; }
         public IList<WidgetProposal> Widgets { get; set; } = new List<WidgetProposal>();
+
+        /// <summary>Recipes for reports the browser should compile client-side by joining other reports
+        /// (raw recipe JSON, passed straight through — the backend does no data joining).</summary>
+        public IList<string> CombinedReports { get; set; } = new List<string>();
     }
 }

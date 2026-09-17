@@ -4,12 +4,44 @@ import remarkGfm from "remark-gfm";
 import { useWorkspace } from "../store/workspace";
 import { api } from "../api/client";
 import type { ProfileContext } from "../api/client";
-import type { ChatMessage, ChatWidget, ConversationHeader, Dataset } from "../types";
+import type { ChatMessage, ChatWidget, CombinedReportRecipe, ConversationHeader, Dataset } from "../types";
 import { ChartWidget } from "./widgets/ChartWidget";
 import { TableWidget } from "./widgets/TableWidget";
 import { MemoryPanel } from "./MemoryPanel";
 import { useLlmStatus } from "../ui/llmStatus";
 import { confirmDialog, toast } from "../ui/feedback";
+import { executeRecipe } from "../utils/combine";
+
+/** Compile each agent-authored combine recipe into a chart/table widget, entirely in the browser. */
+async function buildCombinedWidgets(
+  recipes: CombinedReportRecipe[] | undefined,
+  ctx: ProfileContext
+): Promise<ChatWidget[]> {
+  if (!recipes?.length) return [];
+  const out: ChatWidget[] = [];
+  for (const recipe of recipes) {
+    try {
+      const dataset = await executeRecipe(recipe, (src) =>
+        api.runReport(src.reportId, { days: src.days, limit: src.limit, from: src.from, to: src.to, slot: src.slot }, ctx)
+      );
+      const chart = recipe.chart;
+      out.push({
+        type: chart ? "chart" : "table",
+        title: recipe.title || "Combined report",
+        chartKind: chart?.chartKind,
+        xField: chart?.xField,
+        yField: chart?.yField,
+        categoryField: chart?.categoryField,
+        columns: dataset.columns,
+        rows: dataset.rows,
+        combinedRecipe: recipe,
+      });
+    } catch (e) {
+      toast.error(`Couldn't compile "${recipe.title || "combined report"}": ${String(e instanceof Error ? e.message : e)}`);
+    }
+  }
+  return out;
+}
 
 const SUGGESTIONS = [
   "orders per day this month",
@@ -103,9 +135,11 @@ export function ChatPanel() {
         ac.signal
       );
       setLlmStatus("ready");
+      // Combined reports are compiled here in the browser (join existing reports, no backend compute).
+      const combinedWidgets = await buildCombinedWidgets(res.combinedReports, ctx);
       const next: ChatMessage[] = [
         ...thread,
-        { role: "assistant", content: res.reply, widgets: res.widgets },
+        { role: "assistant", content: res.reply, widgets: [...(res.widgets || []), ...combinedWidgets] },
       ];
       setMessages(next);
       void persist(next);
@@ -372,7 +406,18 @@ function WidgetCard({ widget }: { widget: ChatWidget }) {
   return (
     <div className="ins-wcard">
       <div className="ins-wcard-head">
-        <span className="ins-wcard-title">{widget.title}</span>
+        <span className="ins-wcard-title">
+          {widget.title}
+          {widget.combinedRecipe && (
+            <span
+              className="ins-muted"
+              style={{ marginLeft: 6, fontSize: 11, fontWeight: 400 }}
+              title={`Compiled in your browser by joining ${widget.combinedRecipe.sources.length} reports`}
+            >
+              🔗 combined
+            </span>
+          )}
+        </span>
         <button className="ins-chip" onClick={pin} title="Pin to canvas">
           📌 Pin
         </button>
