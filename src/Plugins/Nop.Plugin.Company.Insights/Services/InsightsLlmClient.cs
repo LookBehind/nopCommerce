@@ -11,8 +11,10 @@ namespace Nop.Plugin.Company.Insights.Services
 {
     /// <summary>
     /// Minimal OpenAI-compatible chat-completions client for the self-hosted KubeAI/vLLM gateway.
-    /// Self-contained (no dependency on Notifications.Manager). The agent uses a prompt-based
-    /// JSON action protocol rather than native tool-calling, so this only needs plain completions.
+    /// Self-contained (no dependency on Notifications.Manager). Supports NATIVE function/tool-calling:
+    /// the gateway runs vLLM with <c>--enable-auto-tool-choice --tool-call-parser=qwen3_coder</c>, so a
+    /// request carrying <c>tools</c> comes back with structured <c>message.tool_calls</c> (and the
+    /// reasoning in <c>message.reasoning</c>) rather than tool-call markup leaking into the content.
     /// </summary>
     public class InsightsLlmClient
     {
@@ -36,6 +38,73 @@ namespace Nop.Plugin.Company.Insights.Services
 
             [JsonPropertyName("content")]
             public string Content { get; set; }
+
+            // Assistant messages that call tools carry the calls; echoing them back (with the tool results
+            // as role:"tool" messages) is required by the OpenAI/vLLM tool-calling protocol.
+            [JsonPropertyName("tool_calls")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public List<LlmToolCall> ToolCalls { get; set; }
+
+            // role:"tool" result plumbing.
+            [JsonPropertyName("tool_call_id")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public string ToolCallId { get; set; }
+
+            [JsonPropertyName("name")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public string Name { get; set; }
+        }
+
+        public class LlmToolCall
+        {
+            [JsonPropertyName("id")]
+            public string Id { get; set; }
+
+            [JsonPropertyName("type")]
+            public string Type { get; set; } = "function";
+
+            [JsonPropertyName("function")]
+            public LlmFunctionCall Function { get; set; }
+        }
+
+        public class LlmFunctionCall
+        {
+            [JsonPropertyName("name")]
+            public string Name { get; set; }
+
+            /// <summary>Arguments as a JSON string (per the OpenAI schema), e.g. <c>{"days":7}</c>.</summary>
+            [JsonPropertyName("arguments")]
+            public string Arguments { get; set; }
+        }
+
+        /// <summary>A tool the model may call. <see cref="LlmFunctionDef.Parameters"/> is a JSON-schema object.</summary>
+        public class LlmTool
+        {
+            [JsonPropertyName("type")]
+            public string Type { get; set; } = "function";
+
+            [JsonPropertyName("function")]
+            public LlmFunctionDef Function { get; set; }
+        }
+
+        public class LlmFunctionDef
+        {
+            [JsonPropertyName("name")]
+            public string Name { get; set; }
+
+            [JsonPropertyName("description")]
+            public string Description { get; set; }
+
+            [JsonPropertyName("parameters")]
+            public object Parameters { get; set; }
+        }
+
+        /// <summary>Result of a tool-enabled completion: the model either called tools OR returned an answer.</summary>
+        public class LlmCompletion
+        {
+            public string Content { get; set; }
+            public IList<LlmToolCall> ToolCalls { get; set; }
+            public bool HasToolCalls => ToolCalls != null && ToolCalls.Count > 0;
         }
 
         private class CompletionRequest
@@ -65,6 +134,14 @@ namespace Nop.Plugin.Company.Insights.Services
             [JsonPropertyName("chat_template_kwargs")]
             [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
             public Dictionary<string, object> ChatTemplateKwargs { get; set; }
+
+            [JsonPropertyName("tools")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public List<LlmTool> Tools { get; set; }
+
+            [JsonPropertyName("tool_choice")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public string ToolChoice { get; set; }
         }
 
         private class CompletionChoice
@@ -84,6 +161,11 @@ namespace Nop.Plugin.Company.Insights.Services
             // Reasoning models (Qwen3) return their <think> block here, separate from the answer.
             [JsonPropertyName("reasoning")]
             public string Reasoning { get; set; }
+
+            // Populated (and content null) when the model invokes tools — the qwen3_coder parser turns the
+            // model's native tool-call markup into this structured form.
+            [JsonPropertyName("tool_calls")]
+            public List<LlmToolCall> ToolCalls { get; set; }
         }
 
         private class CompletionResponse
@@ -134,6 +216,50 @@ namespace Nop.Plugin.Company.Insights.Services
             if (string.Equals(choice?.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("KubeAI chat completion was truncated (hit the context limit while reasoning) and returned no answer.");
             throw new InvalidOperationException("KubeAI chat completion returned no content");
+        }
+
+        /// <summary>
+        /// Posts a chat completion WITH native tool-calling. Returns the model's answer content and/or the
+        /// tools it wants to call (structured, parsed by vLLM's qwen3_coder tool-call parser). The caller
+        /// runs the tools, appends the results as role:"tool" messages, and calls again until the model
+        /// answers with content. Uncapped tokens (reasoning model) bounded by <paramref name="timeout"/>.
+        /// </summary>
+        public async Task<LlmCompletion> CompleteWithToolsAsync(
+            string model,
+            IEnumerable<LlmMessage> messages,
+            double temperature,
+            IEnumerable<LlmTool> tools,
+            TimeSpan timeout,
+            CancellationToken cancellationToken = default)
+        {
+            var toolList = tools?.ToList();
+            var request = new CompletionRequest
+            {
+                Model = model,
+                Stream = false,
+                Temperature = temperature,
+                Messages = messages.ToList(),
+                Tools = toolList != null && toolList.Count > 0 ? toolList : null,
+                ToolChoice = toolList != null && toolList.Count > 0 ? "auto" : null
+            };
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(timeout);
+
+            using var response = await _httpClient.PostAsJsonAsync("chat/completions", request, cts.Token);
+            response.EnsureSuccessStatusCode();
+
+            var parsed = await response.Content.ReadFromJsonAsync<CompletionResponse>(cancellationToken: cts.Token);
+            var choice = parsed?.Choices?.FirstOrDefault();
+            var message = choice?.Message;
+            var result = new LlmCompletion { Content = message?.Content, ToolCalls = message?.ToolCalls };
+
+            if (result.HasToolCalls || !string.IsNullOrWhiteSpace(result.Content))
+                return result;
+
+            if (string.Equals(choice?.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("KubeAI chat completion was truncated (hit the context limit while reasoning) and returned no answer.");
+            throw new InvalidOperationException("KubeAI chat completion returned neither content nor a tool call");
         }
 
         /// <summary>

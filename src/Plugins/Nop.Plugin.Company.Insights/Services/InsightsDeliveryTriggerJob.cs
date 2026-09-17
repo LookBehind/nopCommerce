@@ -16,7 +16,8 @@ namespace Nop.Plugin.Company.Insights.Services
         /// <summary>Fires 40 min before a delivery slot: emits one delivery-approaching event per due order.</summary>
         Task RunApproachingAsync(int storeId, string slotHHmm);
 
-        /// <summary>Fires after the last slot: emits one day-closing event per company that had deliveries today.</summary>
+        /// <summary>Fires after the last slot: emits one day-closing event per company that had a
+        /// delivery scheduled today OR still has open (pending/processing) orders to chase.</summary>
         Task RunDayClosingAsync(int storeId);
     }
 
@@ -27,12 +28,14 @@ namespace Nop.Plugin.Company.Insights.Services
 
         private readonly INopDataProvider _dataProvider;
         private readonly IInsightsEventService _events;
+        private readonly IInsightsAgentConfigService _configs;
         private readonly ILogger _logger;
 
-        public InsightsDeliveryTriggerJob(INopDataProvider dataProvider, IInsightsEventService events, ILogger logger)
+        public InsightsDeliveryTriggerJob(INopDataProvider dataProvider, IInsightsEventService events, IInsightsAgentConfigService configs, ILogger logger)
         {
             _dataProvider = dataProvider;
             _events = events;
+            _configs = configs;
             _logger = logger;
         }
 
@@ -73,20 +76,33 @@ namespace Nop.Plugin.Company.Insights.Services
 
             try
             {
-                var today = DateTime.UtcNow.AddHours(LocalUtcOffsetHours).Date;
-                var dayEnd = today.AddDays(1);
+                var dateStr = DateTime.UtcNow.AddHours(LocalUtcOffsetHours).ToString("yyyy-MM-dd"); // delivery-frame (UTC+4) date
 
-                var byCompany = await _dataProvider.GetTable<Order>()
-                    .Where(o => !o.Deleted && o.StoreId == storeId && o.CompanyId != null
-                        && o.ScheduleDate >= today && o.ScheduleDate < dayEnd)
-                    .GroupBy(o => o.CompanyId)
-                    .Select(g => new { CompanyId = g.Key, Orders = g.Count() })
-                    .ToListAsync();
+                // Day-closing is a daily wake-up, NOT an order query. Whether there's anything worth
+                // sending is the agent's call (it reads live data via tools and may return NO_REPORT).
+                // The trigger's only job is to wake the right agents once a day; the sole reason it needs
+                // the data layer is to know WHICH companies to emit a per-company event for — which is
+                // simply the set of companies that actually have a day-closing automation configured, not
+                // whatever orders happen to exist today. (Formerly it gated on "orders scheduled today",
+                // so a quiet delivery day silently skipped a company's whole open-order backlog.)
+                var dayClosing = (await _configs.ListAsync())
+                    .Where(a => a.Enabled && a.EventType == InsightsEventTypes.DayClosing)
+                    .ToList();
+                if (dayClosing.Count == 0)
+                    return;
 
-                foreach (var c in byCompany)
+                // One event per company that has a company-scoped day-closing automation.
+                foreach (var companyId in dayClosing.Where(a => a.CompanyId.HasValue).Select(a => a.CompanyId.Value).Distinct())
                 {
-                    var payload = JsonSerializer.Serialize(new { date = today.ToString("yyyy-MM-dd"), orders = c.Orders, storeId });
-                    await _events.EnqueueUniqueAsync(InsightsEventTypes.DayClosing, "Company", c.CompanyId, c.CompanyId, payload, DedupeWindowMinutes);
+                    var payload = JsonSerializer.Serialize(new { date = dateStr, companyId, storeId });
+                    await _events.EnqueueUniqueAsync(InsightsEventTypes.DayClosing, "Company", companyId, companyId, payload, DedupeWindowMinutes);
+                }
+
+                // One company-less event so any global (unscoped) day-closing automation runs once.
+                if (dayClosing.Any(a => !a.CompanyId.HasValue))
+                {
+                    var payload = JsonSerializer.Serialize(new { date = dateStr, scope = "global", storeId });
+                    await _events.EnqueueUniqueAsync(InsightsEventTypes.DayClosing, "DayClosing", 0, null, payload, DedupeWindowMinutes);
                 }
             }
             catch (Exception ex)

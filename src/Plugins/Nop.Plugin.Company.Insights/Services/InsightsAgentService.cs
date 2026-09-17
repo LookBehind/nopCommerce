@@ -69,7 +69,7 @@ namespace Nop.Plugin.Company.Insights.Services
 
             await InjectMemoryContextAsync(messages, request, memoryKey, cancellationToken);
 
-            return await RunLoopAsync(messages, memoryKey, scope, allowWidgets: true, readOnly: false, reportStatus, cancellationToken);
+            return await RunLoopAsync(messages, memoryKey, scope, allowWidgets: true, readOnly: false, automationsEnabled: _agents.Enabled, reportStatus, cancellationToken);
         }
 
         public async Task<string> RunBackgroundAsync(InsightsAgentConfig config, string triggerJson, ReportScope scope, CancellationToken cancellationToken = default)
@@ -80,7 +80,7 @@ namespace Nop.Plugin.Company.Insights.Services
             if (scope.CompanyId.HasValue)
                 sb.AppendLine("Your scope is a single company; every tool already returns only that company's data.");
             sb.AppendLine("Ground your answer in real data: use the read-only tools to look up the products / orders / reviews the trigger refers to before drawing conclusions. Do not invent facts (e.g. never claim a product is missing an image or description without checking with list_products).");
-            sb.AppendLine("If, after checking the data, there is nothing worth sending (no issue, nothing actionable, everything looks fine), finish with EXACTLY {\"final\":\"NO_REPORT\"} — the run is recorded but no message is sent to the outputs. Only produce a full report when it is genuinely useful; don't send noise.");
+            sb.AppendLine("If, after checking the data, there is nothing worth sending (no issue, nothing actionable, everything looks fine), answer with EXACTLY the text NO_REPORT and nothing else — the run is recorded but no message is sent to the outputs. Only produce a full report when it is genuinely useful; don't send noise.");
             AppendProtocolAndTools(sb, scope, _memory.Enabled, automationsEnabled: false, includeWidgets: false);
 
             var messages = new List<InsightsLlmClient.LlmMessage>
@@ -94,7 +94,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 }
             };
 
-            var result = await RunLoopAsync(messages, config.Id, scope, allowWidgets: false, readOnly: true, null, cancellationToken);
+            var result = await RunLoopAsync(messages, config.Id, scope, allowWidgets: false, readOnly: true, automationsEnabled: false, null, cancellationToken);
             return result.Reply;
         }
 
@@ -102,79 +102,97 @@ namespace Nop.Plugin.Company.Insights.Services
         private static readonly HashSet<string> WriteTools = new(StringComparer.OrdinalIgnoreCase)
         { "remember", "create_automation", "update_automation", "delete_automation" };
 
-        /// <summary>The shared JSON-action tool loop used by both the interactive chat and background agents.</summary>
+        /// <summary>The shared native tool-calling loop used by both the interactive chat and background
+        /// agents. The model calls read-only tools via the OpenAI/vLLM function-calling interface (parsed by
+        /// vLLM's qwen3_coder tool-call parser into structured tool_calls) until it answers with content.</summary>
         private async Task<AgentTurnResult> RunLoopAsync(List<InsightsLlmClient.LlmMessage> messages, string memoryKey,
-            ReportScope scope, bool allowWidgets, bool readOnly, Action<string> reportStatus, CancellationToken cancellationToken)
+            ReportScope scope, bool allowWidgets, bool readOnly, bool automationsEnabled, Action<string> reportStatus,
+            CancellationToken cancellationToken)
         {
             void Report(string s) { try { reportStatus?.Invoke(s); } catch { /* status is best-effort */ } }
             InsightsReportResult lastDataset = null;
+            var pendingWidgets = new List<WidgetProposal>();
+            var tools = BuildToolSchemas(scope, _memory.Enabled, automationsEnabled, allowWidgets);
 
             try
             {
                 for (var i = 0; i < MaxIterations; i++)
                 {
                     Report(i == 0 ? "Thinking…" : "Analyzing…");
-                    var content = await _llm.CompleteAsync(
-                        InsightsLlmClient.DefaultModel, messages, 0.0, null, LlmTimeout, cancellationToken);
+                    var completion = await _llm.CompleteWithToolsAsync(
+                        InsightsLlmClient.DefaultModel, messages, 0.0, tools, LlmTimeout, cancellationToken);
 
-                    var json = ExtractJsonObject(content);
-                    if (json == null)
-                        return new AgentTurnResult { Reply = content.Trim() };
+                    // Model answered (no tool calls) → that content is the reply (plain Markdown). Keep a
+                    // tolerant fallback for the old {"final":...} JSON envelope and any stray native markup.
+                    if (!completion.HasToolCalls)
+                        return FinishAnswer(completion.Content ?? "", allowWidgets, pendingWidgets, lastDataset);
 
-                    // The model routinely writes Markdown (raw newlines, tabs, stray quotes) inside the
-                    // JSON string values, which is invalid JSON. Parse tolerantly; if it still won't parse,
-                    // recover the human answer instead of failing the whole turn with a misleading error.
-                    using var doc = TryParseJsonObject(json);
-                    if (doc == null)
-                        return new AgentTurnResult { Reply = RecoverFinalText(json) ?? content.Trim() };
-                    var root = doc.RootElement;
-
-                    if (root.TryGetProperty("final", out var finalEl))
+                    // Echo the assistant tool-call message, then run each tool and feed the result back as a
+                    // role:"tool" message (required by the tool-calling protocol) so the model can continue.
+                    messages.Add(new InsightsLlmClient.LlmMessage
                     {
-                        var widgets = allowWidgets && root.TryGetProperty("widgets", out var widgetsEl)
-                            ? BuildWidgets(widgetsEl, lastDataset)
-                            : new List<WidgetProposal>();
-                        return new AgentTurnResult
-                        {
-                            Reply = finalEl.GetString()?.Trim() ?? string.Empty,
-                            Widgets = widgets
-                        };
-                    }
+                        Role = "assistant",
+                        Content = completion.Content,
+                        ToolCalls = completion.ToolCalls.ToList()
+                    });
 
-                    if (root.TryGetProperty("action", out var actionEl))
+                    foreach (var call in completion.ToolCalls)
                     {
-                        var tool = actionEl.GetString() ?? "";
-                        root.TryGetProperty("args", out var argsEl);
+                        var tool = call.Function?.Name ?? "";
                         Report(ToolStatusLabel(tool));
-                        string observation;
-                        InsightsReportResult dataset = null;
-                        if (readOnly && WriteTools.Contains(tool))
+                        JsonDocument argsDoc = null;
+                        try
                         {
-                            observation = $"error: '{tool}' is not available to a background automation (read-only). Use it only to read data.";
-                        }
-                        else
-                        {
-                            try
-                            {
-                                (observation, dataset) = await ExecuteToolAsync(tool, argsEl, memoryKey, scope, cancellationToken);
-                            }
-                            catch (Exception toolEx) when (!(toolEx is OperationCanceledException && cancellationToken.IsCancellationRequested))
-                            {
-                                // A tool failure shouldn't sink the whole turn — feed it back so the model can adapt.
-                                await _logger.WarningAsync($"Insights agent tool '{tool}' failed", toolEx);
-                                observation = $"error: the '{tool}' tool failed ({toolEx.Message}). Try a different tool or answer with what you already have.";
-                            }
-                        }
-                        if (dataset != null)
-                            lastDataset = dataset;
+                            argsDoc = ParseToolArgs(call.Function?.Arguments);
+                            var argsEl = argsDoc?.RootElement ?? default;
+                            string observation;
 
-                        messages.Add(new InsightsLlmClient.LlmMessage { Role = "assistant", Content = content });
-                        messages.Add(new InsightsLlmClient.LlmMessage { Role = "user", Content = $"Observation ({tool}): {observation}" });
-                        continue;
+                            if (allowWidgets && tool == "propose_widget")
+                            {
+                                // Meta-tool: attach a chart/table to the answer (visualizes the last dataset).
+                                var widget = BuildWidget(argsEl, lastDataset);
+                                if (widget == null)
+                                    observation = "error: fetch a dataset with a data tool first, then propose a widget for it.";
+                                else
+                                {
+                                    pendingWidgets.Add(widget);
+                                    observation = $"ok: '{widget.Title}' widget attached to your answer.";
+                                }
+                            }
+                            else if (readOnly && WriteTools.Contains(tool))
+                            {
+                                observation = $"error: '{tool}' is not available to a background automation (read-only). Use it only to read data.";
+                            }
+                            else
+                            {
+                                InsightsReportResult dataset = null;
+                                try
+                                {
+                                    (observation, dataset) = await ExecuteToolAsync(tool, argsEl, memoryKey, scope, cancellationToken);
+                                }
+                                catch (Exception toolEx) when (!(toolEx is OperationCanceledException && cancellationToken.IsCancellationRequested))
+                                {
+                                    // A tool failure shouldn't sink the whole turn — feed it back so the model can adapt.
+                                    await _logger.WarningAsync($"Insights agent tool '{tool}' failed", toolEx);
+                                    observation = $"error: the '{tool}' tool failed ({toolEx.Message}). Try a different tool or answer with what you already have.";
+                                }
+                                if (dataset != null)
+                                    lastDataset = dataset;
+                            }
+
+                            messages.Add(new InsightsLlmClient.LlmMessage
+                            {
+                                Role = "tool",
+                                ToolCallId = call.Id,
+                                Name = tool,
+                                Content = observation
+                            });
+                        }
+                        finally
+                        {
+                            argsDoc?.Dispose();
+                        }
                     }
-
-                    // Unrecognised JSON shape — treat its text as the answer.
-                    return new AgentTurnResult { Reply = content.Trim() };
                 }
 
                 return new AgentTurnResult
@@ -425,7 +443,9 @@ namespace Nop.Plugin.Company.Insights.Services
                     return ($"deleted automation '{existing.Name}'.", null);
                 }
                 default:
-                    return ($"error: unknown tool '{tool}'", null);
+                    return ($"error: '{tool}' is not a tool. Valid tools: list_reports, run_report, query_orders, "
+                        + "list_reviews, list_products, list_orders, recall, remember, list_automations, create_automation, "
+                        + "update_automation, delete_automation. Call one with {\"action\":\"<tool>\",\"args\":{...}}.", null);
             }
         }
 
@@ -512,20 +532,30 @@ namespace Nop.Plugin.Company.Insights.Services
 
             foreach (var w in widgetsEl.EnumerateArray())
             {
-                var type = GetString(w, "kind") ?? "chart";
-                list.Add(new WidgetProposal
-                {
-                    Type = type == "table" ? "table" : "chart",
-                    Title = GetString(w, "title") ?? "Result",
-                    ChartKind = GetString(w, "chartKind") ?? "line",
-                    XField = GetString(w, "xField"),
-                    YField = GetString(w, "yField"),
-                    CategoryField = GetString(w, "categoryField"),
-                    Columns = dataset.Columns,
-                    Rows = dataset.Rows
-                });
+                var widget = BuildWidget(w, dataset);
+                if (widget != null)
+                    list.Add(widget);
             }
             return list;
+        }
+
+        /// <summary>Build one widget from a spec object bound to a dataset (for the propose_widget tool).</summary>
+        private static WidgetProposal BuildWidget(JsonElement w, InsightsReportResult dataset)
+        {
+            if (dataset == null || w.ValueKind != JsonValueKind.Object)
+                return null;
+            var type = GetString(w, "kind") ?? "chart";
+            return new WidgetProposal
+            {
+                Type = type == "table" ? "table" : "chart",
+                Title = GetString(w, "title") ?? "Result",
+                ChartKind = GetString(w, "chartKind") ?? "line",
+                XField = GetString(w, "xField"),
+                YField = GetString(w, "yField"),
+                CategoryField = GetString(w, "categoryField"),
+                Columns = dataset.Columns,
+                Rows = dataset.Rows
+            };
         }
 
         #endregion
@@ -543,55 +573,178 @@ namespace Nop.Plugin.Company.Insights.Services
             return sb.ToString();
         }
 
-        /// <summary>The JSON-action protocol + read-only tool catalog + rules, shared by the interactive chat and
-        /// the background automations. Background agents pass includeWidgets:false and automationsEnabled:false.</summary>
+        /// <summary>Behavioural guidance + tool policy shared by the interactive chat and the background
+        /// automations. The tool schemas themselves are passed natively via <see cref="BuildToolSchemas"/>;
+        /// this only tells the model how/when to use them and how to format the final answer. Background
+        /// agents pass includeWidgets:false and automationsEnabled:false.</summary>
         private static void AppendProtocolAndTools(StringBuilder sb, ReportScope scope, bool memoryEnabled, bool automationsEnabled, bool includeWidgets)
         {
             sb.AppendLine();
-            sb.AppendLine("Respond with EXACTLY ONE JSON object per turn and nothing else — no text or fences outside the JSON. Use one of two shapes:");
-            sb.AppendLine("1) Call a tool: {\"action\":\"<tool>\",\"args\":{...}}");
-            sb.AppendLine(includeWidgets
-                ? "2) Finish: {\"final\":\"<answer, in Markdown>\",\"widgets\":[<widget>...]}"
-                : "2) Finish: {\"final\":\"<answer, in Markdown>\"}");
-            sb.AppendLine();
-            sb.AppendLine("Tools (all READ-ONLY):");
-            sb.AppendLine("- list_reports {}  -> available named reports.");
-            sb.AppendLine("- run_report {\"id\":\"<reportId>\",\"days\":<int, optional>}  -> a report's columns and rows. list_reports shows each report's parameters and their min/max; \"days\" is clamped to the report's allowed range (e.g. up to 90).");
-            sb.AppendLine("- query_orders {\"days\":<int, optional, default 30, max 365>,\"groupBy\":\"day\"|\"status\",\"metric\":\"count\"|\"revenue\"}  -> aggregated orders over the last N days.");
-            sb.AppendLine("- list_reviews {\"days\":<int, optional, default 30, max 90>,\"vendorId\":<int, optional>,\"customerEmail\":\"...\"(optional),\"customerName\":\"...\"(optional),\"orderBy\":\"date\"|\"rating\"|\"helpful\"(optional),\"limit\":<int, optional, default 50, max 200>}  -> product reviews (date, product, vendor name+email, customer full name+email, rating, approved, title, review, and triage: who/when/hours/resolution). Refer to customers AND vendors by their name and email, never by a bare id.");
-            sb.AppendLine("- list_products {\"id\":<int, optional>,\"vendorId\":<int, optional>,\"name\":\"...\"(optional, substring),\"category\":\"<name or id>\"(optional),\"orderBy\":\"name\"|\"price\"|\"created\"|\"id\"(optional),\"limit\":<int, optional, default 20, max 50>}  -> products with vendor name+email, SKU, price, weight, published, categories, short + full description (HTML stripped) and picture URLs. Use this to check a product's real details before commenting on it.");
-            sb.AppendLine("- list_orders {\"from\":\"YYYY-MM-DD\"(optional),\"to\":\"YYYY-MM-DD\"(optional),\"status\":\"<order status id, optional>\",\"customerEmail\":\"...\"(optional),\"customerName\":\"...\"(optional),\"vendorId\":<int, optional — orders containing that vendor's products>,\"productId\":<int, optional — orders containing that product>,\"limit\":<int, optional, default 25, max 100>}  -> orders by delivery date (id, created, delivery time, status, total, customer name+email, and an item summary).");
+            sb.AppendLine("You have READ-ONLY data tools, available through the function-calling interface — call them to fetch real data, and NEVER print a tool call as text. Always ground every figure in a tool result; never invent numbers, product details, images or descriptions.");
+            sb.AppendLine("Key tools: list_reports / run_report (named reports), query_orders (aggregated orders), list_orders (individual orders by delivery date), list_products (product details incl. pictures), list_reviews (reviews + triage). Refer to customers AND vendors by their name and email, never a bare id.");
             if (memoryEnabled)
-            {
-                sb.AppendLine("- recall {\"query\":\"...\"}  -> retrieve notes saved in earlier runs/conversations.");
-                if (includeWidgets)
-                    sb.AppendLine("- remember {\"content\":\"...\",\"kind\":\"note\"}  -> save a durable, reusable learning for future conversations.");
-            }
+                sb.AppendLine("You can recall notes from earlier sessions" + (includeWidgets ? ", and remember durable learnings for the future" : "") + ".");
             if (automationsEnabled)
             {
                 sb.AppendLine();
-                sb.AppendLine("Automations (background agents that run on a trigger and write to an output sink). You can fully manage them:");
-                sb.AppendLine("- list_automations {}  -> the automations you can manage (id, name, enabled, trigger, schedule/event, filter, instruction).");
-                sb.AppendLine("- create_automation {\"name\":\"...\",\"triggerKind\":\"event\"|\"schedule\",\"eventType\":\"<event, for event kind>\",\"cron\":\"<5-field cron Asia/Yerevan, for schedule kind>\",\"filter\":{...optional},\"systemPrompt\":\"the background agent's own concise READ-ONLY persona\",\"instruction\":\"what it does each run\",\"outputSinks\":[\"dashboard\"|\"telegram\"|\"memory\"],\"outputTarget\":\"telegram chat id if telegram\"}  -> creates it. YOU write a good systemPrompt + instruction for the described task.");
-                sb.AppendLine("- update_automation {\"id\":\"...\", ...only the fields to change, e.g. \"enabled\":false or a new \"cron\"}  -> edits it.");
-                sb.AppendLine("- delete_automation {\"id\":\"...\"}  -> removes it.");
-                sb.AppendLine("Event types: review-added, review-triaged, order-placed, order-cancelled, delivery-approaching, day-closing, product-created, product-updated. Filters (event kind): {\"maxRating\":<int>} and/or {\"vendorIds\":[<int>...]}.");
+                sb.AppendLine("You can fully manage automations (background agents that run on a trigger and write to an output sink) with list_automations / create_automation / update_automation / delete_automation. When you create one, YOU write its concise read-only systemPrompt + instruction. Event types: review-added, review-triaged, order-placed, order-cancelled, delivery-approaching, day-closing, product-created, product-updated.");
                 if (scope != null && scope.CompanyId.HasValue)
-                    sb.AppendLine("You may only manage automations for your own company; new ones you create are automatically scoped to it. Confirm destructive actions (delete) with the user first.");
+                    sb.AppendLine("You may only manage automations for your own company; new ones you create are automatically scoped to it. Confirm deletes with the user first.");
                 else
-                    sb.AppendLine("You manage automations across all companies (leave companyId unset for a global automation). Confirm destructive actions (delete) with the user first.");
+                    sb.AppendLine("You manage automations across all companies (leave companyId unset for a global automation). Confirm deletes with the user first.");
             }
             if (includeWidgets)
-            {
-                sb.AppendLine();
-                sb.AppendLine("Widget (optional; visualizes the MOST RECENT dataset you fetched this turn):");
-                sb.AppendLine("{\"kind\":\"chart\"|\"table\",\"chartKind\":\"line\"|\"area\"|\"bar\"|\"pie\",\"title\":\"...\",\"xField\":\"<column>\",\"yField\":\"<column>\",\"categoryField\":\"<column>\"}");
-            }
+                sb.AppendLine("To attach a chart or table to your answer, call propose_widget (it visualizes the MOST RECENT dataset you fetched); its field names must match that dataset's columns. Only do so when a chart or table genuinely helps.");
             sb.AppendLine();
-            sb.AppendLine("Rules: always fetch real data with a tool before answering; never invent numbers, product details, images or descriptions.");
+            sb.AppendLine("When you have enough data, STOP calling tools and write your answer directly as Markdown (no JSON, no envelope): lead with a one-line takeaway, then a bulleted list ('- ') of the key points — one figure or finding per bullet, with **bold** on the important numbers, names and labels." + (includeWidgets ? " Prefer a widget over a large Markdown table." : ""));
+        }
+
+        /// <summary>Native tool schemas (OpenAI function-calling shape) offered to the model — the read-only
+        /// data tools plus, per flags, memory, widget, and automation-management tools.</summary>
+        private static List<InsightsLlmClient.LlmTool> BuildToolSchemas(ReportScope scope, bool memoryEnabled, bool automationsEnabled, bool includeWidgets)
+        {
+            InsightsLlmClient.LlmTool Fn(string name, string desc, Dictionary<string, object> props, string[] required = null)
+            {
+                var parameters = new Dictionary<string, object> { ["type"] = "object", ["properties"] = props ?? new Dictionary<string, object>() };
+                if (required != null && required.Length > 0)
+                    parameters["required"] = required;
+                return new InsightsLlmClient.LlmTool { Function = new InsightsLlmClient.LlmFunctionDef { Name = name, Description = desc, Parameters = parameters } };
+            }
+            Dictionary<string, object> Str(string desc) => new() { ["type"] = "string", ["description"] = desc };
+            Dictionary<string, object> Int(string desc) => new() { ["type"] = "integer", ["description"] = desc };
+            Dictionary<string, object> Bool(string desc) => new() { ["type"] = "boolean", ["description"] = desc };
+            Dictionary<string, object> Sel(string desc, params string[] vals) => new() { ["type"] = "string", ["description"] = desc, ["enum"] = vals };
+            Dictionary<string, object> StrArray(string desc) => new() { ["type"] = "array", ["items"] = new Dictionary<string, object> { ["type"] = "string" }, ["description"] = desc };
+            Dictionary<string, object> Obj(string desc) => new() { ["type"] = "object", ["description"] = desc };
+
+            var tools = new List<InsightsLlmClient.LlmTool>
+            {
+                Fn("list_reports", "List the available named reports and their parameters (with min/max).", new Dictionary<string, object>()),
+                Fn("run_report", "Run a named report and return its columns and rows.", new Dictionary<string, object>
+                {
+                    ["id"] = Str("the report id (from list_reports)"),
+                    ["days"] = Int("optional lookback window, clamped to the report's allowed range (e.g. up to 90)")
+                }, new[] { "id" }),
+                Fn("query_orders", "Aggregated orders over the last N days.", new Dictionary<string, object>
+                {
+                    ["days"] = Int("optional, default 30, max 365"),
+                    ["groupBy"] = Sel("how to group the counts", "day", "status"),
+                    ["metric"] = Sel("what to aggregate", "count", "revenue")
+                }),
+                Fn("list_reviews", "Product reviews with vendor name+email and customer full name+email, rating, approval, title, body and triage (who/when/hours/resolution).", new Dictionary<string, object>
+                {
+                    ["days"] = Int("optional, default 30, max 90"),
+                    ["vendorId"] = Int("optional vendor filter"),
+                    ["customerEmail"] = Str("optional customer email filter"),
+                    ["customerName"] = Str("optional customer name filter"),
+                    ["orderBy"] = Sel("sort order", "date", "rating", "helpful"),
+                    ["limit"] = Int("optional, default 50, max 200")
+                }),
+                Fn("list_products", "Products with vendor name+email, SKU, price, weight, published, categories, short + full description (HTML stripped) and picture URLs. Use it to check a product's real details before commenting.", new Dictionary<string, object>
+                {
+                    ["id"] = Int("optional exact product id"),
+                    ["vendorId"] = Int("optional vendor filter"),
+                    ["name"] = Str("optional name substring"),
+                    ["category"] = Str("optional category name or id"),
+                    ["orderBy"] = Sel("sort order", "name", "price", "created", "id"),
+                    ["limit"] = Int("optional, default 20, max 50")
+                }),
+                Fn("list_orders", "Individual orders by delivery date: id, created, delivery time, status, total, customer name+email and an item summary.", new Dictionary<string, object>
+                {
+                    ["from"] = Str("optional delivery date from, YYYY-MM-DD"),
+                    ["to"] = Str("optional delivery date to, YYYY-MM-DD"),
+                    ["status"] = Str("optional order status id"),
+                    ["customerEmail"] = Str("optional customer email filter"),
+                    ["customerName"] = Str("optional customer name filter"),
+                    ["vendorId"] = Int("optional — orders containing that vendor's products"),
+                    ["productId"] = Int("optional — orders containing that product"),
+                    ["limit"] = Int("optional, default 25, max 100")
+                })
+            };
+
+            if (memoryEnabled)
+            {
+                tools.Add(Fn("recall", "Retrieve notes saved in earlier runs/conversations.", new Dictionary<string, object> { ["query"] = Str("what to look up") }, new[] { "query" }));
+                if (includeWidgets)
+                    tools.Add(Fn("remember", "Save a durable, reusable learning for future conversations.", new Dictionary<string, object>
+                    {
+                        ["content"] = Str("the note to remember"),
+                        ["kind"] = Str("optional category, e.g. note")
+                    }, new[] { "content" }));
+            }
+
             if (includeWidgets)
-                sb.AppendLine("Field names in widgets must match the dataset columns. Only add widgets when a chart or table genuinely helps.");
-            sb.AppendLine("Formatting the \"final\" answer (it is rendered as Markdown): keep it short and skimmable. Lead with a one-line takeaway, then a bulleted list ('- ') of the key points — one figure or finding per bullet. Use **bold** for the important numbers, names, and labels." + (includeWidgets ? " Use a Markdown table only for small comparisons; for anything larger, add a widget instead of a big table." : "") + " Write the Markdown inside the JSON string with real newlines (\\n).");
+                tools.Add(Fn("propose_widget", "Attach a chart or table (of the MOST RECENT dataset you fetched) to your answer. Field names must match that dataset's columns.", new Dictionary<string, object>
+                {
+                    ["kind"] = Sel("widget kind", "chart", "table"),
+                    ["chartKind"] = Sel("chart type (for kind=chart)", "line", "area", "bar", "pie"),
+                    ["title"] = Str("widget title"),
+                    ["xField"] = Str("x-axis column"),
+                    ["yField"] = Str("y-axis column"),
+                    ["categoryField"] = Str("optional series/category column")
+                }));
+
+            if (automationsEnabled)
+            {
+                tools.Add(Fn("list_automations", "List the automations you can manage (id, name, enabled, trigger, schedule/event, filter, instruction).", new Dictionary<string, object>()));
+                tools.Add(Fn("create_automation", "Create a background automation. YOU write a concise READ-ONLY systemPrompt + instruction for the task.", new Dictionary<string, object>
+                {
+                    ["name"] = Str("automation name"),
+                    ["triggerKind"] = Sel("trigger kind", "event", "schedule"),
+                    ["eventType"] = Str("event type (for triggerKind=event): review-added, review-triaged, order-placed, order-cancelled, delivery-approaching, day-closing, product-created, product-updated"),
+                    ["cron"] = Str("5-field cron in Asia/Yerevan (for triggerKind=schedule)"),
+                    ["filter"] = Obj("optional {\"maxRating\":<int>} and/or {\"vendorIds\":[<int>...]}"),
+                    ["systemPrompt"] = Str("the background agent's own concise read-only persona"),
+                    ["instruction"] = Str("what it does each run"),
+                    ["outputSinks"] = StrArray("any of dashboard, telegram, memory"),
+                    ["outputTarget"] = Str("telegram chat id (if telegram sink)")
+                }, new[] { "name", "triggerKind", "instruction" }));
+                tools.Add(Fn("update_automation", "Edit an automation — pass id plus only the fields to change (e.g. enabled:false or a new cron).", new Dictionary<string, object>
+                {
+                    ["id"] = Str("automation id"),
+                    ["name"] = Str("optional new name"),
+                    ["enabled"] = Bool("optional enable/disable"),
+                    ["eventType"] = Str("optional new event type"),
+                    ["cron"] = Str("optional new cron"),
+                    ["instruction"] = Str("optional new instruction"),
+                    ["systemPrompt"] = Str("optional new system prompt"),
+                    ["outputSinks"] = StrArray("optional new sinks"),
+                    ["outputTarget"] = Str("optional telegram chat id")
+                }, new[] { "id" }));
+                tools.Add(Fn("delete_automation", "Delete an automation by id. Confirm with the user first.", new Dictionary<string, object> { ["id"] = Str("automation id") }, new[] { "id" }));
+            }
+
+            return tools;
+        }
+
+        /// <summary>Parse a tool_call.arguments JSON string into a document; tolerates empty/invalid → {}.</summary>
+        private static JsonDocument ParseToolArgs(string arguments)
+        {
+            if (string.IsNullOrWhiteSpace(arguments))
+                return JsonDocument.Parse("{}");
+            try { return JsonDocument.Parse(arguments); }
+            catch { return TryParseJsonObject(arguments) ?? JsonDocument.Parse("{}"); }
+        }
+
+        /// <summary>Turn the model's final content into a reply + widgets. Content is normally plain Markdown now
+        /// (widgets are attached via the propose_widget tool); we still unwrap the legacy {"final","widgets"} JSON.</summary>
+        private static AgentTurnResult FinishAnswer(string content, bool allowWidgets, List<WidgetProposal> pendingWidgets, InsightsReportResult lastDataset)
+        {
+            var widgets = allowWidgets ? new List<WidgetProposal>(pendingWidgets) : new List<WidgetProposal>();
+            var trimmed = content?.Trim() ?? string.Empty;
+
+            var json = ExtractJsonObject(trimmed);
+            if (json != null)
+            {
+                using var doc = TryParseJsonObject(json);
+                if (doc != null && doc.RootElement.TryGetProperty("final", out var finalEl))
+                {
+                    if (allowWidgets && doc.RootElement.TryGetProperty("widgets", out var widgetsEl))
+                        widgets.AddRange(BuildWidgets(widgetsEl, lastDataset));
+                    return new AgentTurnResult { Reply = finalEl.GetString()?.Trim() ?? string.Empty, Widgets = widgets };
+                }
+            }
+            return new AgentTurnResult { Reply = trimmed, Widgets = widgets };
         }
 
         /// <summary>Extracts the first balanced JSON object from model output (tolerates ``` fences and stray prose).</summary>
