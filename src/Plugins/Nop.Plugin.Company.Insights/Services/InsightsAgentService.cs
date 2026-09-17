@@ -80,6 +80,7 @@ namespace Nop.Plugin.Company.Insights.Services
             if (scope.CompanyId.HasValue)
                 sb.AppendLine("Your scope is a single company; every tool already returns only that company's data.");
             sb.AppendLine("Ground your answer in real data: use the read-only tools to look up the products / orders / reviews the trigger refers to before drawing conclusions. Do not invent facts (e.g. never claim a product is missing an image or description without checking with list_products).");
+            sb.AppendLine("If, after checking the data, there is nothing worth sending (no issue, nothing actionable, everything looks fine), finish with EXACTLY {\"final\":\"NO_REPORT\"} — the run is recorded but no message is sent to the outputs. Only produce a full report when it is genuinely useful; don't send noise.");
             AppendProtocolAndTools(sb, scope, _memory.Enabled, automationsEnabled: false, includeWidgets: false);
 
             var messages = new List<InsightsLlmClient.LlmMessage>

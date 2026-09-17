@@ -80,6 +80,15 @@ namespace Nop.Plugin.Company.Insights.Services
                 var scope = await _profiles.ScopeForCompanyAsync(config.CompanyId);
                 var output = (await _agentService.RunBackgroundAsync(config, inputJson, scope)).Trim();
 
+                // The agent may decide there is nothing worth sending — then we record the run but skip the
+                // output sinks (no Telegram message, no memory note), so automations aren't noisy.
+                if (IsNothingToReport(output))
+                {
+                    await _runs.FinishAsync(runId, "skipped",
+                        JsonSerializer.Serialize(new { text = output, note = "agent decided there was nothing to report" }), null);
+                    return;
+                }
+
                 var sinks = ParseSinks(config.OutputSinksJson);
                 await DispatchSinksAsync(config, sinks, output);
 
@@ -92,6 +101,15 @@ namespace Nop.Plugin.Company.Insights.Services
                 await _runs.FinishAsync(runId, "error", null, ex.Message);
                 await _logger.WarningAsync($"Insights agent '{config.Name}' run failed", ex);
             }
+        }
+
+        /// <summary>True when the agent signalled it has nothing worth sending (empty, or the NO_REPORT sentinel).</summary>
+        private static bool IsNothingToReport(string output)
+        {
+            if (string.IsNullOrWhiteSpace(output))
+                return true;
+            var t = output.Trim().Trim('"', '\'', '*', '.', '!', ' ', '`').ToUpperInvariant();
+            return t.StartsWith("NO_REPORT") || t == "NO REPORT" || t == "NOREPORT";
         }
 
         private async Task DispatchSinksAsync(InsightsAgentConfig config, IList<string> sinks, string output)
