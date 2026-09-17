@@ -19,7 +19,7 @@ namespace Nop.Plugin.Company.Insights.Services
     /// </summary>
     public class InsightsAgentService : IInsightsAgentService
     {
-        private const int MaxIterations = 6;
+        private const int MaxIterations = 9;
         private const int MaxObservationRows = 50;
         // No token cap on the model (reasoning length is unpredictable), so time is the only bound. A
         // reasoning-heavy answer on the gfx906 GPU can take a while to stream — keep this generous.
@@ -218,9 +218,37 @@ namespace Nop.Plugin.Company.Insights.Services
                     }
                 }
 
+                // Tool budget exhausted. Make ONE final call with NO tools so the model must answer with
+                // what it gathered (or explain what data is missing) instead of a canned give-up.
+                Report("Summarizing…");
+                messages.Add(new InsightsLlmClient.LlmMessage
+                {
+                    Role = "user",
+                    Content = "You've reached the tool-call limit. Answer now in Markdown using the data you've already gathered. "
+                        + "If the data needed to answer isn't available from the tools, say so plainly and suggest the closest thing you can show or how to narrow the question. Do NOT call any more tools."
+                });
+                try
+                {
+                    var finalCompletion = await _llm.CompleteWithToolsAsync(
+                        InsightsLlmClient.DefaultModel, messages, 0.0, null, LlmTimeout, cancellationToken);
+                    var answer = FinishAnswer(finalCompletion.Content ?? "", allowWidgets, pendingWidgets, lastDataset);
+                    answer.CombinedReports = pendingCombined;
+                    if (!string.IsNullOrWhiteSpace(answer.Reply))
+                        return answer;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    await _logger.WarningAsync("Insights agent final-synthesis call failed", ex);
+                }
+
                 return new AgentTurnResult
                 {
-                    Reply = "I couldn't finish that within a few steps — try a more specific question."
+                    Reply = "I couldn't finish that within a few steps — try narrowing the question.",
+                    CombinedReports = pendingCombined
                 };
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
