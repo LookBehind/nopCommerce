@@ -172,6 +172,7 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
   const [tgEnabled, setTgEnabled] = useState(true);
   const [tgDiscovering, setTgDiscovering] = useState(false);
   const [manualChat, setManualChat] = useState(false);
+  const [triggerHints, setTriggerHints] = useState<Record<string, string>>({});
 
   async function loadTgChats() {
     try {
@@ -214,6 +215,7 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void refresh();
+    api.triggerHints().then(setTriggerHints).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
@@ -381,6 +383,11 @@ export function AutomationsModal({ onClose }: { onClose: () => void }) {
                                 </option>
                               ))}
                             </select>
+                            {triggerHints[editor.eventType] && (
+                              <span className="ins-muted" style={{ marginTop: 4, fontSize: 12, lineHeight: 1.35, fontWeight: 400 }}>
+                                {triggerHints[editor.eventType]}
+                              </span>
+                            )}
                           </label>
                           <label>
                             Filter: max rating (reviews, optional)

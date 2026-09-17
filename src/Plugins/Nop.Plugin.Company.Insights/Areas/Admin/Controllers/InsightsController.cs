@@ -41,6 +41,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         private readonly IInsightsScheduleService _scheduleService;
         private readonly IInsightsScheduleRunner _scheduleRunner;
         private readonly IInsightsTelegramChatService _telegramChatService;
+        private readonly InsightsDeliveryTriggerReconciler _deliveryReconciler;
         private readonly InsightsLlmClient _llmClient;
         private readonly IWorkContext _workContext;
         private readonly InsightsMemoryConfig _config;
@@ -78,6 +79,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             IInsightsScheduleService scheduleService,
             IInsightsScheduleRunner scheduleRunner,
             IInsightsTelegramChatService telegramChatService,
+            InsightsDeliveryTriggerReconciler deliveryReconciler,
             InsightsLlmClient llmClient,
             IWorkContext workContext,
             InsightsMemoryConfig config,
@@ -95,6 +97,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             _scheduleService = scheduleService;
             _scheduleRunner = scheduleRunner;
             _telegramChatService = telegramChatService;
+            _deliveryReconciler = deliveryReconciler;
             _llmClient = llmClient;
             _workContext = workContext;
             _config = config;
@@ -384,6 +387,46 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         }
 
         private static object MapChat(TelegramChat c) => new { id = c.Id, title = c.Title, type = c.Type, username = c.Username };
+
+        /// <summary>
+        /// Per-event-type hints describing exactly when each trigger fires. The two time-derived
+        /// triggers (delivery-approaching / day-closing) report the tenant's REAL slot-derived
+        /// times (local UTC+4); the entity events describe their triggering condition.
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> TriggerHints()
+        {
+            if (!await HasAccessAsync())
+                return StatusCode(StatusCodes.Status403Forbidden);
+
+            var hints = new Dictionary<string, string>
+            {
+                ["review-added"] = "Fires the moment a customer submits a product review.",
+                ["review-triaged"] = "Fires when a review is triaged (e.g. a low-rating review is flagged for follow-up).",
+                ["order-placed"] = "Fires the moment an order is successfully placed.",
+                ["order-cancelled"] = "Fires when an order is cancelled.",
+                ["product-created"] = "Fires when a new product is created.",
+                ["product-updated"] = "Fires when a product is edited and saved (title, price, pictures, etc.).",
+            };
+
+            try
+            {
+                var schedule = await _deliveryReconciler.DescribeTriggerScheduleAsync();
+                hints["delivery-approaching"] = schedule.DeliveryApproaching.Count > 0
+                    ? $"Fires 40 min before each delivery slot — today at {string.Join(", ", schedule.DeliveryApproaching)} (Asia/Yerevan)."
+                    : "Fires 40 min before each delivery slot. No delivery slots are configured yet, so it never fires.";
+                hints["day-closing"] = schedule.DayClosing.Count > 0
+                    ? $"Fires 30 min after the last delivery slot — today at {string.Join(", ", schedule.DayClosing)} (Asia/Yerevan)."
+                    : "Fires 30 min after the last delivery slot. No delivery slots are configured yet, so it never fires.";
+            }
+            catch
+            {
+                hints["delivery-approaching"] = "Fires 40 min before each configured delivery slot (Asia/Yerevan).";
+                hints["day-closing"] = "Fires 30 min after the last configured delivery slot (Asia/Yerevan).";
+            }
+
+            return Json(hints);
+        }
 
         /// <summary>Recent agent runs (observability), optionally for one agent — scoped to the automations
         /// the caller may manage (a Workplace Manager only sees their own company's runs).</summary>

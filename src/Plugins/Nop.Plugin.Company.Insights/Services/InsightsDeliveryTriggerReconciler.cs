@@ -106,6 +106,53 @@ namespace Nop.Plugin.Company.Insights.Services
             }
         }
 
+        /// <summary>
+        /// The real, tenant-specific firing times of the two time-derived triggers, in local
+        /// (UTC+4) wall-clock — so the Automations UI can tell the user precisely when each will run.
+        /// Delivery-approaching = every configured slot − 40 min; day-closing = last slot + 30 min.
+        /// Times are collected across all stores and de-duplicated.
+        /// </summary>
+        public async Task<TriggerScheduleInfo> DescribeTriggerScheduleAsync()
+        {
+            var approaching = new SortedSet<TimeSpan>();
+            var dayClosing = new SortedSet<TimeSpan>();
+
+            foreach (var store in await _storeService.GetAllStoresAsync())
+            {
+                List<TimeSpan> slots;
+                try
+                {
+                    var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>(store.Id);
+                    slots = ParseSlots(orderSettings.ScheduleDate);
+                }
+                catch
+                {
+                    continue;
+                }
+                if (slots.Count == 0)
+                    continue;
+
+                foreach (var slot in slots)
+                    approaching.Add(NormalizeLocal(slot - TimeSpan.FromMinutes(ApproachMinutes)));
+                dayClosing.Add(NormalizeLocal(slots.Max() + TimeSpan.FromMinutes(DayClosingDelayMinutes)));
+            }
+
+            return new TriggerScheduleInfo
+            {
+                DeliveryApproaching = approaching.Select(FormatHhmm).ToList(),
+                DayClosing = dayClosing.Select(FormatHhmm).ToList()
+            };
+        }
+
+        /// <summary>Wrap a shifted slot time back into a single 24h day (e.g. 00:20 − 40m = 23:40).</summary>
+        private static TimeSpan NormalizeLocal(TimeSpan t)
+        {
+            var minutes = ((int)t.TotalMinutes % (24 * 60) + 24 * 60) % (24 * 60);
+            return TimeSpan.FromMinutes(minutes);
+        }
+
+        private static string FormatHhmm(TimeSpan t) => $"{t.Hours:D2}:{t.Minutes:D2}";
+
         private static List<TimeSpan> ParseSlots(string scheduleDateRaw)
         {
             if (string.IsNullOrWhiteSpace(scheduleDateRaw) || !scheduleDateRaw.TrimStart().StartsWith("["))
@@ -144,5 +191,12 @@ namespace Nop.Plugin.Company.Insights.Services
                 _logger.WarningAsync("Insights delivery reconciler: remove-stale failed", ex).GetAwaiter().GetResult();
             }
         }
+    }
+
+    /// <summary>Real local (UTC+4) firing times of the two time-derived triggers, for the Automations UI.</summary>
+    public class TriggerScheduleInfo
+    {
+        public IList<string> DeliveryApproaching { get; set; } = new List<string>();
+        public IList<string> DayClosing { get; set; } = new List<string>();
     }
 }

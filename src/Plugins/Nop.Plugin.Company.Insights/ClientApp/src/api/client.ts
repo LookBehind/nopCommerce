@@ -206,6 +206,7 @@ export const api = {
   telegramChats: () => getJson<{ enabled: boolean; chats: TelegramChatOption[] }>("/TelegramChats"),
   telegramDiscover: () =>
     postForm<{ enabled: boolean; chats: TelegramChatOption[] }>("/TelegramDiscover", {}),
+  triggerHints: () => getJson<Record<string, string>>("/TriggerHints"),
 };
 
 export interface TelegramChatOption {
