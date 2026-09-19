@@ -71,6 +71,19 @@ namespace Nop.Web.Infrastructure.Cache
             CacheTime = (int)TimeSpan.FromDays(1).TotalMinutes
         };
         public static string ApiBestsellersVendorIdsPrefixCacheKey => "Nop.api.bestsellers";
+
+        /// <summary>
+        /// Key for the aggregate rating (sum of ratings + review count across a vendor's products)
+        /// used by the mobile API's vendor rating field
+        /// </summary>
+        /// <remarks>
+        /// {0} : vendor id
+        /// </remarks>
+        public static CacheKey ApiVendorRatingKey => new CacheKey("Nop.api.vendor-rating-{0}", ApiVendorRatingPrefixCacheKey)
+        {
+            CacheTime = (int)TimeSpan.FromDays(1).TotalMinutes
+        };
+        public static string ApiVendorRatingPrefixCacheKey => "Nop.api.vendor-rating";
         
         /// <summary>
         /// Key for "also purchased" product identifiers displayed on the product details page

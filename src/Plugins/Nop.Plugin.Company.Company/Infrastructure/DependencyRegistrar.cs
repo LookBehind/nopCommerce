@@ -28,6 +28,7 @@ namespace Nop.Plugin.Company.Company.Infrastructure
             services.AddScoped<IDeliveryTimeStorageService, DeliveryTimeStorageService>();
             services.AddScoped<IGlobalDeliveryTimeValidationService, GlobalDeliveryTimeValidationService>();
             services.AddScoped<ICartAvailabilityService, CartAvailabilityService>();
+            services.AddScoped<ICustomerPreferencesService, CustomerPreferencesService>();
             services.AddScoped<Nop.Web.Controllers.CheckoutController, CheckoutController_Overriden>();
             services.AddScoped<Nop.Web.Factories.ICheckoutModelFactory, CheckoutModelFactory_Overriden>();
         }

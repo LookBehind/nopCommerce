@@ -78,7 +78,8 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly MediaSettings _mediaSettings;
         private readonly CustomerSettings _customerSettings;
         private readonly ILogger _logger;
-        private const string LastUnpublishedProductIdsKey = "LastUnpublishedProductIds"; 
+        private readonly IShoppingCartService _shoppingCartService;
+        private const string LastUnpublishedProductIdsKey = "LastUnpublishedProductIds";
 
         private static readonly AttributeControlType[] _allowedAttributeControlTypes = new[] {
             AttributeControlType.DropdownList,
@@ -122,7 +123,8 @@ namespace Nop.Web.Controllers.Api.Security
             IPictureService pictureService,
             MediaSettings mediaSettings,
             CustomerSettings customerSettings,
-            ILogger logger)
+            ILogger logger,
+            IShoppingCartService shoppingCartService)
         {
             _localizationSettings = localizationSettings;
             _workflowMessageService = workflowMessageService;
@@ -155,6 +157,21 @@ namespace Nop.Web.Controllers.Api.Security
             _mediaSettings = mediaSettings;
             _customerSettings = customerSettings;
             _logger = logger;
+            _shoppingCartService = shoppingCartService;
+        }
+
+        #endregion
+
+        #region Nested classes
+
+        /// <summary>
+        /// Cache payload for the aggregate rating (sum of ratings + review count across all of a
+        /// vendor's products) exposed via <see cref="VendorBriefInfoModel"/>.
+        /// </summary>
+        private class VendorRatingAggregate
+        {
+            public int RatingSum { get; set; }
+            public int TotalReviews { get; set; }
         }
 
         #endregion
@@ -385,6 +402,28 @@ namespace Nop.Web.Controllers.Api.Security
                     ProductSpecificationModel = await PrepareProductSpecificationAttributeModelAsync(product),
                     ProductAttributesModel = await PrepareProductAttributesApiModel(product)
                 };
+
+                if (productOverviewApiModel.Vendor?.Id > 0)
+                {
+                    var vendorId = productOverviewApiModel.Vendor.Id;
+                    var vendorRating = await _staticCacheManager.GetAsync(
+                        _staticCacheManager.PrepareKeyForDefaultCache(
+                            NopModelCacheDefaults.ApiVendorRatingKey, vendorId),
+                        async () =>
+                        {
+                            var vendorProducts = await _productService.SearchProductsAsync(
+                                vendorId: vendorId, showHidden: true);
+
+                            return new VendorRatingAggregate
+                            {
+                                RatingSum = vendorProducts.Sum(p => p.ApprovedRatingSum),
+                                TotalReviews = vendorProducts.Sum(p => p.ApprovedTotalReviews)
+                            };
+                        });
+
+                    productOverviewApiModel.Vendor.RatingSum = vendorRating.RatingSum;
+                    productOverviewApiModel.Vendor.TotalReviews = vendorRating.TotalReviews;
+                }
 
                 if (product.HasDiscountsApplied)
                 {
@@ -720,8 +759,16 @@ namespace Nop.Web.Controllers.Api.Security
                 );
             }
 
+            //no schema change needed for "new": Product.CreatedOnUtc already exists, so this is
+            //a pure recency sort, mirroring how Popular/TopRated are just sort flags
+            IEnumerable<Product> productsForModel = products;
+            if (searchModel.New == true)
+            {
+                productsForModel = products.OrderByDescending(p => p.CreatedOnUtc);
+            }
+
             //model
-            var model = await PrepareApiProductOverviewModels(products);
+            var model = await PrepareApiProductOverviewModels(productsForModel);
 
             if (searchModel.Popular == true)
             {
@@ -751,6 +798,89 @@ namespace Nop.Web.Controllers.Api.Security
             var model = await PrepareApiProductOverviewModels(new[] { product });
 
             return Ok(model.First());
+        }
+
+        #endregion
+
+        #region Favourites
+
+        /// <summary>
+        /// Favourites back onto nopCommerce's stock <see cref="ShoppingCartType.Wishlist"/>
+        /// cart-item mechanism rather than a new table - confirmed wired end-to-end (permission
+        /// check, settings, storefront Wishlist controller actions) before building on it here.
+        /// </summary>
+        [HttpGet("favourites")]
+        public async Task<IActionResult> GetFavourites()
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var store = await _storeContext.GetCurrentStoreAsync();
+
+            var wishlist = await _shoppingCartService.GetShoppingCartAsync(
+                customer, ShoppingCartType.Wishlist, store.Id);
+
+            if (!wishlist.Any())
+            {
+                return Ok(Enumerable.Empty<ProductOverviewApiModel>());
+            }
+
+            var products = await _productService.GetProductsByIdsAsync(
+                wishlist.Select(item => item.ProductId).ToArray());
+
+            var model = await PrepareApiProductOverviewModels(products);
+
+            return Ok(model);
+        }
+
+        [HttpPost("favourites/{productId}")]
+        public async Task<IActionResult> AddFavourite(int productId)
+        {
+            var product = await _productService.GetProductByIdAsync(productId);
+            if (product == null || product.Deleted)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    message = await _localizationService.GetResourceAsync("Product.Not.Found")
+                });
+            }
+
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var store = await _storeContext.GetCurrentStoreAsync();
+
+            //already favourited - treat as idempotent rather than adding a duplicate cart item
+            var existing = await _shoppingCartService.GetShoppingCartAsync(
+                customer, ShoppingCartType.Wishlist, store.Id, productId);
+            if (existing.Any())
+            {
+                return Ok(new { success = true });
+            }
+
+            var warnings = await _shoppingCartService.AddToCartAsync(
+                customer, product, ShoppingCartType.Wishlist, store.Id, quantity: 1);
+
+            if (warnings.Any())
+            {
+                return BadRequest(new { success = false, warnings });
+            }
+
+            return Ok(new { success = true });
+        }
+
+        [HttpDelete("favourites/{productId}")]
+        public async Task<IActionResult> RemoveFavourite(int productId)
+        {
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var store = await _storeContext.GetCurrentStoreAsync();
+
+            var existing = await _shoppingCartService.GetShoppingCartAsync(
+                customer, ShoppingCartType.Wishlist, store.Id, productId);
+
+            foreach (var item in existing)
+            {
+                await _shoppingCartService.DeleteShoppingCartItemAsync(item);
+            }
+
+            return Ok(new { success = true });
         }
 
         #endregion
@@ -1165,6 +1295,7 @@ namespace Nop.Web.Controllers.Api.Security
             public bool? BestDeals { get; set; }
             public bool? Popular { get; set; }
             public bool? TopRated { get; set; }
+            public bool? New { get; set; }
             public int? Page { get; set; }
             public int? PageSize { get; set; }
             public int? CategoryId { get; set; }
