@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
-using Nop.Core.Domain.Companies;
 using Nop.Plugin.Payments.CheckMoneyOrder.Models;
 using Nop.Services.Catalog;
 using Nop.Services.Payments;
@@ -56,18 +55,11 @@ namespace Nop.Plugin.Payments.CheckMoneyOrder.Components
             else
             {
                 var usedBalance = customerBalanceResult.TotalAllowance - customerBalanceResult.RemainingAllowance;
-                var daysInPeriod = customerBalanceResult.RefreshCadence switch
-                {
-                    AmountLimitType.Daily => 1,
-                    AmountLimitType.Weekly => 7,
-                    AmountLimitType.Monthly => DateTime.DaysInMonth(DateTime.UtcNow.Year, DateTime.UtcNow.Month),
-                    _ => throw new ArgumentOutOfRangeException(nameof(customerBalanceResult.RefreshCadence))
-                };
-                var recommendedAverageSpending = customerBalanceResult.TotalAllowance / daysInPeriod;
-                var daysRemaining = customerBalanceResult.RefreshedAfter.Days;
-                var daysPassed = daysInPeriod - daysRemaining;
-                var recommendedSpendingUntilNow = daysPassed * recommendedAverageSpending;
-                
+                // Centralized on CustomerBalanceResult so this widget and the mobile
+                // /api/company/balance endpoint can never compute two different numbers
+                // for the same "recommended" concept.
+                var recommendedSpendingUntilNow = customerBalanceResult.GetRecommendedSpendingUntilNow();
+
                 model = new BalanceModel
                 {
                     HasBalance = true,

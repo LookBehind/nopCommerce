@@ -70,6 +70,7 @@ namespace Nop.Plugin.Company.Company.Controllers
                 totalBalance = balanceResult.TotalAllowance,
                 remainingBalance = balanceResult.RemainingAllowance,
                 usedBalance,
+                recommendedSpending = balanceResult.GetRecommendedSpendingUntilNow(),
                 refreshCadence = balanceResult.RefreshCadence.ToString(),
                 refreshesInDays = balanceResult.RefreshedAfter.Days
             });
