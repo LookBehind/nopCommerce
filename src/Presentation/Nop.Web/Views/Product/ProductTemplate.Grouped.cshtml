@@ -64,6 +64,7 @@
                     @await Html.PartialAsync("_ProductDetailsPictures", Model)
                     <div class="overview">
                         @await Html.PartialAsync("_Discontinued", Model)
+                        @await Html.PartialAsync("_VendorUnavailable", Model)
                         <div class="product-name">
                             <h1>
                                 @Model.Name

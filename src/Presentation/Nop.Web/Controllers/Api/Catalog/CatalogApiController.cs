@@ -37,6 +37,7 @@ using System.Threading.Tasks;
 using Nop.Services.Common;
 using Nop.Services.Companies;
 using Nop.Services.Security;
+using TimeZoneConverter;
 
 namespace Nop.Web.Controllers.Api.Security
 {
@@ -71,6 +72,7 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly ISettingService _settingService;
         private readonly IProductAttributeService _productAttributeService;
         private readonly ICompanyService _companyService;
+        private readonly IDeliverySlotService _deliverySlotService;
         private readonly IDiscountService _discountService;
         private readonly IPermissionService _permissionService;
         private readonly IGenericAttributeService _genericAttributeService;
@@ -116,7 +118,8 @@ namespace Nop.Web.Controllers.Api.Security
             IProductAttributeService productAttributeService,
             IProductAvailabilityService productAvailabilityService,
             ICompanyService companyService,
-            IDiscountService discountService, 
+            IDeliverySlotService deliverySlotService,
+            IDiscountService discountService,
             IPermissionService permissionService,
             IGenericAttributeService genericAttributeService,
             IPictureService pictureService,
@@ -148,6 +151,7 @@ namespace Nop.Web.Controllers.Api.Security
             _settingService = settingService;
             _productAttributeService = productAttributeService;
             _companyService = companyService;
+            _deliverySlotService = deliverySlotService;
             _discountService = discountService;
             _permissionService = permissionService;
             _genericAttributeService = genericAttributeService;
@@ -700,6 +704,22 @@ namespace Nop.Web.Controllers.Api.Security
             DateTime? availabilityDate = DateTime.TryParse(searchModel.DeliveryDate, out var parsedDeliveryDate)
                 ? parsedDeliveryDate
                 : null;
+
+            if (!availabilityDate.HasValue)
+            {
+                // No delivery date picked yet - don't optimistically show products from
+                // vendors that are off today; fall back to the earliest date the customer
+                // could still order for (today if before cutoff, otherwise tomorrow)
+                // instead of skipping availability filtering entirely.
+                var searchCustomer = await _workContext.GetCurrentCustomerAsync();
+                var searchCompany = await _companyService.GetCompanyByCustomerIdAsync(searchCustomer.Id);
+                if (searchCompany != null)
+                {
+                    var searchStoreId = (await _storeContext.GetCurrentStoreAsync()).Id;
+                    availabilityDate = await _deliverySlotService.GetEarliestOrderableDateAsync(
+                        searchStoreId, TZConvert.GetTimeZoneInfo(searchCompany.TimeZone));
+                }
+            }
 
             var products = (await _productService.SearchProductsAsync(
                 pageIndex: searchModel.Page ?? 0,

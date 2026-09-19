@@ -113,6 +113,7 @@ namespace Nop.Web.Framework.Infrastructure
             services.AddScoped<ICategoryService, CategoryService>();
             services.AddScoped<ICompanyService, CompanyService>();
             services.AddScoped<ICompanyVendorScheduleService, CompanyVendorScheduleService>();
+            services.AddScoped<IDeliverySlotService, DeliverySlotService>();
             services.AddScoped<ICompareProductsService, CompareProductsService>();
             services.AddScoped<IRecentlyViewedProductsService, RecentlyViewedProductsService>();
             services.AddScoped<IManufacturerService, ManufacturerService>();
