@@ -1,0 +1,7 @@
+@model ProductDetailsModel
+@if (Model.DisplayVendorUnavailableMessage)
+{
+    <div class="discontinued-product">
+        <h4>@T("Products.VendorUnavailable")</h4>
+    </div>
+}

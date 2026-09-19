@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Nop.Services.Orders;
 
 namespace Nop.Plugin.Company.Company.Services
 {
@@ -68,37 +69,6 @@ namespace Nop.Plugin.Company.Company.Services
         /// The task result contains a dictionary mapping delivery time to order count
         /// </returns>
         Task<Dictionary<DateTime, int>> GetOrderCountsByDeliveryTimesAsync(List<DateTime> deliveryTimes);
-    }
-
-    /// <summary>
-    /// Delivery slot configuration
-    /// </summary>
-    public partial record DeliverySlot
-    {
-        /// <summary>
-        /// Time the ordering window opens
-        /// </summary>
-        public TimeSpan OpenTime { get; set; }
-
-        /// <summary>
-        /// Last time orders can be placed for this slot (cutoff)
-        /// </summary>
-        public TimeSpan CutoffTime { get; set; }
-
-        /// <summary>
-        /// When the delivery happens
-        /// </summary>
-        public TimeSpan DeliveryTime { get; set; }
-
-        /// <summary>
-        /// Whether this slot is currently active
-        /// </summary>
-        public bool IsEnabled { get; set; } = true;
-
-        /// <summary>
-        /// Display order (0-based)
-        /// </summary>
-        public int SortOrder { get; set; }
     }
 }
 
