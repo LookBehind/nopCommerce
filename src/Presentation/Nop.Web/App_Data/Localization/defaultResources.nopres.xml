@@ -2169,6 +2169,12 @@
   <LocaleResource Name="Admin.Catalog.Attributes.SpecificationAttributes.SpecificationAttribute.Options.Fields.EnableColorSquaresRgb.Hint">
     <Value>Check to choose color to be used instead of an option text name (it'll be displayed as "color square").</Value>
   </LocaleResource>
+  <LocaleResource Name="Admin.Catalog.Attributes.SpecificationAttributes.SpecificationAttribute.Options.Fields.IsAllergen">
+    <Value>Is allergen</Value>
+  </LocaleResource>
+  <LocaleResource Name="Admin.Catalog.Attributes.SpecificationAttributes.SpecificationAttribute.Options.Fields.IsAllergen.Hint">
+    <Value>Check if this option is a common allergen (e.g. Peanuts, Milk), as opposed to a plain ingredient or a free-from claim (e.g. Gluten-Free). Used to flag allergy conflicts for customers.</Value>
+  </LocaleResource>
   <LocaleResource Name="Admin.Catalog.Attributes.SpecificationAttributes.SpecificationAttribute.Options.Fields.Name">
     <Value>Name</Value>
   </LocaleResource>

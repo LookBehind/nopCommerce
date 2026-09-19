@@ -34,6 +34,9 @@ namespace Nop.Web.Areas.Admin.Models.Catalog
         [NopResourceDisplayName("Admin.Catalog.Attributes.SpecificationAttributes.SpecificationAttribute.Options.Fields.DisplayOrder")]
         public int DisplayOrder { get; set; }
 
+        [NopResourceDisplayName("Admin.Catalog.Attributes.SpecificationAttributes.SpecificationAttribute.Options.Fields.IsAllergen")]
+        public bool IsAllergen { get; set; }
+
         [NopResourceDisplayName("Admin.Catalog.Attributes.SpecificationAttributes.SpecificationAttribute.Options.Fields.NumberOfAssociatedProducts")]
         public int NumberOfAssociatedProducts { get; set; }
         

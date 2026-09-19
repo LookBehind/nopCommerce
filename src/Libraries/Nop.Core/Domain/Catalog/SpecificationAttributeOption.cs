@@ -26,5 +26,12 @@ namespace Nop.Core.Domain.Catalog
         /// Gets or sets the display order
         /// </summary>
         public int DisplayOrder { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether this option represents an allergen
+        /// (e.g. "Peanuts", "Milk") rather than a plain ingredient or a free-from claim
+        /// (e.g. "Gluten-Free"). Applies wherever this option is assigned to a product.
+        /// </summary>
+        public bool IsAllergen { get; set; }
     }
 }

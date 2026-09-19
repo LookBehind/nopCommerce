@@ -207,6 +207,8 @@ namespace Nop.Web.Controllers.Api.Security
                                 {
                                     AttributeTypeId = psa.AttributeTypeId,
                                     ColorSquaresRgb = option.ColorSquaresRgb,
+                                    SpecificationAttributeOptionId = option.Id,
+                                    IsAllergen = option.IsAllergen,
                                     ValueRaw = psa.AttributeType switch
                                     {
                                         SpecificationAttributeType.Option => WebUtility.HtmlEncode(await _localizationService.GetLocalizedAsync(option, x => x.Name)),
@@ -256,6 +258,8 @@ namespace Nop.Web.Controllers.Api.Security
                         {
                             AttributeTypeId = psa.AttributeTypeId,
                             ColorSquaresRgb = option.ColorSquaresRgb,
+                            SpecificationAttributeOptionId = option.Id,
+                            IsAllergen = option.IsAllergen,
                             ValueRaw = psa.AttributeType switch
                             {
                                 SpecificationAttributeType.Option => WebUtility.HtmlEncode(await _localizationService.GetLocalizedAsync(option, x => x.Name)),
@@ -274,6 +278,8 @@ namespace Nop.Web.Controllers.Api.Security
                         {
                             AttributeTypeId = psa.AttributeTypeId,
                             ColorSquaresRgb = option.ColorSquaresRgb,
+                            SpecificationAttributeOptionId = option.Id,
+                            IsAllergen = option.IsAllergen,
                             ValueRaw = psa.AttributeType switch
                             {
                                 SpecificationAttributeType.Option => WebUtility.HtmlEncode(await _localizationService.GetLocalizedAsync(option, x => x.Name)),
@@ -740,6 +746,15 @@ namespace Nop.Web.Controllers.Api.Security
                 ? parsedDeliveryDate
                 : null;
 
+            List<SpecificationAttributeOption> filteredSpecOptions = null;
+            if (searchModel.SpecificationAttributeOptionId.HasValue)
+            {
+                var specOption = await _specificationAttributeService
+                    .GetSpecificationAttributeOptionByIdAsync(searchModel.SpecificationAttributeOptionId.Value);
+                if (specOption != null)
+                    filteredSpecOptions = new List<SpecificationAttributeOption> { specOption };
+            }
+
             var products = (await _productService.SearchProductsAsync(
                 pageIndex: searchModel.Page ?? 0,
                 pageSize: searchModel.PageSize ?? int.MaxValue,
@@ -749,6 +764,7 @@ namespace Nop.Web.Controllers.Api.Security
                 searchCustomerVendors: true,
                 vendorId: searchModel.VendorId ?? 0,
                 onlyDiscounted: searchModel.BestDeals,
+                filteredSpecOptions: filteredSpecOptions,
                 orderBy: searchModel.PriceLow == true ? ProductSortingEnum.PriceAsc : searchModel.PriceHigh == true ? ProductSortingEnum.PriceDesc : ProductSortingEnum.Position,
                 availabilityDate: availabilityDate));
 
@@ -1301,6 +1317,13 @@ namespace Nop.Web.Controllers.Api.Security
             public int? CategoryId { get; set; }
             public int? VendorId { get; set; }
             public int? ProductId { get; set; }
+
+            /// <summary>
+            /// Filters to products that have this specification attribute option assigned
+            /// with filtering allowed (e.g. an "Ingredients" option such as "Milk") - backs
+            /// the mobile app's @ingredient: mention-chip search filter.
+            /// </summary>
+            public int? SpecificationAttributeOptionId { get; set; }
 
             /// <summary>
             /// The customer's selected delivery date ("yyyy-MM-dd"), used to hide products from
