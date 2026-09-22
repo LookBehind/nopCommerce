@@ -185,6 +185,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
                 defaultId = resolved.DefaultId,
                 isAdmin = resolved.IsAdmin,
                 ownCompanyId = resolved.OwnCompanyId,
+                companyLinkRequired = resolved.CompanyLinkRequired,
                 profiles = resolved.Allowed.Select(p => new
                 {
                     id = p.Id,

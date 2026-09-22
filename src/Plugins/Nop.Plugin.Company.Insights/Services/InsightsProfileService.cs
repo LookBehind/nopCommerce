@@ -101,6 +101,13 @@ namespace Nop.Plugin.Company.Insights.Services
                 ? BackofficeId
                 : (allowed.FirstOrDefault()?.Id ?? BackofficeId);
 
+            // A non-admin whose default profile is company-scoped but who has no company mapping (and no
+            // company picker — that's admin-only) is stuck on a denied scope: flag it so the UI can explain.
+            var defaultProfile = Registry.FirstOrDefault(p => p.Id == result.DefaultId);
+            result.CompanyLinkRequired = !isAdmin
+                && defaultProfile != null && defaultProfile.CompanyScoped
+                && result.OwnCompanyId == null;
+
             // Admins acting as Workplace Manager must pick a company → provide the list.
             if (isAdmin && allowed.Any(p => p.Id == WorkplaceManagerId))
             {

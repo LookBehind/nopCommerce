@@ -22,6 +22,11 @@ namespace Nop.Plugin.Company.Insights.Services
         public int? OwnCompanyId { get; set; }
         /// <summary>Companies the user may pick from when a scoped profile needs an explicit choice (admins).</summary>
         public IList<CompanyOption> SelectableCompanies { get; set; } = new List<CompanyOption>();
+
+        /// <summary>True when the default profile is company-scoped but the user has no company and cannot
+        /// pick one (a non-admin Workplace Manager not linked to any company). Every query then fails closed,
+        /// so the UI should tell them to get linked instead of showing empty data.</summary>
+        public bool CompanyLinkRequired { get; set; }
     }
 
     /// <summary>
