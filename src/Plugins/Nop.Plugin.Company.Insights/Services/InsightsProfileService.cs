@@ -18,6 +18,10 @@ namespace Nop.Plugin.Company.Insights.Services
         // Role SystemNames that grant each profile (see docs/USER-PROFILES.md §6).
         private const string RoleAdministrators = "Administrators";
         private const string RoleCompanyDashboardViewer = "CompanyDashboardViewer";
+        // Prod grants Insights to a company organizer via this role (the AccessInsights permission is mapped
+        // to it); recognize it as the Workplace Manager role too, else such a user matches no profile and
+        // fails closed to a denied scope (empty everything). Keeps CompanyDashboardViewer for other tenants.
+        private const string RoleAccessCompanyInsights = "AccessCompanyInsights";
 
         public const string BackofficeId = "backoffice";
         public const string WorkplaceManagerId = "workplace-manager";
@@ -55,7 +59,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 Name = "Workplace Manager",
                 Description = "The company's organizer — vendor traction, category health, reviews and delivery reliability for their own company.",
                 // Admins get this too (dual view) — see docs §6.
-                RoleSystemNames = new[] { RoleCompanyDashboardViewer, RoleAdministrators },
+                RoleSystemNames = new[] { RoleCompanyDashboardViewer, RoleAccessCompanyInsights, RoleAdministrators },
                 CompanyScoped = true,
                 AllowedReports = new[]
                 {
