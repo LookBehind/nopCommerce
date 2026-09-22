@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
 using Nop.Core;
 using Nop.Plugin.Company.Company.Services;
 using Nop.Web.Controllers;
@@ -22,10 +23,23 @@ namespace Nop.Plugin.Company.Company.Controllers
         IStoreContext storeContext)
         : BaseApiController
     {
+        // Explicit camelCase JsonProperty on every field: ServiceCollectionExtensions.
+        // AddNopMvc wires Newtonsoft.Json with a DefaultContractResolver specifically to
+        // keep MVC from camel-casing JSON (see its comment there), so a plain POCO here
+        // serializes as PascalCase by default - a real contract break against the mobile
+        // client's camelCase CustomerPreferences type, found live on mysnacks-dev once
+        // mobile-v2 switched this endpoint off its mock. CompanyBalanceApiController
+        // never hit this because it hand-builds an anonymous object whose C# property
+        // names are already literally camelCase.
         public class CustomerPreferencesApiModel
         {
+            [JsonProperty("allergies")]
             public IList<string> Allergies { get; set; } = new List<string>();
+
+            [JsonProperty("undesired")]
             public IList<string> Undesired { get; set; } = new List<string>();
+
+            [JsonProperty("avoidedVendorIds")]
             public IList<int> AvoidedVendorIds { get; set; } = new List<int>();
         }
 
