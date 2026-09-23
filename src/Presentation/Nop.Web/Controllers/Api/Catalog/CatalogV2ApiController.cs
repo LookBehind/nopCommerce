@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -56,7 +58,8 @@ namespace Nop.Web.Controllers.Api.Catalog
         IPictureService pictureService,
         IOrderReportService orderReportService,
         IPriceFormatter priceFormatter,
-        IStoreContext storeContext)
+        IStoreContext storeContext,
+        IProductAttributeService productAttributeService)
         : BaseApiController
     {
         private const string IngredientsAttributeName = "Ingredients";
@@ -95,6 +98,37 @@ namespace Nop.Web.Controllers.Api.Catalog
             public VendorBriefV2Model Vendor { get; set; }
             public string Description { get; set; }
             public IList<string> SpecificationLabels { get; set; } = new List<string>();
+            // Whether GET products/{id}/attributes is worth calling before adding to
+            // cart - lets a product card/QuantityStepper branch to an attribute-picker
+            // sheet instead of an instant add without a second round trip just to find
+            // out. ~20% of the real catalog has at least one mapping (not a rare case).
+            public bool HasAttributes { get; set; }
+        }
+
+        public class ProductAttributeValueV2Model
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+            public bool IsPreSelected { get; set; }
+            // Plain catalog-defined adjustment (ProductAttributeValue.PriceAdjustment/
+            // PriceAdjustmentUsePercentage), not IPriceCalculationService's
+            // customer/discount-aware variant - this is a pre-add-to-cart picker with
+            // no cart context yet, and the real unit price (attribute-adjusted, via
+            // IShoppingCartService.GetUnitPriceAsync) is what api/v2/cart already
+            // returns once the item is actually in the cart.
+            public string PriceAdjustmentFormatted { get; set; }
+        }
+
+        public class ProductAttributeMappingV2Model
+        {
+            public int MappingId { get; set; }
+            public string Name { get; set; }
+            public bool IsRequired { get; set; }
+            // AttributeControlType's name (RadioList/Checkboxes/DropdownList/...) so
+            // mobile can switch on a plain string instead of duplicating nopCommerce's
+            // int enum values.
+            public string ControlType { get; set; }
+            public IList<ProductAttributeValueV2Model> Values { get; set; } = new List<ProductAttributeValueV2Model>();
         }
 
         public class VendorBriefV2Model
@@ -224,6 +258,61 @@ namespace Nop.Web.Controllers.Api.Catalog
             return Ok(result);
         }
 
+        [HttpGet("products/{id}/attributes")]
+        public async Task<IActionResult> GetProductAttributes(int id)
+        {
+            var product = await productService.GetProductByIdAsync(id);
+            if (product == null || product.Deleted)
+                return NotFound();
+
+            var mappings = await productAttributeService.GetProductAttributeMappingsByProductIdAsync(id);
+
+            var result = new List<ProductAttributeMappingV2Model>(mappings.Count);
+            foreach (var mapping in mappings.OrderBy(m => m.DisplayOrder))
+            {
+                var attribute = await productAttributeService.GetProductAttributeByIdAsync(mapping.ProductAttributeId);
+
+                var mappingModel = new ProductAttributeMappingV2Model
+                {
+                    MappingId = mapping.Id,
+                    Name = attribute?.Name,
+                    IsRequired = mapping.IsRequired,
+                    ControlType = mapping.AttributeControlType.ToString()
+                };
+
+                if (mapping.ShouldHaveValues())
+                {
+                    var values = await productAttributeService.GetProductAttributeValuesAsync(mapping.Id);
+                    foreach (var value in values.OrderBy(v => v.DisplayOrder))
+                    {
+                        mappingModel.Values.Add(new ProductAttributeValueV2Model
+                        {
+                            Id = value.Id,
+                            Name = value.Name,
+                            IsPreSelected = value.IsPreSelected,
+                            PriceAdjustmentFormatted = await FormatAttributeAdjustmentAsync(value)
+                        });
+                    }
+                }
+
+                result.Add(mappingModel);
+            }
+
+            return Ok(result);
+        }
+
+        private async Task<string> FormatAttributeAdjustmentAsync(ProductAttributeValue value)
+        {
+            if (value.PriceAdjustment == 0)
+                return null;
+
+            var sign = value.PriceAdjustment > 0 ? "+" : "-";
+            if (value.PriceAdjustmentUsePercentage)
+                return $"{sign}{Math.Abs(value.PriceAdjustment).ToString("0.##", CultureInfo.InvariantCulture)}%";
+
+            return $"{sign}{await priceFormatter.FormatPriceAsync(Math.Abs(value.PriceAdjustment))}";
+        }
+
         private async Task<SpecificationAttribute> GetIngredientsAttributeAsync()
         {
             var attributes = await specificationAttributeService.GetSpecificationAttributesAsync();
@@ -269,6 +358,8 @@ namespace Nop.Web.Controllers.Api.Catalog
                 .Select(mapping => ingredientOptionNames[mapping.SpecificationAttributeOptionId])
                 .ToList();
 
+            var attributeMappings = await productAttributeService.GetProductAttributeMappingsByProductIdAsync(product.Id);
+
             vendorsById.TryGetValue(product.VendorId, out var vendorModel);
             var popularityCount = 0;
             if (popularityByVendor.TryGetValue(product.VendorId, out var popularityByProductId))
@@ -291,7 +382,8 @@ namespace Nop.Web.Controllers.Api.Catalog
                 PopularityCount = popularityCount,
                 Vendor = vendorModel,
                 Description = product.ShortDescription,
-                SpecificationLabels = specificationLabels
+                SpecificationLabels = specificationLabels,
+                HasAttributes = attributeMappings.Count > 0
             };
         }
 
