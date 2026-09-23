@@ -246,9 +246,21 @@ namespace Nop.Web.Framework.Infrastructure
                 });
             }
 
-            //picture service
-            if (appSettings.AzureBlobConfig.Enabled)
-                services.AddScoped<IPictureService, AzurePictureService>();
+            //picture service - S3 (real AWS S3, or a self-hosted S3-compatible
+            //cluster such as Garage/MinIO) takes precedence over Azure Blob when
+            //both are somehow configured at once, since it's the newer/preferred
+            //option; each is "enabled" purely by its own config being populated
+            //(see S3Config.Enabled/AzureBlobConfig.Enabled), same convention.
+            if (appSettings.S3Config.Enabled)
+            {
+                services.AddScoped<IMediaBlobStorageProvider, S3BlobStorageProvider>();
+                services.AddScoped<IPictureService, CloudPictureService>();
+            }
+            else if (appSettings.AzureBlobConfig.Enabled)
+            {
+                services.AddScoped<IMediaBlobStorageProvider, AzureBlobStorageProvider>();
+                services.AddScoped<IPictureService, CloudPictureService>();
+            }
             else
                 services.AddScoped<IPictureService, PictureService>();
 

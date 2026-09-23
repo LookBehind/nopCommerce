@@ -32,6 +32,11 @@ namespace Nop.Core.Configuration
         public AzureBlobConfig AzureBlobConfig { get; set; } = new AzureBlobConfig();
 
         /// <summary>
+        /// Gets or sets S3-compatible storage configuration parameters
+        /// </summary>
+        public S3Config S3Config { get; set; } = new S3Config();
+
+        /// <summary>
         /// Gets or sets installation configuration parameters
         /// </summary>
         public InstallationConfig InstallationConfig { get; set; } = new InstallationConfig();

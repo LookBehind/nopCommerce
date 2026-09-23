@@ -12,6 +12,7 @@
     <RepositoryType>Git</RepositoryType>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="AWSSDK.S3" Version="4.0.103.3" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.15.0" />
     <PackageReference Include="EPPlus" Version="4.5.3.3" />
     <PackageReference Include="iTextSharp.LGPLv2.Core" Version="1.7.0" />
