@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
+using Nop.Core.Domain.Orders;
 using Nop.Services.Catalog;
 using Nop.Services.Media;
 using Nop.Services.Orders;
@@ -56,6 +57,10 @@ namespace Nop.Web.Controllers.Api.Catalog
         IPictureService pictureService,
         IOrderReportService orderReportService,
         IPriceFormatter priceFormatter,
+        IProductAttributeService productAttributeService,
+        IProductAttributeParser productAttributeParser,
+        IShoppingCartService shoppingCartService,
+        IWorkContext workContext,
         IStoreContext storeContext)
         : BaseApiController
     {
@@ -224,10 +229,24 @@ namespace Nop.Web.Controllers.Api.Catalog
             return Ok(result);
         }
 
+        public class CartItemAttributeV2Model
+        {
+            public int ProductAttributeMappingId { get; set; }
+            public int ProductAttributeValueId { get; set; }
+        }
+
         public class CartItemV2Model
         {
             public int ProductId { get; set; }
             public int Quantity { get; set; }
+            // Optional - only products with configured Product Attributes (distinct
+            // from the Ingredients Specification Attribute taxonomy - see
+            // ProductOverviewV2Model.SpecificationLabels) need this. Found live on
+            // this catalog: 227 product-attribute mappings, 106 attribute VALUES
+            // with a non-zero PriceAdjustment (e.g. "Half" size at -35%) - a plain
+            // ProductId+Quantity total would silently charge full base price for
+            // any of those regardless of what was actually selected.
+            public IList<CartItemAttributeV2Model> SelectedAttributes { get; set; } = new List<CartItemAttributeV2Model>();
         }
 
         public class CartTotalRequestV2Model
@@ -246,24 +265,50 @@ namespace Nop.Web.Controllers.Api.Catalog
         // only formatted it, which still trusts the client's arithmetic (and,
         // more importantly, trusts the client's own copy of each product's price
         // at all - stale if a price changed since the product list was fetched).
-        // This takes {productId, quantity} pairs instead and looks up each
-        // product's REAL current Price server-side, so both the total and its
-        // formatting come from the backend - matching how a real checkout should
-        // never trust client-supplied prices for anything that matters. There's
-        // no server-side cart/order-placement concept in this app yet (see
-        // ConfirmOrderSheet.tsx - "confirm" just resets local state), so this
-        // stays a stateless compute-and-return rather than a stored cart.
+        // This takes {productId, quantity, selectedAttributes} instead and computes
+        // each line's REAL current unit price server-side via
+        // IShoppingCartService.GetUnitPriceAsync - the same real price-calculation
+        // path nopCommerce's own checkout uses, so attribute price adjustments
+        // and discounts apply exactly as they would for a real order, not a
+        // hand-rolled subset of that logic. There's no server-side cart/order-
+        // placement concept in this app yet (see ConfirmOrderSheet.tsx -
+        // "confirm" just resets local state), so this stays a stateless
+        // compute-and-return rather than a stored cart.
         [HttpPost("cart-total")]
         public async Task<IActionResult> GetCartTotal([FromBody] CartTotalRequestV2Model model)
         {
+            var customer = await workContext.GetCurrentCustomerAsync();
             decimal total = 0;
+
             foreach (var item in model?.Items ?? new List<CartItemV2Model>())
             {
                 var product = await productService.GetProductByIdAsync(item.ProductId);
                 if (product == null || product.Deleted)
                     continue;
 
-                total += product.Price * item.Quantity;
+                var attributesXml = "";
+                foreach (var selected in item.SelectedAttributes ?? new List<CartItemAttributeV2Model>())
+                {
+                    var mapping = await productAttributeService.GetProductAttributeMappingByIdAsync(selected.ProductAttributeMappingId);
+                    if (mapping == null || mapping.ProductId != item.ProductId)
+                        continue;
+
+                    attributesXml = productAttributeParser.AddProductAttribute(
+                        attributesXml, mapping, selected.ProductAttributeValueId.ToString());
+                }
+
+                var (unitPrice, _, _) = await shoppingCartService.GetUnitPriceAsync(
+                    product,
+                    customer,
+                    ShoppingCartType.ShoppingCart,
+                    item.Quantity,
+                    attributesXml,
+                    customerEnteredPrice: 0,
+                    rentalStartDate: null,
+                    rentalEndDate: null,
+                    includeDiscounts: true);
+
+                total += unitPrice * item.Quantity;
             }
 
             var formatted = await priceFormatter.FormatPriceAsync(total);
