@@ -56,6 +56,7 @@ namespace Nop.Web.Controllers.Api.Catalog
         IPictureService pictureService,
         IOrderReportService orderReportService,
         IPriceFormatter priceFormatter,
+        IWorkContext workContext,
         IStoreContext storeContext)
         : BaseApiController
     {
@@ -114,6 +115,18 @@ namespace Nop.Web.Controllers.Api.Catalog
         {
             public string Name { get; set; }
             public bool IsAllergen { get; set; }
+        }
+
+        public class CurrencyV2Model
+        {
+            // Real store currency identity (e.g. "AMD"/"hy-AM") - the client uses
+            // this with a standard Intl.NumberFormat to correctly format
+            // client-computed aggregates (the cart subtotal) that IPriceFormatter
+            // can't pre-format server-side since they don't exist as a single
+            // stored value; every per-product price itself is fully backend-
+            // formatted already (see ProductOverviewV2Model.PriceFormatted).
+            public string CurrencyCode { get; set; }
+            public string DisplayLocale { get; set; }
         }
 
         [HttpGet("products")]
@@ -218,6 +231,17 @@ namespace Nop.Web.Controllers.Api.Catalog
                 .ToList();
 
             return Ok(result);
+        }
+
+        [HttpGet("currency")]
+        public async Task<IActionResult> GetCurrency()
+        {
+            var currency = await workContext.GetWorkingCurrencyAsync();
+            return Ok(new CurrencyV2Model
+            {
+                CurrencyCode = currency.CurrencyCode,
+                DisplayLocale = currency.DisplayLocale
+            });
         }
 
         private async Task<SpecificationAttribute> GetIngredientsAttributeAsync()
