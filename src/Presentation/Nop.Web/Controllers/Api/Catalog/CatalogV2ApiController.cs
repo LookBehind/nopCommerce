@@ -123,14 +123,24 @@ namespace Nop.Web.Controllers.Api.Catalog
 
         public class CurrencyV2Model
         {
-            // Real store currency identity (e.g. "AMD"/"hy-AM") - the client uses
-            // this with a standard Intl.NumberFormat to correctly format
-            // client-computed aggregates (the cart subtotal) that IPriceFormatter
-            // can't pre-format server-side since they don't exist as a single
-            // stored value; every per-product price itself is fully backend-
-            // formatted already (see ProductOverviewV2Model.Price).
             public string CurrencyCode { get; set; }
             public string DisplayLocale { get; set; }
+            // Symbol/decimal-digit/position derived from formatting a real 0 value
+            // through IPriceFormatter itself (not guessed, not the generic ICU data
+            // a plain Intl.NumberFormat(DisplayLocale, {currency: CurrencyCode})
+            // would use) - found live that those two disagreed: this store's actual
+            // configured format (Currency.CustomFormatting = "#,##0 ֏") renders
+            // "1,550 ֏" (comma-grouped, 0 decimals), while generic hy-AM/AMD ICU
+            // data renders "1 550,00 ֏" (space-grouped, 2 decimals) - visibly
+            // inconsistent with every per-product price on the same screen. The
+            // client uses these fields to format the one price-like value that
+            // isn't already backend-formatted (the cart subtotal, a client-computed
+            // running sum IPriceFormatter can't pre-format without a network round
+            // trip per quantity change) the same way.
+            public string Symbol { get; set; }
+            public bool SymbolBeforeAmount { get; set; }
+            public int DecimalDigits { get; set; }
+            public string GroupSeparator { get; set; }
         }
 
         [HttpGet("products")]
@@ -241,10 +251,34 @@ namespace Nop.Web.Controllers.Api.Catalog
         public async Task<IActionResult> GetCurrency()
         {
             var currency = await workContext.GetWorkingCurrencyAsync();
+
+            // Format two real values through the exact same formatter every price
+            // in this app goes through, then derive symbol/position/decimal-digits/
+            // grouping by inspecting the results - rather than assuming any
+            // particular shape. 1 alone can't reveal the grouping separator (no
+            // grouping happens below 1000); 1234 alone can't cleanly isolate the
+            // symbol if the currency has thousands of extra digits - using both
+            // keeps each derivation simple and robust.
+            var oneFormatted = await priceFormatter.FormatPriceAsync(1m);
+            var oneDigitIndex = oneFormatted.IndexOfAny("0123456789".ToCharArray());
+            var oneLastDigitIndex = oneFormatted.LastIndexOfAny("0123456789".ToCharArray());
+            var symbolBeforeAmount = oneDigitIndex > 0;
+            var symbol = oneFormatted.Remove(oneDigitIndex, oneLastDigitIndex - oneDigitIndex + 1).Trim();
+            var decimalMatch = System.Text.RegularExpressions.Regex.Match(oneFormatted, @"[.,](\d+)");
+            var decimalDigits = decimalMatch.Success ? decimalMatch.Groups[1].Length : 0;
+
+            var thousandFormatted = await priceFormatter.FormatPriceAsync(1234m);
+            var groupMatch = System.Text.RegularExpressions.Regex.Match(thousandFormatted, @"1(.)234");
+            var groupSeparator = groupMatch.Success ? groupMatch.Groups[1].Value : "";
+
             return Ok(new CurrencyV2Model
             {
                 CurrencyCode = currency.CurrencyCode,
-                DisplayLocale = currency.DisplayLocale
+                DisplayLocale = currency.DisplayLocale,
+                Symbol = symbol,
+                SymbolBeforeAmount = symbolBeforeAmount,
+                DecimalDigits = decimalDigits,
+                GroupSeparator = groupSeparator
             });
         }
 
