@@ -1,8 +1,10 @@
 using System;
+using System.Globalization;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Plugin.Company.Company.Services;
+using Nop.Services.Catalog;
 using Nop.Services.Payments;
 using Nop.Web.Controllers;
 using Nop.Web.Framework.Mvc.Filters;
@@ -23,7 +25,8 @@ namespace Nop.Plugin.Company.Company.Controllers
         ICompanyAllowancePaymentMethod companyAllowancePaymentMethod,
         IWorkContext workContext,
         IStoreContext storeContext,
-        IDeliveryTimeStorageService deliveryTimeStorageService)
+        IDeliveryTimeStorageService deliveryTimeStorageService,
+        IPriceFormatter priceFormatter)
         : BaseApiController
     {
         /// <summary>
@@ -62,6 +65,16 @@ namespace Nop.Plugin.Company.Company.Controllers
             }
 
             var usedBalance = balanceResult.TotalAllowance - balanceResult.RemainingAllowance;
+            var recommendedSpending = balanceResult.GetRecommendedSpendingUntilNow();
+
+            // Real store currency (e.g. AMD), not hardcoded - same RegionInfo(DisplayLocale)
+            // pattern CommonModelFactory.PrepareCurrencySelectorModelAsync already uses for
+            // the storefront's own currency-selector dropdown, falling back to the ISO code
+            // the same way that does when DisplayLocale isn't set.
+            var currency = await workContext.GetWorkingCurrencyAsync();
+            var currencySymbol = !string.IsNullOrEmpty(currency.DisplayLocale)
+                ? new RegionInfo(currency.DisplayLocale).CurrencySymbol
+                : currency.CurrencyCode;
 
             return Ok(new
             {
@@ -70,7 +83,15 @@ namespace Nop.Plugin.Company.Company.Controllers
                 totalBalance = balanceResult.TotalAllowance,
                 remainingBalance = balanceResult.RemainingAllowance,
                 usedBalance,
-                recommendedSpending = balanceResult.GetRecommendedSpendingUntilNow(),
+                recommendedSpending,
+                currencySymbol,
+                // Full IPriceFormatter output (same formatter every other price in the app
+                // uses) for the breakdown panel, which has room for the real formatted
+                // amount - the header ring's compact "2.5k" stays a client-side abbreviation
+                // of the real number, with currencySymbol appended.
+                remainingBalanceFormatted = await priceFormatter.FormatPriceAsync(balanceResult.RemainingAllowance),
+                usedBalanceFormatted = await priceFormatter.FormatPriceAsync(usedBalance),
+                recommendedSpendingFormatted = await priceFormatter.FormatPriceAsync(recommendedSpending),
                 refreshCadence = balanceResult.RefreshCadence.ToString(),
                 refreshesInDays = balanceResult.RefreshedAfter.Days
             });
