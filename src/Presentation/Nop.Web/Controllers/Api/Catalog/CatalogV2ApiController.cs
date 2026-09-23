@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
-using Nop.Core.Domain.Vendors;
 using Nop.Services.Catalog;
 using Nop.Services.Media;
 using Nop.Services.Orders;
@@ -32,9 +31,20 @@ namespace Nop.Web.Controllers.Api.Catalog
     /// No pagination on GET products - the whole point of this pass (see mobile's
     /// DiscoverScreen/curatedSections.ts/discoverSearch.ts) is fetching the full catalog once
     /// and keeping the existing client-side search/filter/curation logic working unchanged
-    /// against real data instead of mock fixtures. Revisit if the catalog outgrows "small
-    /// enough to fetch once" - api/catalog/product-search already exists for real
-    /// server-side paginated search if that's ever needed.
+    /// against real data instead of mock fixtures. api/catalog/product-search remains
+    /// available for real server-side paginated search if that's ever needed.
+    ///
+    /// GetProducts() found live on mysnacks-dev's actual catalog (1060 products, not the
+    /// mock's toy dataset) that a naive per-product sequential-await mapping (picture lookup,
+    /// category lookup, spec-attribute lookup with two MORE sequential lookups per mapped
+    /// value, a fresh vendor-rating aggregation, a fresh bestsellers report - all re-fetched
+    /// per product) took 37+ seconds end to end - unusable. Fixed by hoisting everything that
+    /// doesn't vary per product (vendor ratings, vendor popularity, category names, the
+    /// Ingredients taxonomy's option-id-to-name map) into single upfront passes over the much
+    /// smaller vendor/category/attribute-option lists, then mapping products with bounded
+    /// parallelism (the remaining per-product calls - picture, product-category mapping,
+    /// product-specification mapping - are genuinely independent I/O once the shared lookups
+    /// are precomputed).
     [Produces("application/json")]
     [Route("api/v2/catalog")]
     [Authorize]
@@ -50,19 +60,9 @@ namespace Nop.Web.Controllers.Api.Catalog
     {
         private const string IngredientsAttributeName = "Ingredients";
         private const int ThumbnailSize = 300;
-
-        // Per-request memoization only (controllers are instantiated per-request) - not a
-        // shared IStaticCacheManager entry, deliberately: CatalogApiController already caches
-        // this same aggregate under NopModelCacheDefaults.ApiVendorRatingKey with its own
-        // private VendorRatingAggregate type, and a static cache is not guaranteed to be
-        // safe to share across two different CLR types under one string key (risks a cast
-        // failure depending on the cache manager's implementation). Recomputing per request
-        // is cheap for this catalog's size; this dictionary just avoids redoing it once per
-        // product within a single GetProducts() call for products sharing a vendor.
-        private readonly Dictionary<int, VendorRatingAggregate> _vendorRatingMemo = new();
-        // Same per-request-only reasoning as _vendorRatingMemo - keyed by vendorId since
-        // BestSellersReportAsync(vendorId:) returns one report per vendor, not per product.
-        private readonly Dictionary<int, Dictionary<int, int>> _popularityByVendorMemo = new();
+        // Bounds how many products are mapped concurrently - unbounded Task.WhenAll over
+        // 1000+ products would open that many simultaneous DB connections/requests at once.
+        private const int ProductMapConcurrency = 32;
 
         public class ProductOverviewV2Model
         {
@@ -109,12 +109,6 @@ namespace Nop.Web.Controllers.Api.Catalog
             public bool IsAllergen { get; set; }
         }
 
-        private class VendorRatingAggregate
-        {
-            public int RatingSum { get; set; }
-            public int TotalReviews { get; set; }
-        }
-
         [HttpGet("products")]
         public async Task<IActionResult> GetProducts()
         {
@@ -125,10 +119,27 @@ namespace Nop.Web.Controllers.Api.Catalog
                 visibleIndividuallyOnly: true,
                 showHidden: false);
 
-            var result = new List<ProductOverviewV2Model>(products.Count);
-            foreach (var product in products)
+            var vendors = await vendorService.GetAllVendorsAsync();
+            var vendorsById = new Dictionary<int, VendorBriefV2Model>(vendors.Count);
+            var popularityByVendor = new Dictionary<int, Dictionary<int, int>>(vendors.Count);
+            foreach (var vendor in vendors)
             {
-                result.Add(await MapProductAsync(product));
+                vendorsById[vendor.Id] = await MapVendorAsync(vendor);
+                var bestsellers = await orderReportService.BestSellersReportAsync(vendorId: vendor.Id, showHidden: true);
+                popularityByVendor[vendor.Id] = bestsellers.ToDictionary(l => l.ProductId, l => l.TotalQuantity);
+            }
+
+            var categoryNameById = (await categoryService.GetAllCategoriesAsync(storeId: store.Id, showHidden: true))
+                .ToDictionary(c => c.Id, c => c.Name);
+
+            var ingredientOptionNames = await GetIngredientOptionNamesByIdAsync();
+
+            var result = new List<ProductOverviewV2Model>(products.Count);
+            foreach (var batch in products.Chunk(ProductMapConcurrency))
+            {
+                var mapped = await Task.WhenAll(batch.Select(p =>
+                    MapProductAsync(p, vendorsById, popularityByVendor, categoryNameById, ingredientOptionNames)));
+                result.AddRange(mapped);
             }
 
             return Ok(result);
@@ -180,8 +191,7 @@ namespace Nop.Web.Controllers.Api.Catalog
         [HttpGet("ingredients")]
         public async Task<IActionResult> GetIngredients()
         {
-            var attributes = await specificationAttributeService.GetSpecificationAttributesAsync();
-            var ingredientsAttribute = attributes.FirstOrDefault(a => a.Name == IngredientsAttributeName);
+            var ingredientsAttribute = await GetIngredientsAttributeAsync();
             if (ingredientsAttribute == null)
                 return Ok(new List<IngredientV2Model>());
 
@@ -196,51 +206,55 @@ namespace Nop.Web.Controllers.Api.Catalog
             return Ok(result);
         }
 
-        private async Task<ProductOverviewV2Model> MapProductAsync(Product product)
+        private async Task<SpecificationAttribute> GetIngredientsAttributeAsync()
+        {
+            var attributes = await specificationAttributeService.GetSpecificationAttributesAsync();
+            return attributes.FirstOrDefault(a => a.Name == IngredientsAttributeName);
+        }
+
+        // One upfront pass building {optionId -> name} for just the "Ingredients"
+        // attribute's options, so per-product mapping is a dictionary lookup instead of
+        // two extra sequential DB round trips (option-by-id, then attribute-by-id) per
+        // mapped specification value.
+        private async Task<Dictionary<int, string>> GetIngredientOptionNamesByIdAsync()
+        {
+            var ingredientsAttribute = await GetIngredientsAttributeAsync();
+            if (ingredientsAttribute == null)
+                return new Dictionary<int, string>();
+
+            var options = await specificationAttributeService
+                .GetSpecificationAttributeOptionsBySpecificationAttributeAsync(ingredientsAttribute.Id);
+            return options.ToDictionary(o => o.Id, o => o.Name);
+        }
+
+        private async Task<ProductOverviewV2Model> MapProductAsync(
+            Product product,
+            IReadOnlyDictionary<int, VendorBriefV2Model> vendorsById,
+            IReadOnlyDictionary<int, Dictionary<int, int>> popularityByVendor,
+            IReadOnlyDictionary<int, string> categoryNameById,
+            IReadOnlyDictionary<int, string> ingredientOptionNames)
         {
             var pictures = await pictureService.GetPicturesByProductIdAsync(product.Id, 1);
             var imageUrl = pictures.Count > 0
-                ? await pictureService.GetPictureUrlAsync(pictures[0].Id, ThumbnailSize)
+                ? (await pictureService.GetPictureUrlAsync(pictures[0], ThumbnailSize)).Url
                 : null;
 
             var productCategories = await categoryService.GetProductCategoriesByProductIdAsync(product.Id);
-            string categoryName = null;
-            if (productCategories.Count > 0)
-            {
-                var category = await categoryService.GetCategoryByIdAsync(productCategories[0].CategoryId);
-                categoryName = category?.Name;
-            }
+            var categoryName = productCategories.Count > 0 && categoryNameById.TryGetValue(productCategories[0].CategoryId, out var name)
+                ? name
+                : null;
 
             var specAttributes = await specificationAttributeService.GetProductSpecificationAttributesAsync(
                 product.Id, showOnProductPage: true);
-            var specificationLabels = new List<string>();
-            foreach (var mapping in specAttributes)
-            {
-                var option = await specificationAttributeService
-                    .GetSpecificationAttributeOptionByIdAsync(mapping.SpecificationAttributeOptionId);
-                if (option == null)
-                    continue;
+            var specificationLabels = specAttributes
+                .Where(mapping => ingredientOptionNames.ContainsKey(mapping.SpecificationAttributeOptionId))
+                .Select(mapping => ingredientOptionNames[mapping.SpecificationAttributeOptionId])
+                .ToList();
 
-                var attribute = await specificationAttributeService.GetSpecificationAttributeByIdAsync(option.SpecificationAttributeId);
-                if (attribute?.Name == IngredientsAttributeName)
-                    specificationLabels.Add(option.Name);
-            }
-
-            VendorBriefV2Model vendorModel = null;
-            if (product.VendorId > 0)
-            {
-                var vendor = await vendorService.GetVendorByIdAsync(product.VendorId);
-                if (vendor != null)
-                    vendorModel = await MapVendorAsync(vendor);
-            }
-
-            if (!_popularityByVendorMemo.TryGetValue(product.VendorId, out var popularityByProductId))
-            {
-                var bestsellers = await orderReportService.BestSellersReportAsync(vendorId: product.VendorId, showHidden: true);
-                popularityByProductId = bestsellers.ToDictionary(l => l.ProductId, l => l.TotalQuantity);
-                _popularityByVendorMemo[product.VendorId] = popularityByProductId;
-            }
-            popularityByProductId.TryGetValue(product.Id, out var popularityCount);
+            vendorsById.TryGetValue(product.VendorId, out var vendorModel);
+            var popularityCount = 0;
+            if (popularityByVendor.TryGetValue(product.VendorId, out var popularityByProductId))
+                popularityByProductId.TryGetValue(product.Id, out popularityCount);
 
             return new ProductOverviewV2Model
             {
@@ -260,30 +274,21 @@ namespace Nop.Web.Controllers.Api.Catalog
             };
         }
 
-        private async Task<VendorBriefV2Model> MapVendorAsync(Vendor vendor)
+        private async Task<VendorBriefV2Model> MapVendorAsync(Nop.Core.Domain.Vendors.Vendor vendor)
         {
             var pictureUrl = vendor.PictureId > 0
                 ? await pictureService.GetPictureUrlAsync(vendor.PictureId, ThumbnailSize)
                 : null;
 
-            if (!_vendorRatingMemo.TryGetValue(vendor.Id, out var vendorRating))
-            {
-                var vendorProducts = await productService.SearchProductsAsync(vendorId: vendor.Id, showHidden: true);
-                vendorRating = new VendorRatingAggregate
-                {
-                    RatingSum = vendorProducts.Sum(p => p.ApprovedRatingSum),
-                    TotalReviews = vendorProducts.Sum(p => p.ApprovedTotalReviews)
-                };
-                _vendorRatingMemo[vendor.Id] = vendorRating;
-            }
+            var vendorProducts = await productService.SearchProductsAsync(vendorId: vendor.Id, showHidden: true);
 
             return new VendorBriefV2Model
             {
                 Id = vendor.Id,
                 Name = vendor.Name,
                 PictureUrl = pictureUrl,
-                RatingSum = vendorRating.RatingSum,
-                TotalReviews = vendorRating.TotalReviews,
+                RatingSum = vendorProducts.Sum(p => p.ApprovedRatingSum),
+                TotalReviews = vendorProducts.Sum(p => p.ApprovedTotalReviews),
                 Description = vendor.Description
             };
         }
