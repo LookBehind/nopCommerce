@@ -71,12 +71,16 @@ namespace Nop.Web.Controllers.Api.Catalog
             public int Id { get; set; }
             public string Name { get; set; }
             public decimal PriceValue { get; set; }
-            // Store's actual configured currency (e.g. Armenian Dram - "#,##0 ֏",
-            // no decimals) via IPriceFormatter, the same formatter every other price
-            // display in this app uses (see BalanceViewComponent.cs). PriceValue
-            // stays a plain decimal for anything doing real math with it (cart
-            // totals, etc.) - this is purely the display string, not a replacement.
-            public string PriceFormatted { get; set; }
+            // Named to match the real v1 CatalogApiController's own
+            // ProductOverviewApiModel.Price field (Models/Api/Catalog/
+            // ProductOverviewApiModel.cs) - same field name, same meaning (fully
+            // backend-formatted via IPriceFormatter, this store's actual configured
+            // currency, e.g. Armenian Dram's "#,##0 ֏" - not "$0.00"), so mobile's
+            // shared ProductOverviewApiModel TS type works the same way whether a
+            // product came from here or from the real api/catalog/favourites
+            // endpoint. PriceValue stays a plain decimal for anything doing real
+            // math with it (cart totals, etc).
+            public string Price { get; set; }
             public string ImageUrl { get; set; }
             public string CategoryName { get; set; }
             public bool RibbonEnable { get; set; }
@@ -124,7 +128,7 @@ namespace Nop.Web.Controllers.Api.Catalog
             // client-computed aggregates (the cart subtotal) that IPriceFormatter
             // can't pre-format server-side since they don't exist as a single
             // stored value; every per-product price itself is fully backend-
-            // formatted already (see ProductOverviewV2Model.PriceFormatted).
+            // formatted already (see ProductOverviewV2Model.Price).
             public string CurrencyCode { get; set; }
             public string DisplayLocale { get; set; }
         }
@@ -301,7 +305,7 @@ namespace Nop.Web.Controllers.Api.Catalog
                 Id = product.Id,
                 Name = product.Name,
                 PriceValue = product.Price,
-                PriceFormatted = priceFormatted,
+                Price = priceFormatted,
                 ImageUrl = imageUrl,
                 CategoryName = categoryName,
                 RibbonEnable = product.RibbonEnable,
