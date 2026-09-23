@@ -7,6 +7,7 @@ using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Vendors;
 using Nop.Services.Catalog;
 using Nop.Services.Media;
+using Nop.Services.Orders;
 using Nop.Services.Vendors;
 using Nop.Web.Framework.Mvc.Filters;
 
@@ -43,6 +44,7 @@ namespace Nop.Web.Controllers.Api.Catalog
         IVendorService vendorService,
         ISpecificationAttributeService specificationAttributeService,
         IPictureService pictureService,
+        IOrderReportService orderReportService,
         IStoreContext storeContext)
         : BaseApiController
     {
@@ -58,6 +60,9 @@ namespace Nop.Web.Controllers.Api.Catalog
         // is cheap for this catalog's size; this dictionary just avoids redoing it once per
         // product within a single GetProducts() call for products sharing a vendor.
         private readonly Dictionary<int, VendorRatingAggregate> _vendorRatingMemo = new();
+        // Same per-request-only reasoning as _vendorRatingMemo - keyed by vendorId since
+        // BestSellersReportAsync(vendorId:) returns one report per vendor, not per product.
+        private readonly Dictionary<int, Dictionary<int, int>> _popularityByVendorMemo = new();
 
         public class ProductOverviewV2Model
         {
@@ -70,6 +75,12 @@ namespace Nop.Web.Controllers.Api.Catalog
             public string RibbonText { get; set; }
             public int RatingSum { get; set; }
             public int TotalReviews { get; set; }
+            // Real order-driven signal (total quantity sold, per vendor's bestsellers
+            // report) - not a fabricated "trending" flag. Backs Discover's "Getting
+            // popular" curated row; will be genuinely flat/tied on a tenant with little
+            // or no real order history yet, which is an honest reflection of that, not
+            // a bug in this endpoint.
+            public int PopularityCount { get; set; }
             public VendorBriefV2Model Vendor { get; set; }
             public string Description { get; set; }
             public IList<string> SpecificationLabels { get; set; } = new List<string>();
@@ -223,6 +234,14 @@ namespace Nop.Web.Controllers.Api.Catalog
                     vendorModel = await MapVendorAsync(vendor);
             }
 
+            if (!_popularityByVendorMemo.TryGetValue(product.VendorId, out var popularityByProductId))
+            {
+                var bestsellers = await orderReportService.BestSellersReportAsync(vendorId: product.VendorId, showHidden: true);
+                popularityByProductId = bestsellers.ToDictionary(l => l.ProductId, l => l.TotalQuantity);
+                _popularityByVendorMemo[product.VendorId] = popularityByProductId;
+            }
+            popularityByProductId.TryGetValue(product.Id, out var popularityCount);
+
             return new ProductOverviewV2Model
             {
                 Id = product.Id,
@@ -234,6 +253,7 @@ namespace Nop.Web.Controllers.Api.Catalog
                 RibbonText = product.RibbonText,
                 RatingSum = product.ApprovedRatingSum,
                 TotalReviews = product.ApprovedTotalReviews,
+                PopularityCount = popularityCount,
                 Vendor = vendorModel,
                 Description = product.ShortDescription,
                 SpecificationLabels = specificationLabels
