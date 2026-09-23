@@ -41,11 +41,18 @@ namespace Nop.Web.Controllers.Api.Order
         IShoppingCartService shoppingCartService,
         IProductAttributeService productAttributeService,
         IProductAttributeParser productAttributeParser,
+        ISpecificationAttributeService specificationAttributeService,
         IWorkContext workContext,
         IStoreContext storeContext)
         : BaseApiController
     {
         private const int ThumbnailSize = 300;
+
+        // Same "Ingredients" specification attribute CatalogV2ApiController surfaces as
+        // SpecificationLabels on a catalog product - kept here too so the cart's own
+        // ConflictBadge (allergy/undesired ingredient check) still works on a line item,
+        // not just the avoided-vendor check.
+        private const string IngredientsAttributeName = "Ingredients";
 
         public class CartVendorBriefV2Model
         {
@@ -66,6 +73,7 @@ namespace Nop.Web.Controllers.Api.Order
             public string UnitPrice { get; set; }
             public decimal LineTotalValue { get; set; }
             public string LineTotal { get; set; }
+            public IList<string> SpecificationLabels { get; set; } = new List<string>();
         }
 
         public class CartV2Model
@@ -169,11 +177,33 @@ namespace Nop.Web.Controllers.Api.Order
             return attributesXml;
         }
 
+        private async Task<SpecificationAttribute> GetIngredientsAttributeAsync()
+        {
+            var attributes = await specificationAttributeService.GetSpecificationAttributesAsync();
+            return attributes.FirstOrDefault(a => a.Name == IngredientsAttributeName);
+        }
+
+        // One upfront pass building {optionId -> name} for just the "Ingredients"
+        // attribute's options, so per-line mapping is a dictionary lookup instead of
+        // extra sequential DB round trips per mapped specification value - mirrors
+        // CatalogV2ApiController.GetIngredientOptionNamesByIdAsync exactly.
+        private async Task<Dictionary<int, string>> GetIngredientOptionNamesByIdAsync()
+        {
+            var ingredientsAttribute = await GetIngredientsAttributeAsync();
+            if (ingredientsAttribute == null)
+                return new Dictionary<int, string>();
+
+            var options = await specificationAttributeService
+                .GetSpecificationAttributeOptionsBySpecificationAttributeAsync(ingredientsAttribute.Id);
+            return options.ToDictionary(o => o.Id, o => o.Name);
+        }
+
         private async Task<CartV2Model> BuildCartModelAsync()
         {
             var customer = await workContext.GetCurrentCustomerAsync();
             var store = await storeContext.GetCurrentStoreAsync();
             var cart = await shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, store.Id);
+            var ingredientOptionNames = await GetIngredientOptionNamesByIdAsync();
 
             var model = new CartV2Model();
             foreach (var item in cart)
@@ -184,6 +214,13 @@ namespace Nop.Web.Controllers.Api.Order
 
                 var (unitPrice, _, _) = await shoppingCartService.GetUnitPriceAsync(item, includeDiscounts: true);
                 var lineTotal = unitPrice * item.Quantity;
+
+                var specAttributes = await specificationAttributeService.GetProductSpecificationAttributesAsync(
+                    product.Id, showOnProductPage: true);
+                var specificationLabels = specAttributes
+                    .Where(mapping => ingredientOptionNames.ContainsKey(mapping.SpecificationAttributeOptionId))
+                    .Select(mapping => ingredientOptionNames[mapping.SpecificationAttributeOptionId])
+                    .ToList();
 
                 var pictures = await pictureService.GetPicturesByProductIdAsync(product.Id, 1);
                 var imageUrl = pictures.Count > 0
@@ -214,7 +251,8 @@ namespace Nop.Web.Controllers.Api.Order
                     UnitPriceValue = unitPrice,
                     UnitPrice = await priceFormatter.FormatPriceAsync(unitPrice),
                     LineTotalValue = lineTotal,
-                    LineTotal = await priceFormatter.FormatPriceAsync(lineTotal)
+                    LineTotal = await priceFormatter.FormatPriceAsync(lineTotal),
+                    SpecificationLabels = specificationLabels
                 });
 
                 model.Count += item.Quantity;
