@@ -114,7 +114,7 @@ namespace Nop.Web.Controllers.Api.Catalog
         {
             var store = await storeContext.GetCurrentStoreAsync();
 
-            var products = await productService.SearchProductsAsync(
+            var allProducts = await productService.SearchProductsAsync(
                 storeId: store.Id,
                 visibleIndividuallyOnly: true,
                 showHidden: false);
@@ -133,6 +133,13 @@ namespace Nop.Web.Controllers.Api.Catalog
                 .ToDictionary(c => c.Id, c => c.Name);
 
             var ingredientOptionNames = await GetIngredientOptionNamesByIdAsync();
+
+            // Found live on mysnacks-dev's real catalog: a couple of orphaned/test
+            // products with no vendor assigned at all (VendorId not present in
+            // vendorsById) - mobile's ProductOverviewApiModel.Vendor is non-optional
+            // and every screen (vendor grouping, product-card vendor line) assumes it
+            // exists, so these are dropped here rather than sent as Vendor: null.
+            var products = allProducts.Where(p => vendorsById.ContainsKey(p.VendorId)).ToList();
 
             var result = new List<ProductOverviewV2Model>(products.Count);
             foreach (var batch in products.Chunk(ProductMapConcurrency))
