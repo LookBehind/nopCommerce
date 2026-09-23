@@ -120,11 +120,6 @@ namespace Nop.Web.Controllers.Api.Catalog
             public bool IsAllergen { get; set; }
         }
 
-        public class FormattedPriceV2Model
-        {
-            public string Formatted { get; set; }
-        }
-
         [HttpGet("products")]
         public async Task<IActionResult> GetProducts()
         {
@@ -229,19 +224,50 @@ namespace Nop.Web.Controllers.Api.Catalog
             return Ok(result);
         }
 
-        // For the one price-like value that isn't already backend-formatted: the
-        // cart subtotal, a client-computed running sum (items added/removed by
-        // quantity) that doesn't exist as a single stored value IPriceFormatter
-        // could format ahead of time. Calls the exact same formatter every
-        // per-product Price already goes through - no guessing at symbol/
-        // decimals/grouping from locale data client-side (an earlier version of
-        // this endpoint tried deriving those separately and it was needless
-        // complexity for what's really just "format this number, backend").
-        [HttpGet("format-price")]
-        public async Task<IActionResult> GetFormattedPrice(decimal amount)
+        public class CartItemV2Model
         {
-            var formatted = await priceFormatter.FormatPriceAsync(amount);
-            return Ok(new FormattedPriceV2Model { Formatted = formatted });
+            public int ProductId { get; set; }
+            public int Quantity { get; set; }
+        }
+
+        public class CartTotalRequestV2Model
+        {
+            public IList<CartItemV2Model> Items { get; set; } = new List<CartItemV2Model>();
+        }
+
+        public class CartTotalV2Model
+        {
+            public decimal Total { get; set; }
+            public string TotalFormatted { get; set; }
+        }
+
+        // The cart subtotal isn't just a formatting problem - it's a pricing one.
+        // An earlier version of this endpoint took a client-computed amount and
+        // only formatted it, which still trusts the client's arithmetic (and,
+        // more importantly, trusts the client's own copy of each product's price
+        // at all - stale if a price changed since the product list was fetched).
+        // This takes {productId, quantity} pairs instead and looks up each
+        // product's REAL current Price server-side, so both the total and its
+        // formatting come from the backend - matching how a real checkout should
+        // never trust client-supplied prices for anything that matters. There's
+        // no server-side cart/order-placement concept in this app yet (see
+        // ConfirmOrderSheet.tsx - "confirm" just resets local state), so this
+        // stays a stateless compute-and-return rather than a stored cart.
+        [HttpPost("cart-total")]
+        public async Task<IActionResult> GetCartTotal([FromBody] CartTotalRequestV2Model model)
+        {
+            decimal total = 0;
+            foreach (var item in model?.Items ?? new List<CartItemV2Model>())
+            {
+                var product = await productService.GetProductByIdAsync(item.ProductId);
+                if (product == null || product.Deleted)
+                    continue;
+
+                total += product.Price * item.Quantity;
+            }
+
+            var formatted = await priceFormatter.FormatPriceAsync(total);
+            return Ok(new CartTotalV2Model { Total = total, TotalFormatted = formatted });
         }
 
         private async Task<SpecificationAttribute> GetIngredientsAttributeAsync()
