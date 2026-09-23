@@ -125,6 +125,29 @@ namespace Nop.Web.Controllers.Api.Order
             return Ok(new { success = true, cart = await BuildCartModelAsync() });
         }
 
+        // Increments one specific real cart line by its ShoppingCartItemId, unlike
+        // AddItem (which resolves/merges by product+attributes). The cart screen's own
+        // stepper uses this instead of AddItem so tapping "+" on an attribute-bearing
+        // line (e.g. "Half" selected) never risks creating a second, empty-attributes
+        // line for the same product - it always adjusts the exact line shown.
+        [HttpPost("items/{shoppingCartItemId}/increment")]
+        public async Task<IActionResult> IncrementItem(int shoppingCartItemId)
+        {
+            var customer = await workContext.GetCurrentCustomerAsync();
+            var store = await storeContext.GetCurrentStoreAsync();
+
+            var cart = await shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, store.Id);
+            var item = cart.FirstOrDefault(i => i.Id == shoppingCartItemId);
+            if (item == null)
+                return Ok(await BuildCartModelAsync());
+
+            await shoppingCartService.UpdateShoppingCartItemAsync(
+                customer, item.Id, item.AttributesXml, item.CustomerEnteredPrice,
+                item.RentalStartDateUtc, item.RentalEndDateUtc, item.Quantity + 1);
+
+            return Ok(await BuildCartModelAsync());
+        }
+
         // Mirrors the mobile QuantityStepper's +/- UX exactly (always ±1, never an
         // arbitrary "set to N") - decrement to 0 deletes the line rather than leaving a
         // real ShoppingCartItem row at quantity 0.
