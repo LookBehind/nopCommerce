@@ -55,6 +55,7 @@ namespace Nop.Web.Controllers.Api.Catalog
         ISpecificationAttributeService specificationAttributeService,
         IPictureService pictureService,
         IOrderReportService orderReportService,
+        IPriceFormatter priceFormatter,
         IStoreContext storeContext)
         : BaseApiController
     {
@@ -69,6 +70,12 @@ namespace Nop.Web.Controllers.Api.Catalog
             public int Id { get; set; }
             public string Name { get; set; }
             public decimal PriceValue { get; set; }
+            // Store's actual configured currency (e.g. Armenian Dram - "#,##0 ֏",
+            // no decimals) via IPriceFormatter, the same formatter every other price
+            // display in this app uses (see BalanceViewComponent.cs). PriceValue
+            // stays a plain decimal for anything doing real math with it (cart
+            // totals, etc.) - this is purely the display string, not a replacement.
+            public string PriceFormatted { get; set; }
             public string ImageUrl { get; set; }
             public string CategoryName { get; set; }
             public bool RibbonEnable { get; set; }
@@ -263,11 +270,14 @@ namespace Nop.Web.Controllers.Api.Catalog
             if (popularityByVendor.TryGetValue(product.VendorId, out var popularityByProductId))
                 popularityByProductId.TryGetValue(product.Id, out popularityCount);
 
+            var priceFormatted = await priceFormatter.FormatPriceAsync(product.Price);
+
             return new ProductOverviewV2Model
             {
                 Id = product.Id,
                 Name = product.Name,
                 PriceValue = product.Price,
+                PriceFormatted = priceFormatted,
                 ImageUrl = imageUrl,
                 CategoryName = categoryName,
                 RibbonEnable = product.RibbonEnable,
