@@ -1,0 +1,54 @@
+@model ProductModel
+
+@*
+    Plain checkbox list over the real "Ingredients" specification attribute's
+    options - distinct from the generic multi-attribute picker under the
+    Specification attributes tab (that one's an AJAX grid for arbitrary
+    attribute+value combinations; this is a small, fixed set meant to be
+    picked in one glance, submitted with the rest of the product form like
+    ACL/store-mapping/category checkboxes are). See ProductModelFactory.
+    PrepareProductIngredientsModelAsync / ProductController.SaveIngredientMappingsAsync.
+*@
+<div class="card-body">
+    @if (!Model.AvailableIngredientOptions.Any())
+    {
+        <div class="alert alert-info">
+            @T("Admin.Catalog.Products.Ingredients.NoOptionsConfigured")
+        </div>
+    }
+    else
+    {
+        <div class="form-group row">
+            <div class="col-md-9 offset-md-3">
+                <div class="ingredient-option-list">
+                    @foreach (var option in Model.AvailableIngredientOptions)
+                    {
+                        var controlId = $"ingredient_option_{option.Id}";
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="@option.Id"
+                                   id="@controlId" name="SelectedIngredientOptionIds" checked="@option.Checked" />
+                            <label class="form-check-label" for="@controlId">
+                                @option.Name
+                                @if (option.IsAllergen)
+                                {
+                                    <span class="badge badge-danger">@T("Admin.Catalog.Products.Ingredients.Allergen")</span>
+                                }
+                            </label>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+<style>
+    .ingredient-option-list .form-check {
+        display: inline-block;
+        margin-right: 18px;
+        margin-bottom: 10px;
+    }
+
+    .ingredient-option-list .badge {
+        margin-left: 6px;
+    }
+</style>

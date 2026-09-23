@@ -52,6 +52,9 @@ namespace Nop.Web.Areas.Admin.Models.Catalog
             SelectedDiscountIds = new List<int>();
             AvailableDiscounts = new List<SelectListItem>();
 
+            SelectedIngredientOptionIds = new List<int>();
+            AvailableIngredientOptions = new List<ProductIngredientOptionModel>();
+
             RelatedProductSearchModel = new RelatedProductSearchModel();
             CrossSellProductSearchModel = new CrossSellProductSearchModel();
             AssociatedProductSearchModel = new AssociatedProductSearchModel();
@@ -426,6 +429,19 @@ namespace Nop.Web.Areas.Admin.Models.Catalog
         [NopResourceDisplayName("Admin.Catalog.Products.Fields.Discounts")]
         public IList<int> SelectedDiscountIds { get; set; }
         public IList<SelectListItem> AvailableDiscounts { get; set; }
+
+        //ingredients (real Product_SpecificationAttribute_Mapping rows for the
+        //"Ingredients" specification attribute - see ProductController.
+        //SaveIngredientMappingsAsync / ProductModelFactory.PrepareProductIngredientsModelAsync).
+        //A plain checkbox list (not the generic multi-attribute picker under the
+        //Specification attributes tab) since it's always the same small, fixed
+        //option set. HasIngredientsSpecificationAttribute gates whether the tab
+        //is shown at all - a tenant without that specification attribute
+        //configured yet just doesn't get the tab, no error.
+        public bool HasIngredientsSpecificationAttribute { get; set; }
+        [NopResourceDisplayName("Admin.Catalog.Products.Ingredients.Fields.SelectedIngredientOptionIds")]
+        public IList<int> SelectedIngredientOptionIds { get; set; }
+        public IList<ProductIngredientOptionModel> AvailableIngredientOptions { get; set; }
 
         //vendor
         public bool IsLoggedInAsVendor { get; set; }

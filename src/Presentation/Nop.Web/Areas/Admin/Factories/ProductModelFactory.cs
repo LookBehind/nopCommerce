@@ -178,6 +178,68 @@ namespace Nop.Web.Areas.Admin.Factories
             return name;
         }
 
+        // Same "find the real Ingredients specification attribute by name" lookup
+        // api/v2/catalog's CatalogV2ApiController uses - there's no name-filtered
+        // service method, and a missing attribute (a tenant that hasn't been set
+        // up for this yet) is expected, not an error: callers null-check and hide
+        // the Ingredients tab entirely rather than showing it empty/broken.
+        /// <returns>A task that represents the asynchronous operation</returns>
+        protected virtual async Task<SpecificationAttribute> GetIngredientsSpecificationAttributeAsync()
+        {
+            var attributes = await _specificationAttributeService.GetSpecificationAttributesAsync();
+            return attributes.FirstOrDefault(a => a.Name == "Ingredients");
+        }
+
+        /// <summary>
+        /// Prepare the product edit page's Ingredients tab model - a plain
+        /// checkbox list over the real "Ingredients" specification attribute's
+        /// options, distinct from the generic multi-attribute picker under the
+        /// Specification attributes tab.
+        /// </summary>
+        /// <param name="model">Product model</param>
+        /// <param name="product">Product (null when creating a new product)</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        protected virtual async Task PrepareProductIngredientsModelAsync(ProductModel model, Product product)
+        {
+            if (model == null)
+                throw new ArgumentNullException(nameof(model));
+
+            var ingredientsAttribute = await GetIngredientsSpecificationAttributeAsync();
+            if (ingredientsAttribute == null)
+            {
+                model.HasIngredientsSpecificationAttribute = false;
+                return;
+            }
+
+            var options = await _specificationAttributeService
+                .GetSpecificationAttributeOptionsBySpecificationAttributeAsync(ingredientsAttribute.Id);
+
+            model.HasIngredientsSpecificationAttribute = options.Any();
+            if (!model.HasIngredientsSpecificationAttribute)
+                return;
+
+            if (product != null)
+            {
+                var mappings = await _specificationAttributeService.GetProductSpecificationAttributesAsync(product.Id);
+                var optionIds = options.Select(o => o.Id).ToHashSet();
+                model.SelectedIngredientOptionIds = mappings
+                    .Where(m => optionIds.Contains(m.SpecificationAttributeOptionId))
+                    .Select(m => m.SpecificationAttributeOptionId)
+                    .ToList();
+            }
+
+            model.AvailableIngredientOptions = options
+                .OrderBy(o => o.DisplayOrder)
+                .Select(o => new ProductIngredientOptionModel
+                {
+                    Id = o.Id,
+                    Name = o.Name,
+                    IsAllergen = o.IsAllergen,
+                    Checked = model.SelectedIngredientOptionIds.Contains(o.Id)
+                })
+                .ToList();
+        }
+
         /// <summary>
         /// Prepare copy product model
         /// </summary>
@@ -949,6 +1011,9 @@ namespace Nop.Web.Areas.Admin.Factories
 
             //prepare model stores
             await _storeMappingSupportedModelFactory.PrepareModelStoresAsync(model, product, excludeProperties);
+
+            //prepare model ingredients
+            await PrepareProductIngredientsModelAsync(model, product);
 
             var productTags = await _productTagService.GetAllProductTagsAsync();
             var productTagsSb = new StringBuilder();

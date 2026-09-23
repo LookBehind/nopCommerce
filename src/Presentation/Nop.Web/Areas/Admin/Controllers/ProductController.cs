@@ -299,6 +299,55 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
+        // Mirrors SaveCategoryMappingsAsync's remove-unmapped/add-newly-checked
+        // diff exactly, scoped to only the option ids that actually belong to
+        // the "Ingredients" specification attribute so this never touches a
+        // product's OTHER specification-attribute mappings.
+        /// <returns>A task that represents the asynchronous operation</returns>
+        protected virtual async Task SaveIngredientMappingsAsync(Product product, ProductModel model)
+        {
+            var ingredientsAttribute = (await _specificationAttributeService.GetSpecificationAttributesAsync())
+                .FirstOrDefault(a => a.Name == "Ingredients");
+            if (ingredientsAttribute == null)
+                return;
+
+            var ingredientOptionIds = (await _specificationAttributeService
+                    .GetSpecificationAttributeOptionsBySpecificationAttributeAsync(ingredientsAttribute.Id))
+                .Select(o => o.Id)
+                .ToHashSet();
+            if (ingredientOptionIds.Count == 0)
+                return;
+
+            var existingIngredientMappings = (await _specificationAttributeService.GetProductSpecificationAttributesAsync(product.Id))
+                .Where(psa => ingredientOptionIds.Contains(psa.SpecificationAttributeOptionId))
+                .ToList();
+
+            //delete unchecked ingredients
+            foreach (var existingMapping in existingIngredientMappings)
+                if (!model.SelectedIngredientOptionIds.Contains(existingMapping.SpecificationAttributeOptionId))
+                    await _specificationAttributeService.DeleteProductSpecificationAttributeAsync(existingMapping);
+
+            //add newly-checked ingredients
+            foreach (var optionId in model.SelectedIngredientOptionIds)
+            {
+                if (!ingredientOptionIds.Contains(optionId))
+                    continue;
+
+                if (existingIngredientMappings.Any(psa => psa.SpecificationAttributeOptionId == optionId))
+                    continue;
+
+                await _specificationAttributeService.InsertProductSpecificationAttributeAsync(new ProductSpecificationAttribute
+                {
+                    ProductId = product.Id,
+                    SpecificationAttributeOptionId = optionId,
+                    AttributeTypeId = (int)SpecificationAttributeType.Option,
+                    AllowFiltering = true,
+                    ShowOnProductPage = true,
+                    DisplayOrder = 1
+                });
+            }
+        }
+
         /// <returns>A task that represents the asynchronous operation</returns>
         protected virtual async Task SaveManufacturerMappingsAsync(Product product, ProductModel model)
         {
@@ -863,6 +912,9 @@ namespace Nop.Web.Areas.Admin.Controllers
                 //categories
                 await SaveCategoryMappingsAsync(product, model);
 
+                //ingredients
+                await SaveIngredientMappingsAsync(product, model);
+
                 //manufacturers
                 await SaveManufacturerMappingsAsync(product, model);
 
@@ -1002,6 +1054,9 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                 //categories
                 await SaveCategoryMappingsAsync(product, model);
+
+                //ingredients
+                await SaveIngredientMappingsAsync(product, model);
 
                 //manufacturers
                 await SaveManufacturerMappingsAsync(product, model);
