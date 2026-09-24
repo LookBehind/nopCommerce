@@ -157,6 +157,40 @@ namespace Nop.Web.Controllers.Api.Catalog
         [HttpGet("products")]
         public async Task<IActionResult> GetProducts()
         {
+            return Ok(await BuildProductOverviewsAsync());
+        }
+
+        // Curated home/Discover rows, computed server-side so mobile's
+        // curatedSections.ts doesn't have to duplicate this logic (or risk
+        // drifting from it) client-side - "new"/"trending"/"toprated" mirror
+        // mobile's own CuratedSectionKey exactly. Shares BuildProductOverviewsAsync
+        // with the plain product list rather than re-mapping products from
+        // scratch; the filter/sort/take here is the exact same logic
+        // curatedSections.ts used to do client-side.
+        [HttpGet("curated/{section}")]
+        public async Task<IActionResult> GetCuratedProducts(string section)
+        {
+            var products = await BuildProductOverviewsAsync();
+
+            IEnumerable<ProductOverviewV2Model> curated = section?.ToLowerInvariant() switch
+            {
+                "new" => products.Where(p => p.RibbonEnable && p.RibbonText == "new"),
+                "trending" => products.OrderByDescending(p => p.PopularityCount).Take(8),
+                "toprated" => products.OrderByDescending(p => VendorAverageRating(p.Vendor)).Take(4),
+                _ => null
+            };
+
+            if (curated == null)
+                return BadRequest(new { message = $"Unknown curated section '{section}'. Expected new, trending, or toprated." });
+
+            return Ok(curated.ToList());
+        }
+
+        private static double VendorAverageRating(VendorBriefV2Model vendor) =>
+            vendor != null && vendor.TotalReviews > 0 ? (double)vendor.RatingSum / vendor.TotalReviews : 0;
+
+        private async Task<List<ProductOverviewV2Model>> BuildProductOverviewsAsync()
+        {
             var store = await storeContext.GetCurrentStoreAsync();
 
             var allProducts = await productService.SearchProductsAsync(
@@ -194,7 +228,7 @@ namespace Nop.Web.Controllers.Api.Catalog
                 result.AddRange(mapped);
             }
 
-            return Ok(result);
+            return result;
         }
 
         [HttpGet("vendors")]
