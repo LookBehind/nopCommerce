@@ -113,6 +113,20 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
                 //ProcessOrderPaidAsync runs: vendor notification, reward points, etc.
                 await _orderProcessingService.MarkOrderAsPaidAsync(order);
 
+                //No card is ever charged for a fully-allowance-covered order, so leaving it
+                //stamped "Payments.AmeriaVPos" (set optimistically before this allowance
+                //decision - see OrderApiController.PlaceOrder / the web IPaymentMethod flow)
+                //makes every company-allowance order look like a card sale in admin and
+                //reporting. Relabel to CheckMoneyOrder - the pre-AmeriaVPos label for exactly
+                //this "company covers it, no card" case - so only orders that actually take a
+                //card charge (which create an AmeriaVPosPaymentAttempt) keep the AmeriaVPos
+                //label. Safe because the two things that key off that label - the mobile
+                //resume-pay flag (OrderApiController, Pending-only) and the admin refund/cancel
+                //actions (AmeriaVPosOrderActionsViewComponent, requires a Paid attempt) - never
+                //apply to a fully-covered order.
+                order.PaymentMethodSystemName = "Payments.CheckMoneyOrder";
+                await _orderService.UpdateOrderAsync(order);
+
                 return new AmeriaVPosPaymentResult
                 {
                     RequiresPayment = false,
