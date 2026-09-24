@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -119,7 +120,7 @@ namespace Nop.Web.Controllers.Api.Order
         }
 
         [HttpGet("list")]
-        public async Task<IActionResult> GetOrders(string segment = null, int page = 0, int pageSize = 20, int? orderId = null)
+        public async Task<IActionResult> GetOrders(string segment = null, int page = 0, int pageSize = 20, int? orderId = null, string search = null)
         {
             var customer = await workContext.GetCurrentCustomerAsync();
             // The current customer's own review rating per order item (fetched once,
@@ -142,7 +143,23 @@ namespace Nop.Web.Controllers.Api.Order
             if (page < 0)
                 page = 0;
 
-            var allOrders = await orderService.SearchOrdersAsync(customerId: customer.Id, sortByDeliveryDate: true);
+            IEnumerable<Nop.Core.Domain.Orders.Order> allOrders =
+                await orderService.SearchOrdersAsync(customerId: customer.Id, sortByDeliveryDate: true);
+
+            // Search (product name / vendor name / delivery date) runs server-side over
+            // the customer's full order history, not just whatever page/segment the
+            // client happens to be viewing - matches the real behavior a client-side
+            // filter over one loaded page could only approximate.
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var matched = new List<Nop.Core.Domain.Orders.Order>();
+                foreach (var order in allOrders)
+                {
+                    if (await OrderMatchesSearchAsync(order, search.Trim()))
+                        matched.Add(order);
+                }
+                allOrders = matched;
+            }
 
             if (string.Equals(segment, "past", StringComparison.OrdinalIgnoreCase))
             {
@@ -372,6 +389,40 @@ namespace Nop.Web.Controllers.Api.Order
 
             return model;
         }
+
+        // Matches an order against a free-text search term across delivery date
+        // (several common formats, since the client doesn't know which one the
+        // customer typed), product name and vendor name - the same three fields
+        // OrderHistoryScreen's row displays, so "if you can see it, you can search
+        // it" holds. Case-insensitive substring match, same as the client-side
+        // filter this replaced.
+        private async Task<bool> OrderMatchesSearchAsync(Nop.Core.Domain.Orders.Order order, string search)
+        {
+            if (ContainsIgnoreCase(order.ScheduleDate.ToString("MMM d", CultureInfo.InvariantCulture), search) ||
+                ContainsIgnoreCase(order.ScheduleDate.ToString("MMMM d", CultureInfo.InvariantCulture), search) ||
+                ContainsIgnoreCase(order.ScheduleDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), search) ||
+                ContainsIgnoreCase(order.ScheduleDate.ToString(DateFormat, CultureInfo.InvariantCulture), search))
+                return true;
+
+            foreach (var orderItem in await orderService.GetOrderItemsAsync(order.Id))
+            {
+                var product = await productService.GetProductByIdAsync(orderItem.ProductId);
+                if (product == null)
+                    continue;
+
+                if (ContainsIgnoreCase(product.Name, search))
+                    return true;
+
+                var vendor = await vendorService.GetVendorByProductIdAsync(product.Id);
+                if (vendor != null && ContainsIgnoreCase(vendor.Name, search))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool ContainsIgnoreCase(string haystack, string needle) =>
+            !string.IsNullOrEmpty(haystack) && haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
 
         // OrderItem.AttributeDescription is stored HTML (IProductAttributeFormatter's
         // default "<br />"-separated, web-oriented output) at order-creation time -
