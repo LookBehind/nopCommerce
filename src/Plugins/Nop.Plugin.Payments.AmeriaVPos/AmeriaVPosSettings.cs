@@ -41,5 +41,14 @@ namespace Nop.Plugin.Payments.AmeriaVPos
         /// unresolved before the reconciliation task treats it as abandoned
         /// </summary>
         public int AbandonedAttemptTimeoutMinutes { get; set; } = 25;
+
+        /// <summary>
+        /// Gets or sets the nominal amount charged (then immediately refunded) to verify
+        /// and bind a new card - the vPOS API has no $0 verify-only call, Amount is
+        /// required on InitPayment. Defaults to 10 AMD to match the AmeriaBank sandbox's
+        /// fixed-10-AMD-test-charge restriction; change for production once a real
+        /// verification amount is decided.
+        /// </summary>
+        public decimal CardVerificationAmount { get; set; } = 10M;
     }
 }

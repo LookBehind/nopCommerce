@@ -271,6 +271,9 @@ namespace Nop.Plugin.Payments.AmeriaVPos
                 ["Plugins.Payments.AmeriaVPos.Fields.PayBaseUrl.Hint"] = "Base URL for the hosted pay page customers are redirected to.",
                 ["Plugins.Payments.AmeriaVPos.Fields.UseSandbox"] = "Use sandbox",
                 ["Plugins.Payments.AmeriaVPos.Fields.UseSandbox.Hint"] = "Check to enable the AmeriaBank sandbox (testing) environment.",
+                ["Plugins.Payments.AmeriaVPos.Fields.CardVerificationAmount"] = "Card verification amount",
+                ["Plugins.Payments.AmeriaVPos.Fields.CardVerificationAmount.Hint"] =
+                    "Nominal amount charged (then immediately refunded) to verify and bind a new card - the vPOS API has no $0 verify-only call. Defaults to 10 AMD to match the sandbox's fixed test-charge restriction.",
                 ["Plugins.Payments.AmeriaVPos.PageTitle.Fail"] = "Payment Fail",
                 ["Plugins.Payments.AmeriaVPos.Checkout.Fail"] = "Failed Payment Process",
                 ["Plugins.Payments.AmeriaVPos.Checkout.YourPaymentHasBeenFailed"] =

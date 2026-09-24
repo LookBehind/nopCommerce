@@ -32,6 +32,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
         private readonly IWebHelper _webHelper;
         private readonly AmeriaVPosSettings _ameriaVPosSettings;
         private readonly AmeriaVPosApiClient _apiClient;
+        private readonly ICustomerCardBindingService _customerCardBindingService;
         private readonly ILogger _logger;
 
         #endregion
@@ -47,6 +48,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
             IWebHelper webHelper,
             AmeriaVPosSettings ameriaVPosSettings,
             AmeriaVPosApiClient apiClient,
+            ICustomerCardBindingService customerCardBindingService,
             ILogger logger)
         {
             _customerService = customerService;
@@ -57,6 +59,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
             _webHelper = webHelper;
             _ameriaVPosSettings = ameriaVPosSettings;
             _apiClient = apiClient;
+            _customerCardBindingService = customerCardBindingService;
             _logger = logger;
         }
 
@@ -90,7 +93,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
 
         #region Methods
 
-        public async Task<AmeriaVPosPaymentResult> InitiateOrCompletePaymentAsync(Order order, string platform = "Web")
+        public async Task<AmeriaVPosPaymentResult> InitiateOrCompletePaymentAsync(Order order, string platform = "Web", int? boundCardId = null)
         {
             var customer = await _customerService.GetCustomerByIdAsync(order.CustomerId);
 
@@ -123,6 +126,29 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
 
             var amountCoveredByAllowance = 0M;
             var amountDue = order.OrderTotal;
+
+            //a saved card charges synchronously, no redirect needed - falls back to the
+            //normal redirect flow below if the charge fails, so a declined saved card
+            //never leaves the customer stuck without a way to pay
+            if (boundCardId.HasValue)
+            {
+                var chargeResult = await _customerCardBindingService.ChargeBoundCardAsync(order, order.CustomerId, boundCardId.Value);
+                if (chargeResult.Success)
+                {
+                    return new AmeriaVPosPaymentResult
+                    {
+                        RequiresPayment = false,
+                        AmountDue = 0M,
+                        AmountCoveredByAllowance = 0M,
+                        Status = AmeriaVPosPaymentAttemptStatus.Paid.ToString(),
+                        Platform = platform
+                    };
+                }
+
+                await _logger.WarningAsync(
+                    $"AmeriaVPos bound-card charge failed for order {order.Id}, card {boundCardId}: " +
+                    $"{chargeResult.Message} - falling back to the redirect flow.");
+            }
 
             var attemptNumber = await _attemptRepository.Table.Where(a => a.OrderId == order.Id).CountAsync() + 1;
 

@@ -27,6 +27,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
         private readonly ILocalizationService _localizationService;
         private readonly IOrderService _orderService;
         private readonly IAmeriaVPosPaymentService _ameriaVPosPaymentService;
+        private readonly ICustomerCardBindingService _customerCardBindingService;
         private readonly ILogger _logger;
 
         #endregion
@@ -41,6 +42,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
             ILocalizationService localizationService,
             IOrderService orderService,
             IAmeriaVPosPaymentService ameriaVPosPaymentService,
+            ICustomerCardBindingService customerCardBindingService,
             ILogger logger)
         {
             _permissionService = permissionService;
@@ -50,6 +52,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
             _localizationService = localizationService;
             _orderService = orderService;
             _ameriaVPosPaymentService = ameriaVPosPaymentService;
+            _customerCardBindingService = customerCardBindingService;
             _logger = logger;
         }
 
@@ -75,6 +78,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
                 Password = settings.Password,
                 ApiBaseUrl = settings.ApiBaseUrl,
                 PayBaseUrl = settings.PayBaseUrl,
+                CardVerificationAmount = settings.CardVerificationAmount,
                 ActiveStoreScopeConfiguration = storeScope
             };
 
@@ -87,6 +91,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
             model.Password_OverrideForStore = await _settingService.SettingExistsAsync(settings, x => x.Password, storeScope);
             model.ApiBaseUrl_OverrideForStore = await _settingService.SettingExistsAsync(settings, x => x.ApiBaseUrl, storeScope);
             model.PayBaseUrl_OverrideForStore = await _settingService.SettingExistsAsync(settings, x => x.PayBaseUrl, storeScope);
+            model.CardVerificationAmount_OverrideForStore = await _settingService.SettingExistsAsync(settings, x => x.CardVerificationAmount, storeScope);
 
             return View("~/Plugins/Payments.AmeriaVPos/Views/Configure.cshtml", model);
         }
@@ -112,6 +117,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
             settings.Password = model.Password;
             settings.ApiBaseUrl = model.ApiBaseUrl;
             settings.PayBaseUrl = model.PayBaseUrl;
+            settings.CardVerificationAmount = model.CardVerificationAmount;
 
             await _settingService.SaveSettingOverridablePerStoreAsync(settings, x => x.UseSandbox, model.UseSandbox_OverrideForStore, storeScope, false);
             await _settingService.SaveSettingOverridablePerStoreAsync(settings, x => x.ClientId, model.ClientId_OverrideForStore, storeScope, false);
@@ -119,6 +125,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
             await _settingService.SaveSettingOverridablePerStoreAsync(settings, x => x.Password, model.Password_OverrideForStore, storeScope, false);
             await _settingService.SaveSettingOverridablePerStoreAsync(settings, x => x.ApiBaseUrl, model.ApiBaseUrl_OverrideForStore, storeScope, false);
             await _settingService.SaveSettingOverridablePerStoreAsync(settings, x => x.PayBaseUrl, model.PayBaseUrl_OverrideForStore, storeScope, false);
+            await _settingService.SaveSettingOverridablePerStoreAsync(settings, x => x.CardVerificationAmount, model.CardVerificationAmount_OverrideForStore, storeScope, false);
 
             await _settingService.ClearCacheAsync();
 
@@ -166,6 +173,22 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Controllers
                 return RedirectToRoute("CheckoutCompleted", new { orderId = order.Id });
 
             return View("~/Plugins/Payments.AmeriaVPos/Views/PaymentFail.cshtml");
+        }
+
+        /// <summary>
+        /// AmeriaBank redirects the customer's browser here after a card-verification
+        /// charge (the real charge "Add a card" makes to create a binding - see
+        /// ICustomerCardBindingService). Never trusts the querystring - only the
+        /// authoritative GetPaymentDetails pull inside ResolveAddCardAsync. mysnacks-mobile-v2
+        /// has no deep-linking infra yet (unlike the order-payment MobileReturn.cshtml
+        /// flow), so this just renders a plain "you can close this" page; the app picks up
+        /// the new card via a manual refresh / poll on the Payment Methods screen.
+        /// </summary>
+        public async Task<IActionResult> BindingBackUrlReturn(int attemptId)
+        {
+            var result = await _customerCardBindingService.ResolveAddCardAsync(attemptId);
+
+            return View("~/Plugins/Payments.AmeriaVPos/Views/CardBindingReturn.cshtml", result.Success);
         }
 
         /// <summary>

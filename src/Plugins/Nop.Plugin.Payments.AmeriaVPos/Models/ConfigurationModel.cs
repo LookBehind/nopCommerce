@@ -30,5 +30,9 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Models
         [NopResourceDisplayName("Plugins.Payments.AmeriaVPos.Fields.PayBaseUrl")]
         public string PayBaseUrl { get; set; }
         public bool PayBaseUrl_OverrideForStore { get; set; }
+
+        [NopResourceDisplayName("Plugins.Payments.AmeriaVPos.Fields.CardVerificationAmount")]
+        public decimal CardVerificationAmount { get; set; }
+        public bool CardVerificationAmount_OverrideForStore { get; set; }
     }
 }

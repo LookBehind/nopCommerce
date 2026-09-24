@@ -21,7 +21,12 @@ public interface IAmeriaVPosPaymentService
     /// once the attempt resolves (a mobile order has no OPC/cart session for the web
     /// CheckoutCompleted page to render against, so it needs the mysnacks:// deep link
     /// instead)</param>
-    Task<AmeriaVPosPaymentResult> InitiateOrCompletePaymentAsync(Order order, string platform = "Web");
+    /// <param name="boundCardId">When set and a card payment is needed for the
+    /// allowance shortfall, charges this saved card (ICustomerCardBindingService,
+    /// MakeBindingPayment - synchronous, no redirect) instead of starting the
+    /// redirect-to-hosted-page flow. Falls back to the redirect flow if the charge
+    /// fails, so a declined saved card never leaves the customer stuck.</param>
+    Task<AmeriaVPosPaymentResult> InitiateOrCompletePaymentAsync(Order order, string platform = "Web", int? boundCardId = null);
 
     /// <summary>
     /// Pulls the authoritative status for the order's latest payment attempt from

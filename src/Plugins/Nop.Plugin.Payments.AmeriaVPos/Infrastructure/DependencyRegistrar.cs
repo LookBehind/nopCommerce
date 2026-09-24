@@ -17,6 +17,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Infrastructure
         public void Register(IServiceCollection services, ITypeFinder typeFinder, AppSettings appSettings)
         {
             services.AddScoped<IAmeriaVPosPaymentService, AmeriaVPosPaymentService>();
+            services.AddScoped<ICustomerCardBindingService, CustomerCardBindingService>();
         }
     }
 }

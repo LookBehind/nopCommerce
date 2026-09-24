@@ -96,6 +96,12 @@ namespace Nop.Web.Controllers.Api.Order
         {
             public string ScheduleDate { get; set; }
             public string Notes { get; set; }
+
+            // When set and the order needs a card payment for the allowance shortfall,
+            // charges this saved card (api/v2/payment-cards) directly instead of
+            // redirecting to the hosted pay page. See
+            // IAmeriaVPosPaymentService.InitiateOrCompletePaymentAsync.
+            public int? PaymentCardId { get; set; }
         }
 
         [HttpGet("summary")]
@@ -211,7 +217,7 @@ namespace Nop.Web.Controllers.Api.Order
                 });
             }
 
-            var paymentResult = await ameriaVPosPaymentService.InitiateOrCompletePaymentAsync(placedOrder, "Mobile");
+            var paymentResult = await ameriaVPosPaymentService.InitiateOrCompletePaymentAsync(placedOrder, "Mobile", model.PaymentCardId);
 
             if (!paymentResult.RequiresPayment)
             {

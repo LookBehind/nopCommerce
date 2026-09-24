@@ -65,6 +65,12 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
         public Task<VPosActionResponse> CancelPaymentAsync(CancelPaymentRequest request) =>
             PostAsync<CancelPaymentRequest, VPosActionResponse>("CancelPayment", request);
 
+        public Task<MakeBindingPaymentResponse> MakeBindingPaymentAsync(MakeBindingPaymentRequest request) =>
+            PostAsync<MakeBindingPaymentRequest, MakeBindingPaymentResponse>("MakeBindingPayment", request);
+
+        public Task<DeactivateBindingResponse> DeactivateBindingAsync(DeactivateBindingRequest request) =>
+            PostAsync<DeactivateBindingRequest, DeactivateBindingResponse>("DeactivateBinding", request);
+
         #endregion
     }
 }

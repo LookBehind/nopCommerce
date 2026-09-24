@@ -1,0 +1,22 @@
+@model bool
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>MySnacks</title>
+</head>
+<body style="font-family: sans-serif; text-align: center; padding-top: 60px;">
+    @if (Model)
+    {
+        <p>✅ Card verified and saved.</p>
+    }
+    else
+    {
+        <p>❌ Card verification failed. Please try again.</p>
+    }
+    <p>You can close this page and return to the MySnacks app.</p>
+</body>
+</html>
