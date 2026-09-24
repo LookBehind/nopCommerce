@@ -60,6 +60,13 @@ public class CardBindingStartResult
     public int AttemptId { get; set; }
     public string PaymentUrl { get; set; }
     public string Message { get; set; }
+
+    /// <summary>
+    /// The nominal verification charge, already formatted (e.g. "10 ֏") - shown to the
+    /// customer before they open the pay page, since it's a real (if immediately
+    /// refunded) charge and they should know what it is if it shows up on a statement.
+    /// </summary>
+    public string VerificationAmountFormatted { get; set; }
 }
 
 public class CardBindingResolveResult

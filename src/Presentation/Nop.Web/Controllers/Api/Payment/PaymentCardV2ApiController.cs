@@ -56,6 +56,7 @@ namespace Nop.Web.Controllers.Api.Payment
                 success = result.Success,
                 attemptId = result.AttemptId,
                 paymentUrl = result.PaymentUrl,
+                verificationAmountFormatted = result.VerificationAmountFormatted,
                 message = result.Message
             });
         }

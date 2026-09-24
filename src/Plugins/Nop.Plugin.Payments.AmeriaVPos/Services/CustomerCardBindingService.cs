@@ -10,6 +10,7 @@ using Nop.Plugin.Payments.AmeriaVPos.Domain;
 using Nop.Services.Logging;
 using Nop.Services.Orders;
 using Nop.Services.Payments;
+using Nop.Services.Catalog;
 
 namespace Nop.Plugin.Payments.AmeriaVPos.Services
 {
@@ -38,6 +39,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
         private readonly IWebHelper _webHelper;
         private readonly AmeriaVPosSettings _ameriaVPosSettings;
         private readonly AmeriaVPosApiClient _apiClient;
+        private readonly IPriceFormatter _priceFormatter;
         private readonly ILogger _logger;
 
         #endregion
@@ -52,6 +54,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
             IWebHelper webHelper,
             AmeriaVPosSettings ameriaVPosSettings,
             AmeriaVPosApiClient apiClient,
+            IPriceFormatter priceFormatter,
             ILogger logger)
         {
             _bindingAttemptRepository = bindingAttemptRepository;
@@ -61,6 +64,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
             _webHelper = webHelper;
             _ameriaVPosSettings = ameriaVPosSettings;
             _apiClient = apiClient;
+            _priceFormatter = priceFormatter;
             _logger = logger;
         }
 
@@ -121,7 +125,13 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
 
             var paymentUrl = $"{_apiClient.PayBaseUrl}/Payments/Pay?id={initResponse.PaymentID}&lang=en";
 
-            return new CardBindingStartResult { Success = true, AttemptId = attempt.Id, PaymentUrl = paymentUrl };
+            return new CardBindingStartResult
+            {
+                Success = true,
+                AttemptId = attempt.Id,
+                PaymentUrl = paymentUrl,
+                VerificationAmountFormatted = await _priceFormatter.FormatPriceAsync(attempt.VerificationAmount)
+            };
         }
 
         public async Task<CardBindingResolveResult> ResolveAddCardAsync(int attemptId)
