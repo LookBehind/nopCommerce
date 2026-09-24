@@ -34,6 +34,7 @@ jobs:
           BRANCH="${GITHUB_REF_NAME//\//-}"
           SHORT_SHA="${GITHUB_SHA:0:6}"
           echo "tag=${BRANCH}-${SHORT_SHA}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       # Dual-push during the Docker Hub -> ghcr migration: prod still references
       # Docker Hub, dev pulls ghcr. Drop the Docker Hub tag once prod is migrated.
@@ -41,6 +42,12 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           push: true
+          # Bake the source commit into the image (see Dockerfile) so it's
+          # traceable even when a tag is renamed or a build is made off-CI.
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            GIT_BRANCH=${{ github.ref_name }}
+            BUILD_DATE=${{ steps.meta.outputs.date }}
           tags: |
             eisajanyan/nopcommerce:${{ steps.meta.outputs.tag }}
             ghcr.io/lookbehind/nopcommerce:${{ steps.meta.outputs.tag }}

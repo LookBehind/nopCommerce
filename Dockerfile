@@ -68,11 +68,28 @@ RUN apk add tzdata --no-cache
 COPY ./entrypoint.sh /entrypoint.sh
 RUN chmod 755 /entrypoint.sh
 
-WORKDIR /app        
+WORKDIR /app
 RUN mkdir bin
 RUN mkdir logs
 
 COPY --from=build /app/published .
 
-# call entrypoint script instead of dotnet                            
+# Build metadata - the source commit baked into the image itself, not just the
+# tag. Kept at the very end so it never busts the (slow) build/publish cache.
+# CI passes these (see .github/workflows/docker-image.yml); a manual build should
+# too: docker build --build-arg GIT_COMMIT=$(git rev-parse HEAD) ...
+# Traceable three ways: image label (docker/crane inspect), env var
+# (kubectl exec <pod> -- printenv GIT_COMMIT), and /app/COMMIT (cat in the pod).
+ARG GIT_COMMIT=unknown
+ARG GIT_BRANCH=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.revision=$GIT_COMMIT \
+      org.opencontainers.image.version=$GIT_BRANCH \
+      org.opencontainers.image.created=$BUILD_DATE \
+      org.opencontainers.image.source="https://github.com/lookbehind/nopcommerce"
+ENV GIT_COMMIT=$GIT_COMMIT \
+    GIT_BRANCH=$GIT_BRANCH
+RUN printf '%s\n' "$GIT_COMMIT" > /app/COMMIT
+
+# call entrypoint script instead of dotnet
 ENTRYPOINT "/entrypoint.sh"
