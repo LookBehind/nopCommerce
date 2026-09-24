@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
@@ -362,7 +363,7 @@ namespace Nop.Web.Controllers.Api.Order
                     ImageUrl = imageUrl,
                     VendorName = vendor?.Name,
                     Quantity = orderItem.Quantity,
-                    AttributeInfo = orderItem.AttributeDescription,
+                    AttributeInfo = CleanAttributeDescription(orderItem.AttributeDescription),
                     UnitPrice = await priceFormatter.FormatPriceAsync(orderItem.UnitPriceInclTax),
                     LineTotal = await priceFormatter.FormatPriceAsync(orderItem.PriceInclTax),
                     UserRating = customerReviews.TryGetValue(orderItem.Id, out var userRating) ? userRating : null
@@ -370,6 +371,19 @@ namespace Nop.Web.Controllers.Api.Order
             }
 
             return model;
+        }
+
+        // OrderItem.AttributeDescription is stored HTML (IProductAttributeFormatter's
+        // default "<br />"-separated, web-oriented output) at order-creation time -
+        // not something this endpoint can reformat at the source. Clients here aren't
+        // a web view, so normalize the one separator it actually uses into something
+        // a plain <Text> can render instead of showing the literal tag.
+        private static string CleanAttributeDescription(string attributeDescription)
+        {
+            if (string.IsNullOrEmpty(attributeDescription))
+                return attributeDescription;
+
+            return Regex.Replace(attributeDescription, "<br\\s*/?>", ", ", RegexOptions.IgnoreCase).Trim().Trim(',', ' ');
         }
 
         private async Task<string> FormatDeliveryAddressAsync(Nop.Core.Domain.Orders.Order order)
