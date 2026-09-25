@@ -86,6 +86,12 @@ namespace Nop.Web.Controllers.Api.Catalog
             // math with it (cart totals, etc).
             public string Price { get; set; }
             public string ImageUrl { get; set; }
+            // Nullable - a product can be uncategorized (productCategories empty).
+            // CategoryName alone isn't a stable identifier to route/filter by: it's
+            // admin-authored per-language text (LocalizedProperty), so the exact
+            // same category can have a different Name per store language. Id is
+            // the real, language-independent key; Name stays for display only.
+            public int? CategoryId { get; set; }
             public string CategoryName { get; set; }
             public bool RibbonEnable { get; set; }
             public string RibbonText { get; set; }
@@ -145,6 +151,7 @@ namespace Nop.Web.Controllers.Api.Catalog
 
         public class CategoryV2Model
         {
+            public int Id { get; set; }
             public string Name { get; set; }
             public int Count { get; set; }
             public string Description { get; set; }
@@ -272,6 +279,7 @@ namespace Nop.Web.Controllers.Api.Catalog
 
                 result.Add(new CategoryV2Model
                 {
+                    Id = category.Id,
                     Name = category.Name,
                     Count = countPage.TotalCount,
                     Description = category.Description,
@@ -389,7 +397,8 @@ namespace Nop.Web.Controllers.Api.Catalog
                 : null;
 
             var productCategories = await categoryService.GetProductCategoriesByProductIdAsync(product.Id);
-            var categoryName = productCategories.Count > 0 && categoryNameById.TryGetValue(productCategories[0].CategoryId, out var name)
+            var categoryId = productCategories.Count > 0 ? productCategories[0].CategoryId : (int?)null;
+            var categoryName = categoryId.HasValue && categoryNameById.TryGetValue(categoryId.Value, out var name)
                 ? name
                 : null;
 
@@ -416,6 +425,7 @@ namespace Nop.Web.Controllers.Api.Catalog
                 PriceValue = product.Price,
                 Price = priceFormatted,
                 ImageUrl = imageUrl,
+                CategoryId = categoryId,
                 CategoryName = categoryName,
                 RibbonEnable = product.RibbonEnable,
                 RibbonText = product.RibbonText,
