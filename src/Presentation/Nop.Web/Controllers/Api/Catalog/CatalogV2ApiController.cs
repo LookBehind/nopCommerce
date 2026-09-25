@@ -148,6 +148,7 @@ namespace Nop.Web.Controllers.Api.Catalog
             public string Name { get; set; }
             public int Count { get; set; }
             public string Description { get; set; }
+            public string PictureUrl { get; set; }
         }
 
         public class IngredientV2Model
@@ -265,11 +266,16 @@ namespace Nop.Web.Controllers.Api.Catalog
                     visibleIndividuallyOnly: true,
                     showHidden: false);
 
+                var pictureUrl = category.PictureId > 0
+                    ? await pictureService.GetPictureUrlAsync(category.PictureId, ThumbnailSize)
+                    : null;
+
                 result.Add(new CategoryV2Model
                 {
                     Name = category.Name,
                     Count = countPage.TotalCount,
-                    Description = category.Description
+                    Description = category.Description,
+                    PictureUrl = pictureUrl
                 });
             }
 
