@@ -1,10 +1,13 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Services.Common;
 using Nop.Services.News;
+using Nop.Services.Stores;
 using Nop.Web.Framework.Mvc.Filters;
 
 namespace Nop.Web.Controllers.Api.Content
@@ -32,7 +35,8 @@ namespace Nop.Web.Controllers.Api.Content
     public class AnnouncementV2ApiController(
         INewsService newsService,
         IGenericAttributeService genericAttributeService,
-        IStoreContext storeContext)
+        IStoreContext storeContext,
+        IStoreMappingService storeMappingService)
         : BaseApiController
     {
         // Shown when an admin hasn't set a card color/icon for a given news item yet,
@@ -47,6 +51,12 @@ namespace Nop.Web.Controllers.Api.Content
             public string Icon { get; set; }
             public string Title { get; set; }
             public string Sub { get; set; }
+        }
+
+        public class AnnouncementDetailV2Model : AnnouncementV2Model
+        {
+            public string Body { get; set; }
+            public System.DateTime CreatedOnUtc { get; set; }
         }
 
         [HttpGet]
@@ -82,6 +92,46 @@ namespace Nop.Web.Controllers.Api.Content
                 .OrderBy(r => r.SortOrder == 0 ? int.MaxValue : r.SortOrder)
                 .Select(r => r.Model)
                 .ToList());
+        }
+
+        // Backs AnnouncementDetailScreen (the carousel card's onPress, previously a
+        // stub toast) and mysnacksv2://News/:id deep links from a News-related push
+        // notification, once one exists.
+        [HttpGet("{id:int}")]
+        public async Task<IActionResult> GetAnnouncement(int id)
+        {
+            var store = await storeContext.GetCurrentStoreAsync();
+            var newsItem = await newsService.GetNewsByIdAsync(id);
+            if (newsItem == null || !newsItem.Published || !await storeMappingService.AuthorizeAsync(newsItem, store.Id))
+                return NotFound();
+
+            var bg = await genericAttributeService.GetAttributeAsync<string>(newsItem, NopNewsDefaults.AnnouncementBgAttribute);
+            var icon = await genericAttributeService.GetAttributeAsync<string>(newsItem, NopNewsDefaults.AnnouncementIconAttribute);
+
+            return Ok(new AnnouncementDetailV2Model
+            {
+                Id = newsItem.Id,
+                Bg = string.IsNullOrWhiteSpace(bg) ? DefaultBg : bg,
+                Icon = string.IsNullOrWhiteSpace(icon) ? DefaultIcon : icon,
+                Title = newsItem.Title,
+                Sub = newsItem.Short,
+                Body = PlainTextFromHtml(newsItem.Full),
+                CreatedOnUtc = newsItem.CreatedOnUtc
+            });
+        }
+
+        // Same rationale/approach as CatalogV2ApiController's own copy of this method
+        // (see that file) - News.Full is admin-authored rich HTML (TinyMCE) and mobile
+        // renders it as plain RN <Text>, so raw markup can't reach the screen.
+        private static string PlainTextFromHtml(string html)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+                return null;
+
+            var noTags = Regex.Replace(html, "<[^>]*>", " ");
+            var decoded = WebUtility.HtmlDecode(noTags);
+            var collapsed = Regex.Replace(decoded, @"\s+", " ").Trim();
+            return collapsed.Length > 0 ? collapsed : null;
         }
     }
 }
