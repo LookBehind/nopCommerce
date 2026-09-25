@@ -25,7 +25,7 @@ namespace Nop.Plugin.Company.Support.Controllers
         IVendorService vendorService,
         IWorkContext workContext,
         IStoreContext storeContext)
-        : BaseController
+        : BaseApiController
     {
         public class SupportCaseV2Model
         {
@@ -104,7 +104,7 @@ namespace Nop.Plugin.Company.Support.Controllers
             var customer = await workContext.GetCurrentCustomerAsync();
             var store = await storeContext.GetCurrentStoreAsync();
 
-            var supportCase = await supportCaseService.InsertSupportCaseAsync(new Domain.SupportCase
+            var supportCase = await supportCaseService.InsertSupportCaseAsync(new SupportCase
             {
                 CustomerId = customer.Id,
                 StoreId = store.Id,
@@ -117,7 +117,7 @@ namespace Nop.Plugin.Company.Support.Controllers
             return Ok(new { success = true, supportCase = await MapAsync(supportCase) });
         }
 
-        private async Task<SupportCaseV2Model> MapAsync(Domain.SupportCase supportCase)
+        private async Task<SupportCaseV2Model> MapAsync(SupportCase supportCase)
         {
             string vendorName = null;
             if (supportCase.VendorId.HasValue)
