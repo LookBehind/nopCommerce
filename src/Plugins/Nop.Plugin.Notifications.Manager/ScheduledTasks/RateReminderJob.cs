@@ -7,6 +7,7 @@ using Nop.Plugin.Notifications.Manager.Services;
 using Nop.Services.Customers;
 using Nop.Services.Localization;
 using Nop.Services.Logging;
+using Nop.Services.Notifications;
 using Nop.Services.Orders;
 
 namespace Nop.Plugin.Notifications.Manager.ScheduledTasks;
@@ -23,14 +24,14 @@ public class RateReminderJob
     private readonly IOrderService _orderService;
     private readonly ICustomerService _customerService;
     private readonly ILocalizationService _localizationService;
-    private readonly PushNotificationService _pushNotificationService;
+    private readonly IPushNotificationService _pushNotificationService;
     private readonly ILogger _logger;
 
     public RateReminderJob(
         IOrderService orderService,
         ICustomerService customerService,
         ILocalizationService localizationService,
-        PushNotificationService pushNotificationService,
+        IPushNotificationService pushNotificationService,
         ILogger logger)
     {
         _orderService = orderService;

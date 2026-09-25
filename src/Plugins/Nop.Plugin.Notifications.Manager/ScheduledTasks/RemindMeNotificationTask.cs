@@ -22,6 +22,7 @@ using Nop.Services.Customers;
 using Nop.Services.Helpers;
 using Nop.Services.Localization;
 using Nop.Services.Logging;
+using Nop.Services.Notifications;
 using Nop.Services.Orders;
 using Nop.Services.Tasks;
 using Nop.Web.Areas.Admin.Models.Orders;
@@ -44,7 +45,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         private readonly KubeAiChatClient _kubeAiChatClient;
         private readonly IRepository<ProductReview> _productReviewRepository;
         private readonly ILogger _logger;
-        private readonly PushNotificationService _pushNotificationService;
+        private readonly IPushNotificationService _pushNotificationService;
         private readonly CatalogSettings _catalogSettings;
 
         /// <summary>
@@ -117,7 +118,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             IRepository<ProductReview> productReviewRepository,
             ILogger logger,
             IProductService productService,
-            PushNotificationService pushNotificationService,
+            IPushNotificationService pushNotificationService,
             CatalogSettings catalogSettings)
         {
             _dateTimeHelper = dateTimeHelper;

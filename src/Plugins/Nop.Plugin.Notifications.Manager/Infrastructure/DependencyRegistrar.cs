@@ -8,6 +8,7 @@ using Nop.Core.Infrastructure.DependencyManagement;
 using Nop.Plugin.Notifications.Manager.Areas.Admin.Factories;
 using Nop.Plugin.Notifications.Manager.ScheduledTasks;
 using Nop.Plugin.Notifications.Manager.Services;
+using Nop.Services.Notifications;
 using Nop.Services.Tasks;
 using Telegram.Bot;
 
@@ -45,7 +46,7 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
                 ProjectId = "mysnacks-d8778"
             }));
             
-            services.AddScoped<PushNotificationService>();
+            services.AddScoped<IPushNotificationService, PushNotificationService>();
 
             services.AddScoped<ITelegramMiniAppAuthService, TelegramMiniAppAuthService>();
 

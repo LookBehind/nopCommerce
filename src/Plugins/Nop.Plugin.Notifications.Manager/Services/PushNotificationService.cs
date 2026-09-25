@@ -9,17 +9,11 @@ using Nop.Services.Common;
 using Nop.Services.Customers;
 using Nop.Services.Events;
 using Nop.Services.Logging;
+using Nop.Services.Notifications;
 
 namespace Nop.Plugin.Notifications.Manager.Services;
 
-public enum NotificationType
-{
-    OrderStatusChange,
-    RemindMe,
-    RateReminder
-}
-
-public class PushNotificationService
+public class PushNotificationService : IPushNotificationService
 {
     private const string FIREBASE_FAILED_COUNT = nameof(FIREBASE_FAILED_COUNT);
     private const int FIREBASE_MAX_FAILED_COUNT = 3;
@@ -61,6 +55,10 @@ public class PushNotificationService
                 NotificationType.OrderStatusChange => customer.OrderStatusNotification,
                 NotificationType.RemindMe => customer.RemindMeNotification,
                 NotificationType.RateReminder => customer.RateReminderNotification,
+                // Support-case updates are a direct reply to something the customer themselves
+                // opened, not a discretionary marketing/reminder push - no opt-out toggle exists
+                // for it (unlike the three above), so it's always considered subscribed.
+                NotificationType.SupportCaseUpdate => true,
                 _ => throw new ArgumentOutOfRangeException(nameof(notificationType))
             };
 

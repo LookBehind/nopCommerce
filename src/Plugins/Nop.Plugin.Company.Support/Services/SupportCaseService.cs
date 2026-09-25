@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Nop.Core;
 using Nop.Data;
 using Nop.Plugin.Company.Support.Domain;
+using Nop.Services.Notifications;
 
 namespace Nop.Plugin.Company.Support.Services
 {
@@ -12,13 +13,16 @@ namespace Nop.Plugin.Company.Support.Services
     {
         private readonly IRepository<SupportCase> _supportCaseRepository;
         private readonly IRepository<SupportCaseStatusHistory> _statusHistoryRepository;
+        private readonly IPushNotificationService _pushNotificationService;
 
         public SupportCaseService(
             IRepository<SupportCase> supportCaseRepository,
-            IRepository<SupportCaseStatusHistory> statusHistoryRepository)
+            IRepository<SupportCaseStatusHistory> statusHistoryRepository,
+            IPushNotificationService pushNotificationService)
         {
             _supportCaseRepository = supportCaseRepository;
             _statusHistoryRepository = statusHistoryRepository;
+            _pushNotificationService = pushNotificationService;
         }
 
         public virtual async Task<SupportCase> GetSupportCaseByIdAsync(int supportCaseId)
@@ -108,6 +112,20 @@ namespace Nop.Plugin.Company.Support.Services
                 EnteredOnUtc = supportCase.UpdatedOnUtc,
                 ChangedByCustomerId = changedByCustomerId
             });
+
+            // Only staff (via the admin Edit page) ever call this today, so the case's own
+            // customer is always someone other than changedByCustomerId - safe to always notify.
+            var statusText = SupportCaseDisplayNames.Status.TryGetValue(newStatus, out var text) ? text : newStatus.ToString();
+            await _pushNotificationService.SendNotificationAsync(
+                supportCase.CustomerId,
+                NotificationType.SupportCaseUpdate,
+                "Support case update",
+                $"Your support case \"{supportCase.Subject}\" is now {statusText}.",
+                new Dictionary<string, string>
+                {
+                    { "caseId", supportCase.Id.ToString() },
+                    { "url", $"Support/{supportCase.Id}" }
+                });
         }
 
         public virtual async Task<IList<SupportCaseStatusHistory>> GetStatusHistoryAsync(int supportCaseId)

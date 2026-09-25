@@ -11,6 +11,7 @@ using Nop.Services.Catalog;
 using Nop.Services.Common;
 using Nop.Services.Configuration;
 using Nop.Services.Customers;
+using Nop.Services.Notifications;
 using Nop.Services.Orders;
 using Nop.Services.Vendors;
 using Nop.Web.Controllers;
@@ -37,7 +38,7 @@ public class VendorDeliveryAppController : BaseApiController
     private readonly IAddressService _addressService;
     private readonly ICustomerService _customerService;
     private readonly IProductService _productService;
-    private readonly PushNotificationService _pushNotificationService;
+    private readonly IPushNotificationService _pushNotificationService;
     private readonly ISettingService _settingService;
     private readonly IVendorOrderDeliveryService _vendorOrderDeliveryService;
 
@@ -48,7 +49,7 @@ public class VendorDeliveryAppController : BaseApiController
         IAddressService addressService,
         ICustomerService customerService,
         IProductService productService,
-        PushNotificationService pushNotificationService,
+        IPushNotificationService pushNotificationService,
         ISettingService settingService,
         IVendorOrderDeliveryService vendorOrderDeliveryService)
     {

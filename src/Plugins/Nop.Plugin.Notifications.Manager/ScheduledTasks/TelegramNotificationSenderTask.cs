@@ -20,6 +20,7 @@ using Nop.Services.Configuration;
 using Nop.Services.Customers;
 using Nop.Services.Logging;
 using Nop.Services.Messages;
+using Nop.Services.Notifications;
 using Nop.Services.Orders;
 using Nop.Services.Stores;
 using Nop.Services.Vendors;
@@ -63,7 +64,7 @@ public class TelegramNotificationSenderTask : IScheduledTask
     private readonly IAddressService _addressService;
     private readonly IEmailAccountService _emailAccountService;
     private readonly IStoreService _storeService;
-    private readonly PushNotificationService _pushNotificationService;
+    private readonly IPushNotificationService _pushNotificationService;
     private readonly ITelegramMiniAppAuthService _telegramMiniAppAuthService;
     private readonly IVendorTelegramChatCache _chatCache;
     private readonly IVendorOrderDeliveryService _vendorOrderDeliveryService;
@@ -523,7 +524,7 @@ public class TelegramNotificationSenderTask : IScheduledTask
         IAddressService addressService,
         IEmailAccountService emailAccountService,
         IStoreService storeService,
-        PushNotificationService pushNotificationService,
+        IPushNotificationService pushNotificationService,
         ITelegramMiniAppAuthService telegramMiniAppAuthService,
         IVendorTelegramChatCache chatCache,
         IVendorOrderDeliveryService vendorOrderDeliveryService)
