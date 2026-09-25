@@ -1,0 +1,120 @@
+@using Nop.Plugin.Company.Support.Areas.Admin.Models
+@model SupportCaseModel
+@{
+    ViewBag.PageTitle = $"Support Case #{Model.Id}";
+    Html.SetActiveMenuItemSystemName("Company.Support.Cases");
+}
+
+<form asp-controller="SupportCase" asp-action="Edit" method="post" id="support-case-form">
+    <input type="hidden" asp-for="Id" />
+    <div class="content-header clearfix">
+        <h1 class="float-left">
+            Support Case #@Model.Id - @Model.CustomerName
+            <small>
+                <i class="fas fa-arrow-circle-left"></i>
+                <a asp-action="List">back to list</a>
+            </small>
+        </h1>
+        <div class="float-right">
+            <button type="submit" name="save" class="btn btn-primary">
+                <i class="far fa-save"></i>
+                Save status
+            </button>
+        </div>
+    </div>
+
+    <section class="content">
+        <div class="container-fluid">
+            <div class="cards-group">
+                <div class="card card-default">
+                    <div class="card-body">
+                        <div class="form-group row">
+                            <div class="col-md-3">Category</div>
+                            <div class="col-md-9"><strong>@Model.CategoryName</strong></div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(Model.VendorName))
+                        {
+                            <div class="form-group row">
+                                <div class="col-md-3">Vendor</div>
+                                <div class="col-md-9"><strong>@Model.VendorName</strong></div>
+                            </div>
+                        }
+                        <div class="form-group row">
+                            <div class="col-md-3">Subject</div>
+                            <div class="col-md-9">@Model.Subject</div>
+                        </div>
+                        <div class="form-group row">
+                            <div class="col-md-3">Description</div>
+                            <div class="col-md-9" style="white-space: pre-wrap;">@Model.Description</div>
+                        </div>
+                        <div class="form-group row">
+                            <div class="col-md-3">Created on</div>
+                            <div class="col-md-9">@Model.CreatedOnUtc.ToString("g") UTC</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card card-default">
+                    <div class="card-body">
+                        <div class="form-group row">
+                            <div class="col-md-3">Assigned to</div>
+                            <div class="col-md-9">
+                                @if (Model.IsAssigned)
+                                {
+                                    <strong>@Model.AssignedToName</strong>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Unassigned</span>
+                                }
+                            </div>
+                        </div>
+                        @if (!Model.IsAssigned)
+                        {
+                            <div class="form-group row">
+                                <div class="col-md-9 offset-md-3">
+                                    <button type="submit" formaction="@Url.Action("AssignToMe", new { id = Model.Id })" formmethod="post" class="btn btn-secondary">
+                                        Assign to me
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                        <div class="form-group row">
+                            <div class="col-md-3">
+                                <nop-label asp-for="StatusId" />
+                            </div>
+                            <div class="col-md-9">
+                                <nop-select asp-for="StatusId" asp-items="Model.AvailableStatuses" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card card-default">
+                    <div class="card-body">
+                        <h4>Status history</h4>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Entered on (UTC)</th>
+                                    <th>Duration</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in Model.StatusHistory)
+                                {
+                                    <tr>
+                                        <td>@row.StatusName</td>
+                                        <td>@row.EnteredOnUtc.ToString("g")</td>
+                                        <td>@row.Duration</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</form>

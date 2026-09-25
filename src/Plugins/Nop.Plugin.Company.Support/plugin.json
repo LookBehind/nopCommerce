@@ -1,0 +1,11 @@
+{
+  "Group": "Company",
+  "FriendlyName": "Company Support Inquiries",
+  "SystemName": "Company.Support",
+  "Version": "1.0",
+  "SupportedVersions": [ "4.50" ],
+  "Author": "Custom",
+  "DisplayOrder": 3,
+  "FileName": "Nop.Plugin.Company.Support.dll",
+  "Description": "Customer support case inquiries: mobile-submitted cases (Technical, Vendor Quality, New Vendor Request, Delivery Inquiry, Billing Inquiry) with an admin queue for staff to self-assign and track status."
+}

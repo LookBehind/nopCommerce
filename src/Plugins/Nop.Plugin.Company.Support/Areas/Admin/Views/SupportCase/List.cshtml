@@ -1,0 +1,133 @@
+@using Nop.Plugin.Company.Support.Areas.Admin.Models
+@model SupportCaseSearchModel
+
+@{
+    ViewBag.PageTitle = "Support Cases";
+    Html.SetActiveMenuItemSystemName("Company.Support.Cases");
+}
+
+<div class="content-header clearfix">
+    <h1 class="float-left">
+        Support Cases
+    </h1>
+</div>
+
+<section class="content">
+    <div class="container-fluid">
+        <div class="form-horizontal">
+            <div class="cards-group">
+                <div class="card card-default card-search">
+                    <div class="card-body">
+                        <div class="row search-row opened" data-hideAttribute="SupportCaseList.HideSearchBlock">
+                            <div class="search-text">@T("Admin.Common.Search")</div>
+                            <div class="icon-search"><i class="fas fa-search" aria-hidden="true"></i></div>
+                            <div class="icon-collapse"><i class="far fa-angle-up" aria-hidden="true"></i></div>
+                        </div>
+
+                        <div class="search-body">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="form-group row">
+                                        <div class="col-md-4">
+                                            <nop-label asp-for="SearchStatusId" />
+                                        </div>
+                                        <div class="col-md-8">
+                                            <nop-select asp-for="SearchStatusId" asp-items="Model.AvailableStatuses" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group row">
+                                        <div class="col-md-4">
+                                            <nop-label asp-for="SearchCategoryId" />
+                                        </div>
+                                        <div class="col-md-8">
+                                            <nop-select asp-for="SearchCategoryId" asp-items="Model.AvailableCategories" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group row">
+                                        <div class="col-md-8 offset-md-4">
+                                            <nop-editor asp-for="SearchUnassignedOnly" />
+                                            <nop-label asp-for="SearchUnassignedOnly" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group row">
+                                <div class="text-center col-12">
+                                    <button type="button" id="search-support-cases" class="btn btn-primary btn-search"><i class="fas fa-search"></i>@T("Admin.Common.Search")</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card card-default">
+                    <div class="card-body">
+                        @await Html.PartialAsync("Table", new DataTablesModel
+                        {
+                            Name = "support-cases-grid",
+                            UrlRead = new DataUrl("List", "SupportCase", null),
+                            SearchButtonId = "search-support-cases",
+                            Length = Model.PageSize,
+                            LengthMenu = Model.AvailablePageSizes,
+                            Filters = new List<FilterParameter>
+                            {
+                                new FilterParameter(nameof(Model.SearchStatusId)),
+                                new FilterParameter(nameof(Model.SearchCategoryId)),
+                                new FilterParameter(nameof(Model.SearchUnassignedOnly))
+                            },
+                            ColumnCollection = new List<ColumnProperty>
+                            {
+                                new ColumnProperty(nameof(SupportCaseModel.Id))
+                                {
+                                    Title = "#",
+                                    Width = "60"
+                                },
+                                new ColumnProperty(nameof(SupportCaseModel.CustomerName))
+                                {
+                                    Title = "Customer"
+                                },
+                                new ColumnProperty(nameof(SupportCaseModel.CategoryName))
+                                {
+                                    Title = "Category",
+                                    Width = "160"
+                                },
+                                new ColumnProperty(nameof(SupportCaseModel.VendorName))
+                                {
+                                    Title = "Vendor",
+                                    Width = "140"
+                                },
+                                new ColumnProperty(nameof(SupportCaseModel.StatusName))
+                                {
+                                    Title = "Status",
+                                    Width = "110"
+                                },
+                                new ColumnProperty(nameof(SupportCaseModel.AssignedToName))
+                                {
+                                    Title = "Assigned to",
+                                    Width = "160"
+                                },
+                                new ColumnProperty(nameof(SupportCaseModel.CreatedOnUtc))
+                                {
+                                    Title = "Created",
+                                    Width = "160",
+                                    Render = new RenderDate()
+                                },
+                                new ColumnProperty(nameof(SupportCaseModel.Id))
+                                {
+                                    Title = "View",
+                                    Width = "100",
+                                    ClassName = NopColumnClassDefaults.Button,
+                                    Render = new RenderButtonEdit(new DataUrl("Edit"))
+                                }
+                            }
+                        })
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
