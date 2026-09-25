@@ -71,7 +71,19 @@ public class RateReminderJob
                     NotificationType.RateReminder,
                     await _localizationService.GetResourceAsync("RateRemainderNotificationTask.Title"),
                     await _localizationService.GetResourceAsync("RateRemainderNotificationTask.Body"),
-                    new Dictionary<string, string> { { "Id", order.Id.ToString() } });
+                    // "url" is the one field every push notification's tap-to-navigate handling
+                    // reads (mobile's linking.ts), regardless of NotificationType - so a new
+                    // notification type can reuse an existing route like this one (Order/:id)
+                    // with zero mobile release needed, as long as it's willing to land on a
+                    // screen the app already knows how to deep-link into. "focus=rating" is a
+                    // generic, reusable OrderDetailScreen route param (not special-cased to this
+                    // notification type) that scrolls to/highlights the rating card - see
+                    // OrderDetailScreen.tsx.
+                    new Dictionary<string, string>
+                    {
+                        { "orderId", order.Id.ToString() },
+                        { "url", $"Order/{order.Id}?focus=rating" }
+                    });
 
                 var freshOrder = await _orderService.GetOrderByIdAsync(order.Id);
                 freshOrder.RateNotificationSend = true;
