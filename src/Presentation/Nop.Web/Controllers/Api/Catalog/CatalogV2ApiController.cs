@@ -160,6 +160,12 @@ namespace Nop.Web.Controllers.Api.Catalog
 
         public class IngredientV2Model
         {
+            // Real, language-independent identity (SpecificationAttributeOption.Id) -
+            // for routing/linking only. Product.SpecificationLabels and the
+            // customer's saved allergies/undesired preferences are still
+            // Name-keyed throughout the rest of this API surface (unchanged,
+            // out of scope here) - Id is additive, not a replacement for that.
+            public int Id { get; set; }
             public string Name { get; set; }
             public bool IsAllergen { get; set; }
         }
@@ -302,7 +308,7 @@ namespace Nop.Web.Controllers.Api.Catalog
 
             var result = options
                 .OrderBy(o => o.DisplayOrder)
-                .Select(o => new IngredientV2Model { Name = o.Name, IsAllergen = o.IsAllergen })
+                .Select(o => new IngredientV2Model { Id = o.Id, Name = o.Name, IsAllergen = o.IsAllergen })
                 .ToList();
 
             return Ok(result);
