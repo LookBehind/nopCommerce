@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
@@ -415,10 +417,30 @@ namespace Nop.Web.Controllers.Api.Catalog
                 TotalReviews = product.ApprovedTotalReviews,
                 PopularityCount = popularityCount,
                 Vendor = vendorModel,
-                Description = product.ShortDescription,
+                Description = PlainTextFromHtml(product.ShortDescription),
                 SpecificationLabels = specificationLabels,
                 HasAttributes = attributeMappings.Count > 0
             };
+        }
+
+        // Vendor.Description/Product.ShortDescription are admin-authored rich HTML
+        // (TinyMCE) - mobile renders both as plain RN <Text>, which can't render
+        // markup, so a raw "<p>Smoky grilled kebabs...</p>" would show up
+        // literally on a vendor card. Nop.Core.Html.HtmlHelper.StripTags exists
+        // but collapses HTML entities (&amp;, &nbsp;, ...) into a bare "@",
+        // which would mangle real text (e.g. "Fish & Chips" -> "Fish @ Chips") -
+        // this strips tags with a plain regex instead and properly HTML-decodes
+        // entities via WebUtility, then collapses whitespace left behind by
+        // adjacent block tags (e.g. "</p><p>").
+        private static string PlainTextFromHtml(string html)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+                return null;
+
+            var noTags = Regex.Replace(html, "<[^>]*>", " ");
+            var decoded = WebUtility.HtmlDecode(noTags);
+            var collapsed = Regex.Replace(decoded, @"\s+", " ").Trim();
+            return collapsed.Length > 0 ? collapsed : null;
         }
 
         private async Task<VendorBriefV2Model> MapVendorAsync(Nop.Core.Domain.Vendors.Vendor vendor)
@@ -436,7 +458,7 @@ namespace Nop.Web.Controllers.Api.Catalog
                 PictureUrl = pictureUrl,
                 RatingSum = vendorProducts.Sum(p => p.ApprovedRatingSum),
                 TotalReviews = vendorProducts.Sum(p => p.ApprovedTotalReviews),
-                Description = vendor.Description
+                Description = PlainTextFromHtml(vendor.Description)
             };
         }
     }
