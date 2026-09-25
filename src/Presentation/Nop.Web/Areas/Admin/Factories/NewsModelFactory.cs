@@ -6,6 +6,7 @@ using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.News;
 using Nop.Core.Html;
+using Nop.Services.Common;
 using Nop.Services.Customers;
 using Nop.Services.Helpers;
 using Nop.Services.Localization;
@@ -31,6 +32,7 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly IBaseAdminModelFactory _baseAdminModelFactory;
         private readonly ICustomerService _customerService;
         private readonly IDateTimeHelper _dateTimeHelper;
+        private readonly IGenericAttributeService _genericAttributeService;
         private readonly ILanguageService _languageService;
         private readonly ILocalizationService _localizationService;
         private readonly INewsService _newsService;
@@ -46,6 +48,7 @@ namespace Nop.Web.Areas.Admin.Factories
             IBaseAdminModelFactory baseAdminModelFactory,
             ICustomerService customerService,
             IDateTimeHelper dateTimeHelper,
+            IGenericAttributeService genericAttributeService,
             ILanguageService languageService,
             ILocalizationService localizationService,
             INewsService newsService,
@@ -57,6 +60,7 @@ namespace Nop.Web.Areas.Admin.Factories
             _customerService = customerService;
             _baseAdminModelFactory = baseAdminModelFactory;
             _dateTimeHelper = dateTimeHelper;
+            _genericAttributeService = genericAttributeService;
             _languageService = languageService;
             _localizationService = localizationService;
             _newsService = newsService;
@@ -164,6 +168,10 @@ namespace Nop.Web.Areas.Admin.Factories
 
                 model.StartDateUtc = newsItem.StartDateUtc;
                 model.EndDateUtc = newsItem.EndDateUtc;
+
+                model.Bg = await _genericAttributeService.GetAttributeAsync<string>(newsItem, NopNewsDefaults.AnnouncementBgAttribute);
+                model.Icon = await _genericAttributeService.GetAttributeAsync<string>(newsItem, NopNewsDefaults.AnnouncementIconAttribute);
+                model.SortOrder = await _genericAttributeService.GetAttributeAsync<int>(newsItem, NopNewsDefaults.AnnouncementSortOrderAttribute);
             }
 
             //set default values for the new model

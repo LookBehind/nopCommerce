@@ -7,6 +7,30 @@ namespace Nop.Services.News
     /// </summary>
     public static partial class NopNewsDefaults
     {
+        #region Generic attributes
+
+        /// <summary>
+        /// Gets a name of a generic attribute to store a news item's mobile-v2 announcement
+        /// card background color (hex string, e.g. "#FDECC8") - not a NewsItem entity
+        /// column, see AddAnnouncementFieldsToNewsItemLocalesMigration.
+        /// </summary>
+        public static string AnnouncementBgAttribute => "AnnouncementBg";
+
+        /// <summary>
+        /// Gets a name of a generic attribute to store a news item's mobile-v2 announcement
+        /// card icon (a single emoji) - not a NewsItem entity column.
+        /// </summary>
+        public static string AnnouncementIconAttribute => "AnnouncementIcon";
+
+        /// <summary>
+        /// Gets a name of a generic attribute to store a news item's mobile-v2 announcement
+        /// card manual sort order (lower shows first; 0 falls back to newest-first) - not a
+        /// NewsItem entity column.
+        /// </summary>
+        public static string AnnouncementSortOrderAttribute => "AnnouncementSortOrder";
+
+        #endregion
+
         #region Caching defaults
 
         /// <summary>

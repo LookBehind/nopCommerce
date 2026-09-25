@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core.Domain.News;
 using Nop.Core.Events;
+using Nop.Services.Common;
 using Nop.Services.Localization;
 using Nop.Services.Logging;
 using Nop.Services.Messages;
@@ -26,6 +27,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         private readonly ICustomerActivityService _customerActivityService;
         private readonly IEventPublisher _eventPublisher;
+        private readonly IGenericAttributeService _genericAttributeService;
         private readonly ILocalizationService _localizationService;
         private readonly INewsModelFactory _newsModelFactory;
         private readonly INewsService _newsService;
@@ -41,6 +43,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         public NewsController(ICustomerActivityService customerActivityService,
             IEventPublisher eventPublisher,
+            IGenericAttributeService genericAttributeService,
             ILocalizationService localizationService,
             INewsModelFactory newsModelFactory,
             INewsService newsService,
@@ -52,6 +55,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         {
             _customerActivityService = customerActivityService;
             _eventPublisher = eventPublisher;
+            _genericAttributeService = genericAttributeService;
             _localizationService = localizationService;
             _newsModelFactory = newsModelFactory;
             _newsService = newsService;
@@ -92,9 +96,17 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
+        /// <returns>A task that represents the asynchronous operation</returns>
+        protected virtual async Task SaveAnnouncementAttributesAsync(NewsItem newsItem, NewsItemModel model)
+        {
+            await _genericAttributeService.SaveAttributeAsync(newsItem, NopNewsDefaults.AnnouncementBgAttribute, model.Bg);
+            await _genericAttributeService.SaveAttributeAsync(newsItem, NopNewsDefaults.AnnouncementIconAttribute, model.Icon);
+            await _genericAttributeService.SaveAttributeAsync(newsItem, NopNewsDefaults.AnnouncementSortOrderAttribute, model.SortOrder);
+        }
+
         #endregion
 
-        #region Methods        
+        #region Methods
 
         #region News items
 
@@ -160,6 +172,9 @@ namespace Nop.Web.Areas.Admin.Controllers
                 //Stores
                 await SaveStoreMappingsAsync(newsItem, model);
 
+                //Announcement card fields (background/icon/sort order)
+                await SaveAnnouncementAttributesAsync(newsItem, model);
+
                 _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.ContentManagement.News.NewsItems.Added"));
 
                 if (!continueEditing)
@@ -217,6 +232,9 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                 //stores
                 await SaveStoreMappingsAsync(newsItem, model);
+
+                //Announcement card fields (background/icon/sort order)
+                await SaveAnnouncementAttributesAsync(newsItem, model);
 
                 _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.ContentManagement.News.NewsItems.Updated"));
 

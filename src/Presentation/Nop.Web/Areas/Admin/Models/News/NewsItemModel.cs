@@ -75,6 +75,19 @@ namespace Nop.Web.Areas.Admin.Models.News
         [NopResourceDisplayName("Admin.ContentManagement.News.NewsItems.Fields.Published")]
         public bool Published { get; set; }
 
+        // Not NewsItem entity columns - stored as GenericAttributes (see
+        // NewsController/NewsModelFactory) so mobile-v2's Home announcement
+        // carousel (AnnouncementV2ApiController) has a background color/icon/manual
+        // sort order per item without a NewsItem schema migration.
+        [NopResourceDisplayName("Admin.ContentManagement.News.NewsItems.Fields.Bg")]
+        public string Bg { get; set; }
+
+        [NopResourceDisplayName("Admin.ContentManagement.News.NewsItems.Fields.Icon")]
+        public string Icon { get; set; }
+
+        [NopResourceDisplayName("Admin.ContentManagement.News.NewsItems.Fields.SortOrder")]
+        public int SortOrder { get; set; }
+
         public int ApprovedComments { get; set; }
 
         public int NotApprovedComments { get; set; }
