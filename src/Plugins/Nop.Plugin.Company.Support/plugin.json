@@ -2,7 +2,7 @@
   "Group": "Company",
   "FriendlyName": "Company Support Inquiries",
   "SystemName": "Company.Support",
-  "Version": "1.0",
+  "Version": "1.1",
   "SupportedVersions": [ "4.50" ],
   "Author": "Custom",
   "DisplayOrder": 3,
