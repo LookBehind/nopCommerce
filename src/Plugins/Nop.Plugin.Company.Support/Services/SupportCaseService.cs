@@ -47,6 +47,7 @@ namespace Nop.Plugin.Company.Support.Services
             int? statusId = null,
             int? categoryId = null,
             bool unassignedOnly = false,
+            int[] customerIds = null,
             int pageIndex = 0,
             int pageSize = int.MaxValue)
         {
@@ -58,6 +59,8 @@ namespace Nop.Plugin.Company.Support.Services
                     query = query.Where(c => c.CategoryId == categoryId.Value);
                 if (unassignedOnly)
                     query = query.Where(c => c.AssignedToCustomerId == null);
+                if (customerIds != null)
+                    query = query.Where(c => customerIds.Contains(c.CustomerId));
 
                 return query.OrderByDescending(c => c.CreatedOnUtc);
             }, pageIndex, pageSize);
@@ -200,6 +203,15 @@ namespace Nop.Plugin.Company.Support.Services
 
             supportCase.StaffLastReadUtc = DateTime.UtcNow;
             await UpdateSupportCaseAsync(supportCase);
+        }
+
+        public virtual async Task<int> GetUnreadByStaffCountAsync()
+        {
+            var cases = await _supportCaseRepository.GetAllAsync(query =>
+                query.Where(c => c.LastCustomerMessageUtc.HasValue &&
+                    (!c.StaffLastReadUtc.HasValue || c.LastCustomerMessageUtc > c.StaffLastReadUtc)));
+
+            return cases.Count;
         }
 
         private async Task NotifyCustomerAsync(SupportCase supportCase, string title, string body)

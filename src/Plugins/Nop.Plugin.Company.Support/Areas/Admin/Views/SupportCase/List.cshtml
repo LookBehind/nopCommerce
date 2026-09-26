@@ -29,6 +29,16 @@
                                 <div class="col-md-4">
                                     <div class="form-group row">
                                         <div class="col-md-4">
+                                            <nop-label asp-for="SearchCustomerEmailOrName" />
+                                        </div>
+                                        <div class="col-md-8">
+                                            <nop-editor asp-for="SearchCustomerEmailOrName" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group row">
+                                        <div class="col-md-4">
                                             <nop-label asp-for="SearchStatusId" />
                                         </div>
                                         <div class="col-md-8">
@@ -46,11 +56,15 @@
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="row">
                                 <div class="col-md-4">
                                     <div class="form-group row">
-                                        <div class="col-md-8 offset-md-4">
-                                            <nop-editor asp-for="SearchUnassignedOnly" />
+                                        <div class="col-md-4">
                                             <nop-label asp-for="SearchUnassignedOnly" />
+                                        </div>
+                                        <div class="col-md-8">
+                                            <nop-editor asp-for="SearchUnassignedOnly" />
                                         </div>
                                     </div>
                                 </div>
@@ -75,6 +89,7 @@
                             LengthMenu = Model.AvailablePageSizes,
                             Filters = new List<FilterParameter>
                             {
+                                new FilterParameter(nameof(Model.SearchCustomerEmailOrName)),
                                 new FilterParameter(nameof(Model.SearchStatusId)),
                                 new FilterParameter(nameof(Model.SearchCategoryId)),
                                 new FilterParameter(nameof(Model.SearchUnassignedOnly))
@@ -86,15 +101,13 @@
                                     Title = "#",
                                     Width = "60"
                                 },
-                                new ColumnProperty(nameof(SupportCaseModel.IsUnread))
-                                {
-                                    Title = "Unread",
-                                    Width = "80",
-                                    Render = new RenderBoolean()
-                                },
                                 new ColumnProperty(nameof(SupportCaseModel.CustomerName))
                                 {
                                     Title = "Customer"
+                                },
+                                new ColumnProperty(nameof(SupportCaseModel.Subject))
+                                {
+                                    Title = "Subject"
                                 },
                                 new ColumnProperty(nameof(SupportCaseModel.CategoryName))
                                 {
@@ -137,3 +150,24 @@
         </div>
     </div>
 </section>
+
+<style>
+    #support-cases-grid tbody tr.support-case-unread-row > td {
+        background-color: #fdecc8 !important;
+    }
+</style>
+
+<script>
+    // No RowCallback/CreatedRow hook exists on DataTablesModel (only Header/FooterCallback
+    // do) - coloring the whole row instead of a dedicated Unread column is done client-side
+    // by toggling a class per row on every draw, reading the IsUnread field that's still on
+    // SupportCaseModel/serialized in the grid's JSON even though it has no column of its own.
+    $(document).ready(function () {
+        $('#support-cases-grid').on('draw.dt', function () {
+            $('#support-cases-grid').DataTable().rows().every(function () {
+                var data = this.data();
+                $(this.node()).toggleClass('support-case-unread-row', data.IsUnread === true);
+            });
+        });
+    });
+</script>

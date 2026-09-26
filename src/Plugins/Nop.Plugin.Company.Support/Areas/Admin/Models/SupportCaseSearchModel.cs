@@ -13,6 +13,9 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Models
             AvailableCategories = new List<SelectListItem>();
         }
 
+        [NopResourceDisplayName("Admin.Support.Cases.List.SearchCustomer")]
+        public string SearchCustomerEmailOrName { get; set; }
+
         [NopResourceDisplayName("Admin.Support.Cases.List.SearchStatus")]
         public int SearchStatusId { get; set; }
 

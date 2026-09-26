@@ -78,10 +78,13 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Factories
             if (searchModel == null)
                 throw new ArgumentNullException(nameof(searchModel));
 
+            var customerIds = await ResolveCustomerIdsAsync(searchModel.SearchCustomerEmailOrName);
+
             var cases = await _supportCaseService.SearchSupportCasesAsync(
                 statusId: searchModel.SearchStatusId > 0 ? searchModel.SearchStatusId : null,
                 categoryId: searchModel.SearchCategoryId > 0 ? searchModel.SearchCategoryId : null,
                 unassignedOnly: searchModel.SearchUnassignedOnly,
+                customerIds: customerIds,
                 pageIndex: searchModel.Page - 1,
                 pageSize: searchModel.PageSize);
 
@@ -89,6 +92,45 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Factories
                 cases.SelectAwait(async supportCase => await PrepareSupportCaseModelAsync(new SupportCaseModel(), supportCase)));
 
             return model;
+        }
+
+        /// <summary>
+        /// Resolves a free-text "name or email" search term into matching customer ids - OR'd
+        /// across email/first name/last name (each independently, via .Contains matching, same
+        /// as ICustomerService's own email/firstName/lastName params), plus a "First Last" (and
+        /// reversed "Last First") combo attempt for two-word input, since GetAllCustomersAsync
+        /// only ANDs its own params together and can't do a single free-text OR search itself.
+        /// Returns null (no filter) for a blank term, or a possibly-empty array (a real "matched
+        /// nobody" filter) otherwise.
+        /// </summary>
+        private async Task<int[]> ResolveCustomerIdsAsync(string term)
+        {
+            if (string.IsNullOrWhiteSpace(term))
+                return null;
+
+            term = term.Trim();
+            var ids = new HashSet<int>();
+
+            async Task AddMatches(string email = null, string firstName = null, string lastName = null)
+            {
+                var matches = await _customerService.GetAllCustomersAsync(
+                    email: email, firstName: firstName, lastName: lastName, pageSize: int.MaxValue);
+                foreach (var customer in matches)
+                    ids.Add(customer.Id);
+            }
+
+            await AddMatches(email: term);
+            await AddMatches(firstName: term);
+            await AddMatches(lastName: term);
+
+            var words = term.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length > 1)
+            {
+                await AddMatches(firstName: words[0], lastName: string.Join(' ', words.Skip(1)));
+                await AddMatches(firstName: words[^1], lastName: string.Join(' ', words.Take(words.Length - 1)));
+            }
+
+            return ids.ToArray();
         }
 
         public virtual async Task<SupportCaseModel> PrepareSupportCaseModelAsync(SupportCaseModel model, SupportCase supportCase)

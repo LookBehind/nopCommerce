@@ -28,7 +28,13 @@
                 </text>
             }
 
-            <p> @Model.Title</p>
+            <p>
+                @Model.Title
+                @if (!string.IsNullOrEmpty(Model.Badge))
+                {
+                    <span class="right badge badge-@(string.IsNullOrEmpty(Model.BadgeStyle) ? "danger" : Model.BadgeStyle)">@Model.Badge</span>
+                }
+            </p>
 
         </a>
     </li>

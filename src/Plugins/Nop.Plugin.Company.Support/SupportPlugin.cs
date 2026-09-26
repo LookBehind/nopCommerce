@@ -5,6 +5,7 @@ using Nop.Core;
 using Nop.Core.Domain.Security;
 using Nop.Data;
 using Nop.Plugin.Company.Support.Security;
+using Nop.Plugin.Company.Support.Services;
 using Nop.Services.Plugins;
 using Nop.Services.Security;
 using Nop.Web.Framework.Menu;
@@ -20,15 +21,18 @@ namespace Nop.Plugin.Company.Support
         private readonly IWebHelper _webHelper;
         private readonly IPermissionService _permissionService;
         private readonly IRepository<PermissionRecord> _permissionRecordRepository;
+        private readonly ISupportCaseService _supportCaseService;
 
         public SupportPlugin(
             IWebHelper webHelper,
             IPermissionService permissionService,
-            IRepository<PermissionRecord> permissionRecordRepository)
+            IRepository<PermissionRecord> permissionRecordRepository,
+            ISupportCaseService supportCaseService)
         {
             _webHelper = webHelper;
             _permissionService = permissionService;
             _permissionRecordRepository = permissionRecordRepository;
+            _supportCaseService = supportCaseService;
         }
 
         public override string GetConfigurationPageUrl()
@@ -68,6 +72,8 @@ namespace Nop.Plugin.Company.Support
             if (!await _permissionService.AuthorizeAsync(SupportPermissionProvider.ManageSupportCases))
                 return;
 
+            var unreadCount = await _supportCaseService.GetUnreadByStaffCountAsync();
+
             var node = new SiteMapNode
             {
                 SystemName = "Company.Support.Cases",
@@ -75,7 +81,9 @@ namespace Nop.Plugin.Company.Support
                 Url = $"{_webHelper.GetStoreLocation()}Admin/SupportCase/List",
                 IconClass = "far fa-life-ring",
                 Visible = true,
-                RouteValues = new RouteValueDictionary { { "area", "Admin" } }
+                RouteValues = new RouteValueDictionary { { "area", "Admin" } },
+                Badge = unreadCount > 0 ? unreadCount.ToString() : null,
+                BadgeStyle = "danger"
             };
 
             var dashboardIndex = rootNode.ChildNodes

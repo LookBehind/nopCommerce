@@ -16,12 +16,16 @@ namespace Nop.Plugin.Company.Support.Services
         Task<IList<SupportCase>> GetSupportCasesByCustomerIdAsync(int customerId, int storeId);
 
         /// <summary>
-        /// Admin queue, filterable and paged.
+        /// Admin queue, filterable and paged. customerIds, when non-null, restricts results to
+        /// those specific customers (an empty array is a valid "matched nobody" filter, not
+        /// "no filter") - resolved by the caller from a free-text name/email search since this
+        /// service doesn't know about Customer records.
         /// </summary>
         Task<IPagedList<SupportCase>> SearchSupportCasesAsync(
             int? statusId = null,
             int? categoryId = null,
             bool unassignedOnly = false,
+            int[] customerIds = null,
             int pageIndex = 0,
             int pageSize = int.MaxValue);
 
@@ -71,5 +75,11 @@ namespace Nop.Plugin.Company.Support.Services
         /// shared across all staff, same single-owner assumption as AssignedToCustomerId).
         /// </summary>
         Task MarkReadByStaffAsync(int supportCaseId);
+
+        /// <summary>
+        /// Count of cases with unread-by-staff customer activity - backs the red badge on the
+        /// admin sidebar's "Support Cases" menu item.
+        /// </summary>
+        Task<int> GetUnreadByStaffCountAsync();
     }
 }

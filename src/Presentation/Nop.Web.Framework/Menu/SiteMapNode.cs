@@ -67,5 +67,17 @@ namespace Nop.Web.Framework.Menu
         /// Gets or sets a value indicating whether to open url in new tab (window) or not
         /// </summary>
         public bool OpenUrlInNewTab { get; set; }
+
+        /// <summary>
+        /// Gets or sets an optional short badge shown at the right edge of the menu item
+        /// (e.g. an unread/pending count). Null or empty renders no badge.
+        /// </summary>
+        public string Badge { get; set; }
+
+        /// <summary>
+        /// Gets or sets the Bootstrap contextual style for <see cref="Badge"/> (e.g. "danger",
+        /// "warning", "info"). Defaults to "danger" when a Badge is set but this is left null.
+        /// </summary>
+        public string BadgeStyle { get; set; }
     }
 }
