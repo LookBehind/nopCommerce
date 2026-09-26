@@ -92,7 +92,7 @@
                                 new FilterParameter(nameof(Model.SearchCustomerEmailOrName)),
                                 new FilterParameter(nameof(Model.SearchStatusId)),
                                 new FilterParameter(nameof(Model.SearchCategoryId)),
-                                new FilterParameter(nameof(Model.SearchUnassignedOnly))
+                                new FilterParameter(nameof(Model.SearchUnassignedOnly), typeof(bool))
                             },
                             ColumnCollection = new List<ColumnProperty>
                             {
