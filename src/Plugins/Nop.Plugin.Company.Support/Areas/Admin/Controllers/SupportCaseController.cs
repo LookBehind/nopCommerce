@@ -70,6 +70,10 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Controllers
             if (supportCase == null)
                 return RedirectToAction("List");
 
+            // Opening the case is what "read" means for staff (shared across all staff, same
+            // single-owner assumption as self-assign).
+            await _supportCaseService.MarkReadByStaffAsync(id);
+
             var model = await _supportCaseModelFactory.PrepareSupportCaseModelAsync(new SupportCaseModel(), supportCase);
 
             return View("~/Plugins/Company.Support/Areas/Admin/Views/SupportCase/Edit.cshtml", model);

@@ -60,5 +60,16 @@ namespace Nop.Plugin.Company.Support.Services
         /// they watch the admin queue instead.
         /// </summary>
         Task<SupportCaseMessage> AddMessageAsync(int supportCaseId, int authorCustomerId, bool isStaff, string body);
+
+        /// <summary>
+        /// Marks a case as read by its own customer (called whenever they view its detail).
+        /// </summary>
+        Task MarkReadByCustomerAsync(int supportCaseId);
+
+        /// <summary>
+        /// Marks a case as read by staff (called whenever the admin Edit page is opened -
+        /// shared across all staff, same single-owner assumption as AssignedToCustomerId).
+        /// </summary>
+        Task MarkReadByStaffAsync(int supportCaseId);
     }
 }

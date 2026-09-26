@@ -112,6 +112,7 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Factories
                 : supportCase.Category.ToString();
             model.CreatedOnUtc = supportCase.CreatedOnUtc;
             model.UpdatedOnUtc = supportCase.UpdatedOnUtc;
+            model.IsUnread = supportCase.IsUnreadByStaff();
 
             var customer = await _customerService.GetCustomerByIdAsync(supportCase.CustomerId);
             if (customer != null)

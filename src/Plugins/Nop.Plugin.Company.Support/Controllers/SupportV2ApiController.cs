@@ -36,6 +36,7 @@ namespace Nop.Plugin.Company.Support.Controllers
             public string Description { get; set; }
             public string Status { get; set; }
             public DateTime CreatedOnUtc { get; set; }
+            public bool IsUnread { get; set; }
             public List<SupportCaseMessageV2Model> Messages { get; set; }
         }
 
@@ -81,6 +82,9 @@ namespace Nop.Plugin.Company.Support.Controllers
             var supportCase = await supportCaseService.GetSupportCaseByIdAsync(id);
             if (supportCase == null || supportCase.CustomerId != customer.Id)
                 return NotFound();
+
+            // Viewing the detail screen is what "read" means for the customer side.
+            await supportCaseService.MarkReadByCustomerAsync(id);
 
             return Ok(await MapAsync(supportCase));
         }
@@ -167,6 +171,7 @@ namespace Nop.Plugin.Company.Support.Controllers
                 Description = supportCase.Description,
                 Status = supportCase.Status.ToString(),
                 CreatedOnUtc = supportCase.CreatedOnUtc,
+                IsUnread = supportCase.IsUnreadByCustomer(),
                 Messages = messages.Select(m => new SupportCaseMessageV2Model
                 {
                     Id = m.Id,

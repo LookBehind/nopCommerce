@@ -68,6 +68,10 @@ namespace Nop.Plugin.Company.Support.Services
             supportCase.Status = SupportCaseStatus.Pending;
             supportCase.CreatedOnUtc = DateTime.UtcNow;
             supportCase.UpdatedOnUtc = supportCase.CreatedOnUtc;
+            // The initial Description counts as the customer's first "message" for
+            // unread-by-staff purposes - a brand new case should show unread until staff
+            // open it, same as any later customer reply would.
+            supportCase.LastCustomerMessageUtc = supportCase.CreatedOnUtc;
 
             await _supportCaseRepository.InsertAsync(supportCase);
 
@@ -157,10 +161,16 @@ namespace Nop.Plugin.Company.Support.Services
             };
             await _messageRepository.InsertAsync(message);
 
-            if (isStaff)
+            var supportCase = await GetSupportCaseByIdAsync(supportCaseId);
+            if (supportCase != null)
             {
-                var supportCase = await GetSupportCaseByIdAsync(supportCaseId);
-                if (supportCase != null)
+                if (isStaff)
+                    supportCase.LastStaffMessageUtc = message.CreatedOnUtc;
+                else
+                    supportCase.LastCustomerMessageUtc = message.CreatedOnUtc;
+                await UpdateSupportCaseAsync(supportCase);
+
+                if (isStaff)
                 {
                     await NotifyCustomerAsync(
                         supportCase,
@@ -170,6 +180,26 @@ namespace Nop.Plugin.Company.Support.Services
             }
 
             return message;
+        }
+
+        public virtual async Task MarkReadByCustomerAsync(int supportCaseId)
+        {
+            var supportCase = await GetSupportCaseByIdAsync(supportCaseId);
+            if (supportCase == null)
+                return;
+
+            supportCase.CustomerLastReadUtc = DateTime.UtcNow;
+            await UpdateSupportCaseAsync(supportCase);
+        }
+
+        public virtual async Task MarkReadByStaffAsync(int supportCaseId)
+        {
+            var supportCase = await GetSupportCaseByIdAsync(supportCaseId);
+            if (supportCase == null)
+                return;
+
+            supportCase.StaffLastReadUtc = DateTime.UtcNow;
+            await UpdateSupportCaseAsync(supportCase);
         }
 
         private async Task NotifyCustomerAsync(SupportCase supportCase, string title, string body)

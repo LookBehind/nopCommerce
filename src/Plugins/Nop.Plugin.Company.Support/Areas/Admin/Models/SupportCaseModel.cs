@@ -47,6 +47,13 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Models
 
         public DateTime UpdatedOnUtc { get; set; }
 
+        /// <summary>
+        /// Whether staff haven't seen the case's latest customer activity yet - used for the
+        /// unread indicator on the List grid. Always false by the time the Edit page itself
+        /// renders, since opening it marks the case read.
+        /// </summary>
+        public bool IsUnread { get; set; }
+
         public IList<SelectListItem> AvailableStatuses { get; set; }
 
         public IList<SupportCaseStatusHistoryModel> StatusHistory { get; set; }
