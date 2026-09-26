@@ -12,6 +12,7 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Models
         {
             AvailableStatuses = new List<SelectListItem>();
             StatusHistory = new List<SupportCaseStatusHistoryModel>();
+            Messages = new List<SupportCaseMessageModel>();
         }
 
         [NopResourceDisplayName("Admin.Support.Cases.Fields.Customer")]
@@ -49,6 +50,14 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Models
         public IList<SelectListItem> AvailableStatuses { get; set; }
 
         public IList<SupportCaseStatusHistoryModel> StatusHistory { get; set; }
+
+        public IList<SupportCaseMessageModel> Messages { get; set; }
+
+        /// <summary>
+        /// Bound from the reply textarea on submit - not part of the case itself, just the
+        /// draft text of a new staff message (see SupportCaseController.AddMessage).
+        /// </summary>
+        public string NewMessageBody { get; set; }
     }
 
     public partial record SupportCaseStatusHistoryModel
@@ -61,5 +70,16 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Models
 
         [NopResourceDisplayName("Admin.Support.Cases.StatusHistory.Duration")]
         public string Duration { get; set; }
+    }
+
+    public partial record SupportCaseMessageModel
+    {
+        public string AuthorName { get; set; }
+
+        public bool IsStaff { get; set; }
+
+        public string Body { get; set; }
+
+        public DateTime CreatedOnUtc { get; set; }
     }
 }

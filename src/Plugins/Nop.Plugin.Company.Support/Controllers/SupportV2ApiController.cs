@@ -36,6 +36,15 @@ namespace Nop.Plugin.Company.Support.Controllers
             public string Description { get; set; }
             public string Status { get; set; }
             public DateTime CreatedOnUtc { get; set; }
+            public List<SupportCaseMessageV2Model> Messages { get; set; }
+        }
+
+        public class SupportCaseMessageV2Model
+        {
+            public int Id { get; set; }
+            public bool IsStaff { get; set; }
+            public string Body { get; set; }
+            public DateTime CreatedOnUtc { get; set; }
         }
 
         public class CreateSupportCaseV2Model
@@ -44,6 +53,11 @@ namespace Nop.Plugin.Company.Support.Controllers
             public int? VendorId { get; set; }
             public string Subject { get; set; }
             public string Description { get; set; }
+        }
+
+        public class CreateSupportCaseMessageV2Model
+        {
+            public string Body { get; set; }
         }
 
         [HttpGet("cases")]
@@ -117,6 +131,22 @@ namespace Nop.Plugin.Company.Support.Controllers
             return Ok(new { success = true, supportCase = await MapAsync(supportCase) });
         }
 
+        [HttpPost("cases/{id:int}/messages")]
+        public async Task<IActionResult> CreateMessage(int id, [FromBody] CreateSupportCaseMessageV2Model model)
+        {
+            var customer = await workContext.GetCurrentCustomerAsync();
+            var supportCase = await supportCaseService.GetSupportCaseByIdAsync(id);
+            if (supportCase == null || supportCase.CustomerId != customer.Id)
+                return NotFound();
+
+            if (string.IsNullOrWhiteSpace(model?.Body))
+                return Ok(new { success = false, message = "Message can't be empty." });
+
+            await supportCaseService.AddMessageAsync(id, customer.Id, isStaff: false, model.Body.Trim());
+
+            return Ok(new { success = true, supportCase = await MapAsync(supportCase) });
+        }
+
         private async Task<SupportCaseV2Model> MapAsync(SupportCase supportCase)
         {
             string vendorName = null;
@@ -126,6 +156,8 @@ namespace Nop.Plugin.Company.Support.Controllers
                 vendorName = vendor?.Name;
             }
 
+            var messages = await supportCaseService.GetMessagesAsync(supportCase.Id);
+
             return new SupportCaseV2Model
             {
                 Id = supportCase.Id,
@@ -134,7 +166,14 @@ namespace Nop.Plugin.Company.Support.Controllers
                 Subject = supportCase.Subject,
                 Description = supportCase.Description,
                 Status = supportCase.Status.ToString(),
-                CreatedOnUtc = supportCase.CreatedOnUtc
+                CreatedOnUtc = supportCase.CreatedOnUtc,
+                Messages = messages.Select(m => new SupportCaseMessageV2Model
+                {
+                    Id = m.Id,
+                    IsStaff = m.IsStaff,
+                    Body = m.Body,
+                    CreatedOnUtc = m.CreatedOnUtc
+                }).ToList()
             };
         }
     }

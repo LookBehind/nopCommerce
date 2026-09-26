@@ -100,6 +100,25 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Controllers
         }
 
         [HttpPost]
+        public virtual async Task<IActionResult> AddMessage(int id, string newMessageBody)
+        {
+            if (!await _permissionService.AuthorizeAsync(SupportPermissionProvider.ManageSupportCases))
+                return AccessDeniedView();
+
+            var supportCase = await _supportCaseService.GetSupportCaseByIdAsync(id);
+            if (supportCase == null)
+                return RedirectToAction("List");
+
+            if (!string.IsNullOrWhiteSpace(newMessageBody))
+            {
+                var customer = await _workContext.GetCurrentCustomerAsync();
+                await _supportCaseService.AddMessageAsync(supportCase.Id, customer.Id, isStaff: true, newMessageBody.Trim());
+            }
+
+            return RedirectToAction("Edit", new { id = supportCase.Id });
+        }
+
+        [HttpPost]
         public virtual async Task<IActionResult> AssignToMe(int id)
         {
             if (!await _permissionService.AuthorizeAsync(SupportPermissionProvider.ManageSupportCases))

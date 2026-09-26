@@ -156,6 +156,34 @@ namespace Nop.Plugin.Company.Support.Areas.Admin.Factories
                 });
             }
 
+            var messages = await _supportCaseService.GetMessagesAsync(supportCase.Id);
+            var authorNames = new Dictionary<int, string>();
+            foreach (var message in messages)
+            {
+                if (!authorNames.TryGetValue(message.AuthorCustomerId, out var authorName))
+                {
+                    var author = await _customerService.GetCustomerByIdAsync(message.AuthorCustomerId);
+                    if (author == null)
+                    {
+                        authorName = "Unknown";
+                    }
+                    else
+                    {
+                        var authorFullName = await _customerService.GetCustomerFullNameAsync(author);
+                        authorName = string.IsNullOrWhiteSpace(authorFullName) ? author.Email : authorFullName;
+                    }
+                    authorNames[message.AuthorCustomerId] = authorName;
+                }
+
+                model.Messages.Add(new SupportCaseMessageModel
+                {
+                    AuthorName = authorName,
+                    IsStaff = message.IsStaff,
+                    Body = message.Body,
+                    CreatedOnUtc = message.CreatedOnUtc
+                });
+            }
+
             return model;
         }
 

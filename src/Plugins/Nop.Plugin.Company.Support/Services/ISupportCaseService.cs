@@ -48,5 +48,17 @@ namespace Nop.Plugin.Company.Support.Services
         /// Full status timeline for one case, oldest first.
         /// </summary>
         Task<IList<SupportCaseStatusHistory>> GetStatusHistoryAsync(int supportCaseId);
+
+        /// <summary>
+        /// Full reply thread for one case, oldest first.
+        /// </summary>
+        Task<IList<SupportCaseMessage>> GetMessagesAsync(int supportCaseId);
+
+        /// <summary>
+        /// Appends a message to a case's reply thread. A staff reply (isStaff: true) pushes a
+        /// notification to the case's own customer; a customer reply doesn't notify staff -
+        /// they watch the admin queue instead.
+        /// </summary>
+        Task<SupportCaseMessage> AddMessageAsync(int supportCaseId, int authorCustomerId, bool isStaff, string body);
     }
 }

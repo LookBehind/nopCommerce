@@ -13,15 +13,18 @@ namespace Nop.Plugin.Company.Support.Services
     {
         private readonly IRepository<SupportCase> _supportCaseRepository;
         private readonly IRepository<SupportCaseStatusHistory> _statusHistoryRepository;
+        private readonly IRepository<SupportCaseMessage> _messageRepository;
         private readonly IPushNotificationService _pushNotificationService;
 
         public SupportCaseService(
             IRepository<SupportCase> supportCaseRepository,
             IRepository<SupportCaseStatusHistory> statusHistoryRepository,
+            IRepository<SupportCaseMessage> messageRepository,
             IPushNotificationService pushNotificationService)
         {
             _supportCaseRepository = supportCaseRepository;
             _statusHistoryRepository = statusHistoryRepository;
+            _messageRepository = messageRepository;
             _pushNotificationService = pushNotificationService;
         }
 
@@ -116,16 +119,10 @@ namespace Nop.Plugin.Company.Support.Services
             // Only staff (via the admin Edit page) ever call this today, so the case's own
             // customer is always someone other than changedByCustomerId - safe to always notify.
             var statusText = SupportCaseDisplayNames.Status.TryGetValue(newStatus, out var text) ? text : newStatus.ToString();
-            await _pushNotificationService.SendNotificationAsync(
-                supportCase.CustomerId,
-                NotificationType.SupportCaseUpdate,
+            await NotifyCustomerAsync(
+                supportCase,
                 "Support case update",
-                $"Your support case \"{supportCase.Subject}\" is now {statusText}.",
-                new Dictionary<string, string>
-                {
-                    { "caseId", supportCase.Id.ToString() },
-                    { "url", $"Support/{supportCase.Id}" }
-                });
+                $"Your support case \"{supportCase.Subject}\" is now {statusText}.");
         }
 
         public virtual async Task<IList<SupportCaseStatusHistory>> GetStatusHistoryAsync(int supportCaseId)
@@ -136,6 +133,57 @@ namespace Nop.Plugin.Company.Support.Services
                     .Where(h => h.SupportCaseId == supportCaseId)
                     .OrderBy(h => h.EnteredOnUtc);
             });
+        }
+
+        public virtual async Task<IList<SupportCaseMessage>> GetMessagesAsync(int supportCaseId)
+        {
+            return await _messageRepository.GetAllAsync(query =>
+            {
+                return query
+                    .Where(m => m.SupportCaseId == supportCaseId)
+                    .OrderBy(m => m.CreatedOnUtc);
+            });
+        }
+
+        public virtual async Task<SupportCaseMessage> AddMessageAsync(int supportCaseId, int authorCustomerId, bool isStaff, string body)
+        {
+            var message = new SupportCaseMessage
+            {
+                SupportCaseId = supportCaseId,
+                AuthorCustomerId = authorCustomerId,
+                IsStaff = isStaff,
+                Body = body,
+                CreatedOnUtc = DateTime.UtcNow
+            };
+            await _messageRepository.InsertAsync(message);
+
+            if (isStaff)
+            {
+                var supportCase = await GetSupportCaseByIdAsync(supportCaseId);
+                if (supportCase != null)
+                {
+                    await NotifyCustomerAsync(
+                        supportCase,
+                        "New reply on your support case",
+                        body);
+                }
+            }
+
+            return message;
+        }
+
+        private async Task NotifyCustomerAsync(SupportCase supportCase, string title, string body)
+        {
+            await _pushNotificationService.SendNotificationAsync(
+                supportCase.CustomerId,
+                NotificationType.SupportCaseUpdate,
+                title,
+                body,
+                new Dictionary<string, string>
+                {
+                    { "caseId", supportCase.Id.ToString() },
+                    { "url", $"Support/{supportCase.Id}" }
+                });
         }
     }
 }
