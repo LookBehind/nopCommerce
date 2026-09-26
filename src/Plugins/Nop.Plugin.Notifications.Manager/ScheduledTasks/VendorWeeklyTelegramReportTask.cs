@@ -42,6 +42,10 @@ public class VendorWeeklyTelegramReportTask : IScheduleTask
     // Telegram flood control: pace sequential sends into the same chat.
     private static readonly TimeSpan SEND_PACING = TimeSpan.FromSeconds(1.2);
 
+    // The primary/allowance report. Every company always gets this one (even empty). Any OTHER
+    // payment method that has orders in the week gets its own separate CSV - see ExecuteAsync.
+    private const string MAIN_PAYMENT_METHOD = "Payments.CheckMoneyOrder";
+
     private readonly IRepository<Order> _orderRepository;
     private readonly IRepository<OrderItem> _orderItemRepository;
     private readonly IRepository<Product> _productRepository;
@@ -111,7 +115,7 @@ public class VendorWeeklyTelegramReportTask : IScheduleTask
             join p in _productRepository.Table on oi.ProductId equals p.Id
             join v in _vendorRepository.Table on p.VendorId equals v.Id
             where !o.Deleted && o.OrderStatusId != 40 && !v.Deleted && o.CreatedOnUtc >= createdCutoffUtc && o.CompanyId != null
-            select new { CompanyId = o.CompanyId.Value, VendorName = v.Name, oi.PriceInclTax, o.ScheduleDate };
+            select new { CompanyId = o.CompanyId.Value, VendorName = v.Name, oi.PriceInclTax, o.ScheduleDate, o.PaymentMethodSystemName };
 
         var rows = await query.ToListAsync();
         var rowsByCompany = rows.ToLookup(r => r.CompanyId);
@@ -126,8 +130,12 @@ public class VendorWeeklyTelegramReportTask : IScheduleTask
             var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, companyTimeZone);
             var mondayOffset = ((int)nowLocal.DayOfWeek + 6) % 7; // DayOfWeek.Monday=1 ... Sunday=0
             var weekStartLocal = nowLocal.Date.AddDays(-mondayOffset);
+            var today = nowLocal.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-            var totals = new SortedDictionary<string, decimal[]>(StringComparer.OrdinalIgnoreCase);
+            // Per payment method: vendor -> [Mon..Sun] totals. The raw PaymentMethodSystemName is the
+            // bucket key so each method produces its own CSV; blank/null-method orders bucket under an
+            // explicit "Unspecified" group so they can never hide inside the allowance report.
+            var totalsByMethod = new Dictionary<string, SortedDictionary<string, decimal[]>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var row in rowsByCompany[company.Id])
             {
@@ -139,6 +147,14 @@ public class VendorWeeklyTelegramReportTask : IScheduleTask
                 if (dayIndex < 0 || dayIndex > 6)
                     continue;
 
+                var methodKey = string.IsNullOrWhiteSpace(row.PaymentMethodSystemName) ? string.Empty : row.PaymentMethodSystemName;
+
+                if (!totalsByMethod.TryGetValue(methodKey, out var totals))
+                {
+                    totals = new SortedDictionary<string, decimal[]>(StringComparer.OrdinalIgnoreCase);
+                    totalsByMethod[methodKey] = totals;
+                }
+
                 if (!totals.TryGetValue(row.VendorName, out var dayTotals))
                 {
                     dayTotals = new decimal[7];
@@ -148,24 +164,68 @@ public class VendorWeeklyTelegramReportTask : IScheduleTask
                 dayTotals[dayIndex] += row.PriceInclTax;
             }
 
-            var csv = BuildCsv(totals);
-            var today = nowLocal.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-
-            if (sentCount > 0)
-                await System.Threading.Tasks.Task.Delay(SEND_PACING);
-
-            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv)))
-            {
-                await botClient.SendDocument(
-                    chatId: chatId,
-                    document: new InputFileStream(stream, $"report_{SanitizeFileName(company.Name)}_{today}.csv"),
-                    caption: $"({company.Name}) Daily Report for {today}");
-            }
-
+            // 1) Main report: allowance (CheckMoneyOrder) ONLY. Always sent, even when empty, so the
+            //    daily cadence accountants rely on never silently disappears.
+            totalsByMethod.TryGetValue(MAIN_PAYMENT_METHOD, out var mainTotals);
+            await SendMethodReportAsync(botClient, chatId, company, MAIN_PAYMENT_METHOD,
+                mainTotals ?? new SortedDictionary<string, decimal[]>(StringComparer.OrdinalIgnoreCase),
+                today, sentCount);
             sentCount++;
+
+            // 2) One separate, clearly-named CSV per OTHER payment method that actually has orders.
+            foreach (var method in totalsByMethod.Keys
+                         .Where(k => !string.Equals(k, MAIN_PAYMENT_METHOD, StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+            {
+                await SendMethodReportAsync(botClient, chatId, company, method, totalsByMethod[method], today, sentCount);
+                sentCount++;
+            }
         }
 
-        await _logger.InformationAsync($"Vendor weekly Telegram report: sent {sentCount} company report(s) for store '{store.Name}'.");
+        await _logger.InformationAsync($"Vendor weekly Telegram report: sent {sentCount} report file(s) for store '{store.Name}'.");
+    }
+
+    /// <summary>
+    /// Builds and sends one payment-method CSV for a company. Filename and caption both carry the
+    /// human-readable method label so accountants can never mistake an allowance report for a card
+    /// (or other) report: "{Company} - {Method} - {date}.csv".
+    /// </summary>
+    private async System.Threading.Tasks.Task SendMethodReportAsync(
+        TelegramBotClient botClient, ChatId chatId, Company company, string paymentMethodSystemName,
+        SortedDictionary<string, decimal[]> totals, string today, int sentSoFar)
+    {
+        if (sentSoFar > 0)
+            await System.Threading.Tasks.Task.Delay(SEND_PACING);
+
+        var label = PaymentMethodLabel(paymentMethodSystemName);
+        var csv = BuildCsv(totals);
+        var fileName = SanitizeFileName($"{company.Name} - {label} - {today}") + ".csv";
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        await botClient.SendDocument(
+            chatId: chatId,
+            document: new InputFileStream(stream, fileName),
+            caption: $"({company.Name}) {label} - daily report {today}");
+    }
+
+    /// <summary>
+    /// Maps a stored PaymentMethodSystemName to an accountant-facing label. Known methods get an
+    /// explicit descriptive name; anything else falls back to the system name minus its "Payments."
+    /// prefix; blank/null (orders with no recorded method) becomes "Unspecified payment method".
+    /// </summary>
+    private static string PaymentMethodLabel(string systemName)
+    {
+        if (string.IsNullOrWhiteSpace(systemName))
+            return "Unspecified payment method";
+
+        return systemName switch
+        {
+            "Payments.CheckMoneyOrder" => "Allowance (CheckMoneyOrder)",
+            "Payments.AmeriaVPos" => "Card (AmeriaVPos)",
+            _ => systemName.StartsWith("Payments.", StringComparison.OrdinalIgnoreCase)
+                ? systemName.Substring("Payments.".Length)
+                : systemName
+        };
     }
 
     private static TimeZoneInfo ResolveTimeZone(string companyTimeZone)
