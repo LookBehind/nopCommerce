@@ -48,6 +48,8 @@ WORKDIR /src/Plugins/Nop.Plugin.Company.Insights
 RUN dotnet build Nop.Plugin.Company.Insights.csproj -c Release
 WORKDIR /src/Plugins/Nop.Plugin.Company.Support
 RUN dotnet build Nop.Plugin.Company.Support.csproj -c Release
+WORKDIR /src/Plugins/Nop.Plugin.Company.AiChat
+RUN dotnet build Nop.Plugin.Company.AiChat.csproj -c Release
 
 # publish project
 WORKDIR /src/Presentation/Nop.Web
