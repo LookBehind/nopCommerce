@@ -6,10 +6,12 @@ using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Customers;
 using Nop.Core.Html;
+using Nop.Data;
 using Nop.Services.Catalog;
 using Nop.Services.Customers;
 using Nop.Services.Helpers;
 using Nop.Services.Localization;
+using Nop.Services.Media;
 using Nop.Services.Stores;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Catalog;
@@ -34,6 +36,8 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly IReviewTypeService _reviewTypeService;
         private readonly IStoreService _storeService;
         private readonly IWorkContext _workContext;
+        private readonly IPictureService _pictureService;
+        private readonly IRepository<ProductReviewPicture> _productReviewPictureRepository;
 
         #endregion
 
@@ -47,7 +51,9 @@ namespace Nop.Web.Areas.Admin.Factories
             IProductService productService,
             IReviewTypeService reviewTypeService,
             IStoreService storeService,
-            IWorkContext workContext)
+            IWorkContext workContext,
+            IPictureService pictureService,
+            IRepository<ProductReviewPicture> productReviewPictureRepository)
         {
             _catalogSettings = catalogSettings;
             _baseAdminModelFactory = baseAdminModelFactory;
@@ -58,6 +64,8 @@ namespace Nop.Web.Areas.Admin.Factories
             _reviewTypeService = reviewTypeService;
             _storeService = storeService;
             _workContext = workContext;
+            _pictureService = pictureService;
+            _productReviewPictureRepository = productReviewPictureRepository;
         }
 
         #endregion
@@ -208,6 +216,16 @@ namespace Nop.Web.Areas.Admin.Factories
                     model.TriagedOn = await _dateTimeHelper.ConvertToUserTimeAsync(productReview.TriagedOnUtc.Value, DateTimeKind.Utc);
                 if (productReview.TriagedByCustomerId.HasValue)
                     model.TriagedByCustomerInfo = (await _customerService.GetCustomerByIdAsync(productReview.TriagedByCustomerId.Value))?.Email;
+
+                //MySnacks: photos attached via the mobile app (api/catalog/v2/add-product-reviews)
+                var reviewPictures = await _productReviewPictureRepository.GetAllAsync(query =>
+                    query.Where(p => p.ProductReviewId == productReview.Id).OrderBy(p => p.DisplayOrder));
+                foreach (var reviewPicture in reviewPictures)
+                {
+                    var url = await _pictureService.GetPictureUrlAsync(reviewPicture.PictureId);
+                    if (!string.IsNullOrEmpty(url))
+                        model.PhotoUrls.Add(url);
+                }
 
                 if (!excludeProperties)
                 {

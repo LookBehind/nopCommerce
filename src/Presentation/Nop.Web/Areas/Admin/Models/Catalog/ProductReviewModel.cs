@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Nop.Web.Framework.Models;
 using Nop.Web.Framework.Mvc.ModelBinding;
 
@@ -60,6 +61,10 @@ namespace Nop.Web.Areas.Admin.Models.Catalog
         public string TriagedByCustomerInfo { get; set; }
 
         public DateTime? TriagedOn { get; set; }
+
+        //MySnacks: photos attached via the mobile app (api/catalog/v2/add-product-reviews),
+        //ProductReviewPicture - resolved to full picture URLs, empty when none attached.
+        public IList<string> PhotoUrls { get; set; } = new List<string>();
 
         //vendor
         public bool IsLoggedInAsVendor { get; set; }
