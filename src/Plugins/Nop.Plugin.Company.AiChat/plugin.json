@@ -1,0 +1,11 @@
+{
+  "Group": "Company",
+  "FriendlyName": "Company AI Chat Assistant",
+  "SystemName": "Company.AiChat",
+  "Version": "1.0",
+  "SupportedVersions": [ "4.50" ],
+  "Author": "Custom",
+  "DisplayOrder": 4,
+  "FileName": "Nop.Plugin.Company.AiChat.dll",
+  "Description": "mobile-v2's AI meal assistant: a chat screen backed by the self-hosted Qwen3 model (KubeAI), grounded in the real catalog via a product-search tool call, gated behind the AiChatBetaTester customer role."
+}
