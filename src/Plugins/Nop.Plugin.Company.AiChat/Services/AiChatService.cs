@@ -102,11 +102,17 @@ namespace Nop.Plugin.Company.AiChat.Services
                         Role = "tool",
                         ToolCallId = toolCall.Id,
                         Name = toolCall.Function?.Name,
+                        // priceAmd is a plain number, not the pre-formatted "1,500 ֏" string the
+                        // product cards themselves render (that comes straight from
+                        // IPriceFormatter, untouched by the model). Qwen3 doesn't reliably
+                        // reproduce the rare ARMENIAN DRAM SIGN glyph (U+058F) when composing
+                        // its own reply - it comes out as a garbled/wrong currency symbol - so
+                        // the model is told (below) to just write "<amount> AMD" in prose.
                         Content = JsonSerializer.Serialize(candidates.Select(c => new
                         {
                             id = c.Id,
                             name = c.Name,
-                            price = c.Price,
+                            priceAmd = c.PriceValue,
                             vendor = c.VendorName,
                             category = c.CategoryName,
                             ingredients = c.IngredientLabels
@@ -188,7 +194,9 @@ namespace Nop.Plugin.Company.AiChat.Services
                 allergyNote + "\n\n" +
                 "Keep replies short and conversational (2-4 sentences). You're recommending real food from a real " +
                 "menu, not writing a long essay. Plain text only - the mobile app renders your reply as-is with no " +
-                "markdown support, so never use **bold**, bullet points, or headings.";
+                "markdown support, so never use **bold**, bullet points, or headings. Prices from search_products " +
+                "are plain numbers in Armenian Dram (priceAmd) - when you mention a price, write it as the number " +
+                "followed by \"AMD\" (e.g. \"700 AMD\"). Never try to type the ֏ currency symbol yourself.";
         }
     }
 }
