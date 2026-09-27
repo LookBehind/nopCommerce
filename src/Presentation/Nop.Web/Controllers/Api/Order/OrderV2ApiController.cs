@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
+using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
 using Nop.Services.Catalog;
@@ -57,7 +58,8 @@ namespace Nop.Web.Controllers.Api.Order
         ILocalizationService localizationService,
         IUrlRecordService urlRecordService,
         IWorkContext workContext,
-        IStoreContext storeContext)
+        IStoreContext storeContext,
+        CatalogSettings catalogSettings)
         : BaseApiController
     {
         private const int ThumbnailSize = 300;
@@ -81,6 +83,12 @@ namespace Nop.Web.Controllers.Api.Order
             public string UnitPrice { get; set; }
             public string LineTotal { get; set; }
             public int? UserRating { get; set; }
+            // Whether api/catalog/v2/add-product-reviews would currently accept a review for
+            // this item's product: not already reviewed (by this customer, for this product -
+            // reviews are one-per-product, not per order item, so this mirrors UserRating's own
+            // product-level scope), order not cancelled, and within
+            // CatalogSettings.ProductReviewWindowHours of ScheduleDate (0 = no cutoff).
+            public bool CanReview { get; set; }
         }
 
         public class OrderV2Model
@@ -123,11 +131,15 @@ namespace Nop.Web.Controllers.Api.Order
         public async Task<IActionResult> GetOrders(string segment = null, int page = 0, int pageSize = 20, int? orderId = null, string search = null)
         {
             var customer = await workContext.GetCurrentCustomerAsync();
-            // The current customer's own review rating per order item (fetched once,
-            // not once per order mapped - same hoisting v1's own endpoints do).
+            // The current customer's own review rating per PRODUCT (fetched once, not once per
+            // order mapped - same hoisting v1's own endpoints do). Keyed by ProductId, not
+            // OrderItemId: reviews are one-per-(customer,product) (see
+            // CatalogApiController.ProductReviewsAddV2), so a product reviewed via one order
+            // item should show as already-rated on every OTHER order item for that same
+            // product too, not just the one the review happened to be filed against.
             var customerReviews = (await productService.GetAllProductReviewsAsync(customerId: customer.Id))
-                .Where(r => r.OrderItemId.HasValue)
-                .ToDictionary(r => r.OrderItemId.Value, r => r.Rating);
+                .GroupBy(r => r.ProductId)
+                .ToDictionary(g => g.Key, g => g.First().Rating);
 
             if (orderId.HasValue)
             {
@@ -340,6 +352,11 @@ namespace Nop.Web.Controllers.Api.Order
 
         private async Task<OrderV2Model> MapOrderAsync(Nop.Core.Domain.Orders.Order order, IDictionary<int, int> customerReviews)
         {
+            // Same rule CatalogApiController.ProductReviewsAddV2 enforces server-side - kept in
+            // sync here purely so the mobile UI can show/hide "Rate this product" without a
+            // failed round trip; the endpoint itself is still the real source of truth.
+            var withinReviewWindow = catalogSettings.ProductReviewWindowHours <= 0 ||
+                DateTime.Now - order.ScheduleDate <= TimeSpan.FromHours(catalogSettings.ProductReviewWindowHours);
             var requiresPayment = order.PaymentStatus == PaymentStatus.Pending && order.PaymentMethodSystemName == "Payments.AmeriaVPos";
             var amountDue = requiresPayment ? order.OrderTotal : 0M;
 
@@ -383,7 +400,10 @@ namespace Nop.Web.Controllers.Api.Order
                     AttributeInfo = CleanAttributeDescription(orderItem.AttributeDescription),
                     UnitPrice = await priceFormatter.FormatPriceAsync(orderItem.UnitPriceInclTax),
                     LineTotal = await priceFormatter.FormatPriceAsync(orderItem.PriceInclTax),
-                    UserRating = customerReviews.TryGetValue(orderItem.Id, out var userRating) ? userRating : null
+                    UserRating = customerReviews.TryGetValue(orderItem.ProductId, out var userRating) ? userRating : null,
+                    CanReview = !customerReviews.ContainsKey(orderItem.ProductId) &&
+                        order.OrderStatus != OrderStatus.Cancelled &&
+                        withinReviewWindow
                 });
             }
 

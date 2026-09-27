@@ -34,6 +34,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using Nop.Data;
 using Nop.Services.Common;
 using Nop.Services.Companies;
 using Nop.Services.Security;
@@ -79,7 +80,9 @@ namespace Nop.Web.Controllers.Api.Security
         private readonly CustomerSettings _customerSettings;
         private readonly ILogger _logger;
         private readonly IShoppingCartService _shoppingCartService;
+        private readonly IRepository<ProductReviewPicture> _productReviewPictureRepository;
         private const string LastUnpublishedProductIdsKey = "LastUnpublishedProductIds";
+        private const int MaxReviewPhotos = 5;
 
         private static readonly AttributeControlType[] _allowedAttributeControlTypes = new[] {
             AttributeControlType.DropdownList,
@@ -124,7 +127,8 @@ namespace Nop.Web.Controllers.Api.Security
             MediaSettings mediaSettings,
             CustomerSettings customerSettings,
             ILogger logger,
-            IShoppingCartService shoppingCartService)
+            IShoppingCartService shoppingCartService,
+            IRepository<ProductReviewPicture> productReviewPictureRepository)
         {
             _localizationSettings = localizationSettings;
             _workflowMessageService = workflowMessageService;
@@ -158,6 +162,7 @@ namespace Nop.Web.Controllers.Api.Security
             _customerSettings = customerSettings;
             _logger = logger;
             _shoppingCartService = shoppingCartService;
+            _productReviewPictureRepository = productReviewPictureRepository;
         }
 
         #endregion
@@ -1023,6 +1028,14 @@ namespace Nop.Web.Controllers.Api.Security
         /// its contract) so mobile app builds that predate this - which POST {Id, ReviewText,
         /// Rating} with no OrderItemId - keep working exactly as before until they update to call
         /// this endpoint; the old endpoint's behavior must not change under them.
+        ///
+        /// MySnacks additions on top of the above (mobile-v2's actual per-product review
+        /// feature, added once mobile-v2 started calling this endpoint): a customer may submit
+        /// at most one review per (customer, product) - hard block, independent of
+        /// CatalogSettings.OneReviewPerProductFromCustomer, which this action never reads;
+        /// a review is only accepted within CatalogSettings.ProductReviewWindowHours of the
+        /// order's ScheduleDate (0 = no cutoff); and up to <see cref="MaxReviewPhotos"/> photos
+        /// may be attached (see AddProductReviewApiModel.PhotoBase64s).
         /// </summary>
         [HttpPost("v2/add-product-reviews")]
         public virtual async Task<IActionResult> ProductReviewsAddV2([FromBody] AddProductReviewApiModel model)
@@ -1068,12 +1081,34 @@ namespace Nop.Web.Controllers.Api.Security
                 });
             }
 
-            if (await _productService.GetProductReviewByOrderItemIdAsync(orderItem.Id) != null)
+            // Hard block, one review per (customer, product) - not per order item, and not
+            // gated behind CatalogSettings.OneReviewPerProductFromCustomer (an admin could turn
+            // that off; this rule is a fixed business requirement, not a preference). Buying the
+            // same product again does not grant a second review.
+            var existingReviewsForProduct = await _productService.GetAllProductReviewsAsync(
+                customerId: curCus.Id, productId: product.Id);
+            if (existingReviewsForProduct.TotalCount > 0)
             {
                 return Ok(new
                 {
                     success = false,
-                    message = await _localizationService.GetResourceAsync("Reviews.OrderItemAlreadyReviewed")
+                    message = "You've already reviewed this product."
+                });
+            }
+
+            // ProductReviewWindowHours: how long after the order's real delivery timestamp
+            // (ScheduleDate - see the memory/code note on Order.ScheduleDate being the actual
+            // delivery date, NOT ScheduleDateTime which is just a copy of CreatedOnUtc) a review
+            // is still accepted. 0 = no cutoff. ScheduleDate is stored/compared as local
+            // (Yerevan, UTC+4) time throughout this codebase - DateTime.Now, not UtcNow, matches
+            // OrderV2ApiController's own ScheduleDate comparisons.
+            if (_catalogSettings.ProductReviewWindowHours > 0 &&
+                DateTime.Now - order.ScheduleDate > TimeSpan.FromHours(_catalogSettings.ProductReviewWindowHours))
+            {
+                return Ok(new
+                {
+                    success = false,
+                    message = $"Reviews are only accepted within {_catalogSettings.ProductReviewWindowHours} hours of delivery."
                 });
             }
 
@@ -1105,6 +1140,37 @@ namespace Nop.Web.Controllers.Api.Security
                 //update product totals
                 await _productService.UpdateProductReviewTotalsAsync(product);
 
+                // Photos - base64-in-JSON (no multipart precedent anywhere in this API), capped
+                // at MaxReviewPhotos. A malformed entry is skipped rather than failing the whole
+                // review (the review itself is more important than any one photo).
+                var photoUrls = new List<string>();
+                foreach (var photoBase64 in (model.PhotoBase64s ?? new List<string>()).Take(MaxReviewPhotos))
+                {
+                    byte[] pictureBinary;
+                    try
+                    {
+                        pictureBinary = Convert.FromBase64String(photoBase64);
+                    }
+                    catch (FormatException)
+                    {
+                        continue;
+                    }
+
+                    var picture = await _pictureService.InsertPictureAsync(
+                        pictureBinary, "image/jpeg", $"review-{productReview.Id}-{photoUrls.Count}");
+                    if (picture == null)
+                        continue;
+
+                    await _productReviewPictureRepository.InsertAsync(new ProductReviewPicture
+                    {
+                        ProductReviewId = productReview.Id,
+                        PictureId = picture.Id,
+                        DisplayOrder = photoUrls.Count
+                    });
+
+                    photoUrls.Add(await _pictureService.GetPictureUrlAsync(picture.Id));
+                }
+
                 //notify store owner
                 if (_catalogSettings.NotifyStoreOwnerAboutNewProductReviews)
                 {
@@ -1128,6 +1194,8 @@ namespace Nop.Web.Controllers.Api.Security
                 return Ok(new
                 {
                     success = true,
+                    productReviewId = productReview.Id,
+                    photoUrls,
                     message = isApproved ?
                         await _localizationService.GetResourceAsync("Reviews.SuccessfullyAdded") :
                         await _localizationService.GetResourceAsync("Reviews.SeeAfterApproving")
@@ -1361,6 +1429,13 @@ namespace Nop.Web.Controllers.Api.Security
             public bool CanCurrentCustomerLeaveReview { get; set; }
             public bool SuccessfullyAdded { get; set; }
             public string Result { get; set; }
+
+            /// <summary>
+            /// Photos to attach, each a bare base64-encoded image (no data: URI prefix) - mirrors
+            /// how every other mobile-v2 endpoint stays plain-JSON (no multipart precedent exists
+            /// anywhere in this API surface). Capped server-side, see MaxReviewPhotos.
+            /// </summary>
+            public List<string> PhotoBase64s { get; set; }
         }
 
         #endregion

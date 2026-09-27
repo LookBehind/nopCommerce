@@ -116,6 +116,13 @@ namespace Nop.Core.Domain.Catalog
         public int DefaultProductRatingValue { get; set; }
 
         /// <summary>
+        /// Gets or sets how many hours after an order's ScheduleDate (its delivery date - see
+        /// Order.ScheduleDate) a customer may still submit a product review via
+        /// api/catalog/v2/add-product-reviews. 0 = no cutoff, always allowed. MySnacks addition.
+        /// </summary>
+        public int ProductReviewWindowHours { get; set; }
+
+        /// <summary>
         /// Gets or sets a value indicating whether to allow anonymous users write product reviews.
         /// </summary>
         public bool AllowAnonymousUsersToReviewProduct { get; set; }
