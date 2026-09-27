@@ -63,7 +63,11 @@ namespace Nop.Plugin.Company.AiChat.Services
 
             var tools = new List<AiChatLlmClient.LlmTool> { BuildSearchProductsTool() };
 
-            var lastToolProductIds = new List<int>();
+            // Accumulated across every search_products call this turn (a reasoning model
+            // routinely searches more than once per reply - e.g. once for a light option and
+            // again for a heartier one) - showing only the LAST call's results would drop
+            // products the model's own answer text already named.
+            var seenProductIds = new List<int>();
             string finalContent = null;
 
             for (var round = 0; round < MaxToolRounds; round++)
@@ -89,7 +93,9 @@ namespace Nop.Plugin.Company.AiChat.Services
                     var query = ExtractQueryArgument(toolCall.Function?.Arguments);
                     var candidates = await _catalogService.SearchAsync(customer, storeId, query, MaxSuggestedProducts);
 
-                    lastToolProductIds = candidates.Select(c => c.Id).ToList();
+                    foreach (var id in candidates.Select(c => c.Id))
+                        if (!seenProductIds.Contains(id))
+                            seenProductIds.Add(id);
 
                     messages.Add(new AiChatLlmClient.LlmMessage
                     {
@@ -111,13 +117,17 @@ namespace Nop.Plugin.Company.AiChat.Services
 
             finalContent ??= "Sorry, I'm having trouble finding an answer right now - could you try rephrasing that?";
 
+            // Cap the CARDS shown below the reply, not the pool the model searched over -
+            // MaxSuggestedProducts already bounds each individual search_products call.
+            var suggestedProductIds = seenProductIds.Take(MaxSuggestedProducts * 2).ToList();
+
             var assistantMessage = await _conversationService.AddMessageAsync(
-                conversation.Id, isFromCustomer: false, finalContent, lastToolProductIds);
+                conversation.Id, isFromCustomer: false, finalContent, suggestedProductIds);
 
             return new AiChatTurnResult
             {
                 AssistantMessage = assistantMessage,
-                SuggestedProductIds = lastToolProductIds
+                SuggestedProductIds = suggestedProductIds
             };
         }
 
@@ -177,7 +187,8 @@ namespace Nop.Plugin.Company.AiChat.Services
                 "up nothing useful, say so honestly instead of making something up.\n\n" +
                 allergyNote + "\n\n" +
                 "Keep replies short and conversational (2-4 sentences). You're recommending real food from a real " +
-                "menu, not writing a long essay.";
+                "menu, not writing a long essay. Plain text only - the mobile app renders your reply as-is with no " +
+                "markdown support, so never use **bold**, bullet points, or headings.";
         }
     }
 }
