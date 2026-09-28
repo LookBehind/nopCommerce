@@ -63,12 +63,23 @@ namespace Nop.Plugin.Company.Company.Controllers
             // Api/Integration/OrderController.Order) aren't cutoff-gated at all and can land
             // on today at any hour, drawing on this exact same shared company allowance - so
             // "today" is always the relevant day for this card, never a later "earliest
-            // orderable" day. Raw DateTime.UtcNow still isn't the right value to hand in,
-            // though - it's a real UTC instant, not the company-local wall-clock day
-            // GetUsedAllowanceForPeriod compares mobile orders' (company-local) ScheduleDate
-            // against - convert "today" into that same local representation first, mirroring
-            // CheckoutV2ApiController.BuildCheckoutWarningAsync's dateTimeHelper.ConvertToUtcTime
-            // pattern.
+            // orderable" day.
+            //
+            // Order.ScheduleDate is stored as a genuinely-converted UTC instant (see
+            // CheckoutV2ApiController.PlaceOrder: ScheduleDate = dateTimeHelper.ConvertToUtcTime
+            // (scheduleDateLocal, companyTimezone)), and GetUsedAllowanceForPeriod's Daily
+            // branch compares plain UTC .Date values - so the anchor handed in here needs to be
+            // a genuine UTC instant too, one whose .Date lands on the same UTC calendar day a
+            // real order placed sometime today (company-local) would get. Local MIDNIGHT is the
+            // wrong anchor for that: converting local 00:00 to UTC rolls back into the
+            // *previous* UTC day for any positive-offset timezone (Yerevan is UTC+4, so local
+            // 00:00 -> 20:00 UTC the day before), which would mismatch every normal daytime
+            // order, not just the ~4h/day skew window the original DateTime.UtcNow bug hit.
+            // Local NOON is a safe anchor instead - for Yerevan's fixed (non-DST) +4 offset,
+            // noon local converts to 08:00 UTC same day, which stays within the same UTC
+            // calendar day as any realistic order time (mobile slots are business-hours only;
+            // even an any-hour Kerpak order only diverges in the narrow local 00:00-04:00
+            // window, the one edge a single anchor date can't perfectly represent either way).
             var orderDateUtc = selectedDeliveryTime;
             if (orderDateUtc == null)
             {
@@ -76,8 +87,8 @@ namespace Nop.Plugin.Company.Company.Controllers
                 if (company != null)
                 {
                     var companyTimezone = TZConvert.GetTimeZoneInfo(company.TimeZone);
-                    var todayLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, companyTimezone).Date;
-                    orderDateUtc = dateTimeHelper.ConvertToUtcTime(todayLocal, companyTimezone);
+                    var todayNoonLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, companyTimezone).Date.AddHours(12);
+                    orderDateUtc = dateTimeHelper.ConvertToUtcTime(todayNoonLocal, companyTimezone);
                 }
             }
 
