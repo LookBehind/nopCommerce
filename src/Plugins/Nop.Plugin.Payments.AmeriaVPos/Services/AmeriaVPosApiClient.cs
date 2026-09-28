@@ -19,6 +19,17 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
         private readonly AmeriaVPosSettings _ameriaVPosSettings;
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
+        // Requests (InitPaymentRequest.CardHolderID left null for every ordinary,
+        // non-binding payment - the overwhelming majority) must OMIT null properties
+        // entirely, not send them as explicit JSON nulls - confirmed live against the
+        // sandbox: a bare {"CardHolderID": null, ...} InitPayment call throws their
+        // side into "550 System Error" specifically on the strict amount=10 test path
+        // (ordinary amounts tolerate it fine, which is why this went unnoticed through
+        // every real prod charge). Omitting the key outright reproduces the exact same
+        // payload real binding-less payments need and sidesteps their bug.
+        private static readonly JsonSerializerOptions _requestJsonOptions =
+            new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+
         #endregion
 
         #region Ctor
@@ -44,7 +55,7 @@ namespace Nop.Plugin.Payments.AmeriaVPos.Services
 
         private async Task<TResponse> PostAsync<TRequest, TResponse>(string action, TRequest request)
         {
-            var response = await _httpClient.PostAsJsonAsync($"{_ameriaVPosSettings.ApiBaseUrl}/api/VPOS/{action}", request);
+            var response = await _httpClient.PostAsJsonAsync($"{_ameriaVPosSettings.ApiBaseUrl}/api/VPOS/{action}", request, _requestJsonOptions);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<TResponse>(_jsonOptions);
         }
