@@ -111,6 +111,32 @@ namespace Nop.Web.Controllers.Api.Order
             return Ok(await BuildSummaryAsync(customer));
         }
 
+        // BuildSummaryAsync's own CheckoutWarning is always computed against
+        // availableScheduleDates.First() (the soonest slot) - fine as the sheet's initial
+        // default, but SchedulePickerModal lets the customer pick any later date, and that
+        // pick never re-ran the allowance check: the banner stayed pinned to the soonest
+        // slot's status regardless of what was actually selected (e.g. still showing "you
+        // have to pay" after picking a date with untouched allowance, or the reverse).
+        // Dedicated endpoint so the mobile client can recompute the warning for whichever
+        // date is actually selected right now, without re-fetching/re-shaping the rest of
+        // the summary (addresses, available dates) it already has.
+        [HttpGet("warning")]
+        public async Task<IActionResult> GetWarning([FromQuery] string scheduleDate)
+        {
+            var customer = await workContext.GetCurrentCustomerAsync();
+            var store = await storeContext.GetCurrentStoreAsync();
+
+            if (!DateTime.TryParseExact(scheduleDate, ScheduleDateFormat, CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var scheduleDateLocal))
+            {
+                return Ok(new { checkoutWarning = (object)null });
+            }
+
+            var cartTotal = await GetCartTotalAsync(customer, store);
+            var warning = await BuildCheckoutWarningAsync(customer, store.Id, scheduleDateLocal, cartTotal);
+            return Ok(new { checkoutWarning = warning });
+        }
+
         // Mirrors CustomerApiController's real set-deliveryaddress/{addressId} (same
         // Billing+Shipping assignment), with one addition: v1's endpoint trusts any
         // addressId blindly with no ownership check - this verifies the address is
