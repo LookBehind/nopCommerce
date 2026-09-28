@@ -163,9 +163,19 @@ namespace Nop.Web.Controllers.Api.Order
             var store = await storeContext.GetCurrentStoreAsync();
 
             var cart = await shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, store.Id);
+            // Same flat CartModel shape as every other return in this endpoint (and in
+            // IncrementItem's own item==null guard just above) - decrementCartItem's mobile
+            // client contract (cartApi.ts) expects CartModel directly, not {success, cart}.
+            // This branch used to return the wrapped shape, which - reached by a second
+            // decrement request landing after the line was already deleted by the first one,
+            // a real race on a fast double-tap of "−" - got written verbatim into the getCart
+            // RTK Query cache, leaving `cart` truthy but `cart.Items` undefined. Every
+            // QuantityStepper.tsx instance on screen then crashed on cart?.Items.filter(...)
+            // (Items missing, not cart itself, so the `?.` didn't save it) - confirmed via a
+            // live white-screen crash, "Cannot read property 'filter' of undefined".
             var item = cart.FirstOrDefault(i => i.Id == shoppingCartItemId);
             if (item == null)
-                return Ok(new { success = true, cart = await BuildCartModelAsync() });
+                return Ok(await BuildCartModelAsync());
 
             if (item.Quantity > 1)
             {
