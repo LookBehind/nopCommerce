@@ -2,6 +2,7 @@ using System.Linq;
 using FluentMigrator;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Configuration;
+using Nop.Data.Mapping;
 
 namespace Nop.Data.Migrations.CustomUpdateMigration
 {
@@ -24,6 +25,13 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
     ///    flag back to true going forward - see the removed admin editor checkbox
     ///    (_CreateOrUpdate.Prices.cshtml) and ProductService.ApplyLowStockActivityAsync, both
     ///    updated alongside this migration.
+    ///
+    /// The product fix is a plain set-based UPDATE, not an entity-by-entity
+    /// _dataProvider.UpdateEntitiesAsync loop - a first attempt at that crash-looped mysnacks-dev
+    /// on every startup ("The query processor ran out of internal resources and could not produce
+    /// a query plan"): LINQ2DB's entity-batch update over 954 rows built a single SQL Server
+    /// statement too complex to compile. A one-line UPDATE ... WHERE has no such limit regardless
+    /// of row count.
     /// </summary>
     [NopMigration("2026-09-28 13:00:00:0000000", "MySnacks: fix Favourites (Wishlist) being broken store-wide")]
     public class EnableProductFavouritesMigration : Migration
@@ -46,19 +54,13 @@ namespace Nop.Data.Migrations.CustomUpdateMigration
                 _dataProvider.UpdateEntityAsync(maxWishlistSetting).GetAwaiter().GetResult();
             }
 
-            var disabledProducts = _dataProvider.GetTable<Product>()
-                .Where(p => p.DisableWishlistButton)
-                .ToList();
+            var productTable = NameCompatibilityManager.GetTableName(typeof(Product));
+            var disableWishlistButtonColumn = nameof(Product.DisableWishlistButton);
 
-            foreach (var product in disabledProducts)
-            {
-                product.DisableWishlistButton = false;
-            }
-
-            if (disabledProducts.Count > 0)
-            {
-                _dataProvider.UpdateEntitiesAsync(disabledProducts).GetAwaiter().GetResult();
-            }
+            IfDatabase("SqlServer").Execute.Sql(
+                $"UPDATE [{productTable}] SET [{disableWishlistButtonColumn}] = 0 WHERE [{disableWishlistButtonColumn}] = 1");
+            IfDatabase("Postgres").Execute.Sql(
+                $"UPDATE \"{productTable}\" SET \"{disableWishlistButtonColumn}\" = false WHERE \"{disableWishlistButtonColumn}\" = true");
         }
 
         public override void Down()
