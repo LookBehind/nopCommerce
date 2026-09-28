@@ -74,6 +74,11 @@ namespace Nop.Web.Controllers.Api.Order
             public decimal LineTotalValue { get; set; }
             public string LineTotal { get; set; }
             public IList<string> SpecificationLabels { get; set; } = new List<string>();
+            // Real Product Attribute selections on this line (e.g. "Full", "Balsamic
+            // sauce") - just the value names, no attribute-name prefix ("Size: Full") and
+            // no HTML, unlike OrderV2ApiController's AttributeInfo - the mobile cart row
+            // joins these with ", " itself, same as it already does for SpecificationLabels.
+            public IList<string> SelectedAttributeValueNames { get; set; } = new List<string>();
         }
 
         public class CartV2Model
@@ -221,6 +226,34 @@ namespace Nop.Web.Controllers.Api.Order
             return options.ToDictionary(o => o.Id, o => o.Name);
         }
 
+        // Value names only, in mapping order, flattened across every selected mapping on
+        // this line (e.g. Size=Full + Dressing=Balsamic sauce -> ["Full", "Balsamic sauce"]).
+        // Mirrors ProductAttributePickerSheet's own value-bearing-only assumption (see that
+        // file's header comment) - ParseValues returns raw entered text for a free-text/
+        // date/file mapping instead of a value id, which wouldn't parse as one and is
+        // silently skipped, matching the picker's existing scope.
+        private async Task<IList<string>> GetSelectedAttributeValueNamesAsync(string attributesXml)
+        {
+            var names = new List<string>();
+            if (string.IsNullOrEmpty(attributesXml))
+                return names;
+
+            var mappings = await productAttributeParser.ParseProductAttributeMappingsAsync(attributesXml);
+            foreach (var mapping in mappings)
+            {
+                foreach (var valueIdString in productAttributeParser.ParseValues(attributesXml, mapping.Id))
+                {
+                    if (!int.TryParse(valueIdString, out var valueId))
+                        continue;
+
+                    var value = await productAttributeService.GetProductAttributeValueByIdAsync(valueId);
+                    if (value != null)
+                        names.Add(value.Name);
+                }
+            }
+            return names;
+        }
+
         private async Task<CartV2Model> BuildCartModelAsync()
         {
             var customer = await workContext.GetCurrentCustomerAsync();
@@ -275,7 +308,8 @@ namespace Nop.Web.Controllers.Api.Order
                     UnitPrice = await priceFormatter.FormatPriceAsync(unitPrice),
                     LineTotalValue = lineTotal,
                     LineTotal = await priceFormatter.FormatPriceAsync(lineTotal),
-                    SpecificationLabels = specificationLabels
+                    SpecificationLabels = specificationLabels,
+                    SelectedAttributeValueNames = await GetSelectedAttributeValueNamesAsync(item.AttributesXml)
                 });
 
                 model.Count += item.Quantity;
