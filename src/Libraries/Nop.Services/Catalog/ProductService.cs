@@ -165,7 +165,11 @@ namespace Nop.Services.Catalog
             {
                 case LowStockActivity.DisableBuyButton:
                     product.DisableBuyButton = stockDec && !stockInc;
-                    product.DisableWishlistButton = stockDec && !stockInc;
+                    // Deliberately NOT touching DisableWishlistButton here - mobile-v2's Favourites
+                    // feature piggybacks on this exact flag (see CatalogApiController's Favourites
+                    // region and EnableProductFavouritesMigration). A low-stock blip silently
+                    // breaking a product's Favourites, with no admin-visible symptom, isn't
+                    // something "disable the buy button while out of stock" should imply.
                     await UpdateProductAsync(product);
                     break;
 

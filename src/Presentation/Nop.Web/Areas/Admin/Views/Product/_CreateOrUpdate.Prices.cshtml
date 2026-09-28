@@ -96,15 +96,10 @@
             <span asp-validation-for="DisableBuyButton"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.DisableWishlistButton ? null : "advanced-setting")">
-        <div class="col-md-3">
-            <nop-label asp-for="DisableWishlistButton" />
-        </div>
-        <div class="col-md-9">
-            <nop-editor asp-for="DisableWishlistButton" />
-            <span asp-validation-for="DisableWishlistButton"></span>
-        </div>
-    </div>
+    @* "Disable wishlist button" is deliberately not editable here (mobile-v2's Favourites feature
+       piggybacks on this exact flag - see CatalogApiController's Favourites region and
+       EnableProductFavouritesMigration) - staff toggling it per-product silently breaks Favourites
+       for that product with no visible symptom in the admin UI. *@
     <div class="form-group row @(Model.ProductEditorSettingsModel.AvailableForPreOrder ? null : "advanced-setting")">
         <div class="col-md-3">
             <nop-label asp-for="AvailableForPreOrder" />
