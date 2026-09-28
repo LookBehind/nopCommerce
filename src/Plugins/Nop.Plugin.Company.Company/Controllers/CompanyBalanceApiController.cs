@@ -5,9 +5,12 @@ using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Plugin.Company.Company.Services;
 using Nop.Services.Catalog;
+using Nop.Services.Companies;
+using Nop.Services.Helpers;
 using Nop.Services.Payments;
 using Nop.Web.Controllers;
 using Nop.Web.Framework.Mvc.Filters;
+using TimeZoneConverter;
 
 namespace Nop.Plugin.Company.Company.Controllers
 {
@@ -23,9 +26,11 @@ namespace Nop.Plugin.Company.Company.Controllers
     [Authorize]
     public class CompanyBalanceApiController(
         ICompanyAllowancePaymentMethod companyAllowancePaymentMethod,
+        ICompanyService companyService,
         IWorkContext workContext,
         IStoreContext storeContext,
         IDeliveryTimeStorageService deliveryTimeStorageService,
+        IDateTimeHelper dateTimeHelper,
         IPriceFormatter priceFormatter)
         : BaseApiController
     {
@@ -41,22 +46,46 @@ namespace Nop.Plugin.Company.Company.Controllers
             var customer = await workContext.GetCurrentCustomerAsync();
             var store = await storeContext.GetCurrentStoreAsync();
 
-            // The allowance is a per-day cap, and the customer's already-selected
-            // delivery date (the same value the actual order placement checks
-            // against - see AmeriaVPosPaymentService/CheckMoneyOrderPaymentProcessor,
-            // both keyed on order.ScheduleDate) is what actually matters here, not
-            // "today". Falling back to DateTime.UtcNow was showing the checkout
-            // warning (and this same value on the profile balance card) based on
-            // today's usage even when the order is scheduled for a day with its own
-            // untouched allowance - e.g. today's cap fully used, but the order is
-            // scheduled for a future day with nothing booked against it yet.
+            // The allowance is a per-day cap, and the customer's already-selected delivery
+            // date (the same value the actual order placement checks against - see
+            // AmeriaVPosPaymentService/CheckMoneyOrderPaymentProcessor, both keyed on
+            // order.ScheduleDate) is what actually matters here, not "today" - e.g. today's
+            // cap fully used, but the order is scheduled for a future day with nothing
+            // booked against it yet.
             var selectedDeliveryTime = await deliveryTimeStorageService.GetSelectedDeliveryTimeAsync(customer, store.Id);
+
+            // mobile-v2's real checkout flow (unlike v1's) never calls SetDeliveryTime, so
+            // selectedDeliveryTime is always null there - this fallback is what it actually
+            // hits. This deliberately does NOT defer to the mobile app's own next-available
+            // cutoff-aware slot (e.g. rolling forward to tomorrow once today's mobile-order
+            // cutoffs have passed) - today's allowance isn't only spent through the mobile
+            // app. Kerpak self-serve fridge orders (OrderSource.Kerpak, see
+            // Api/Integration/OrderController.Order) aren't cutoff-gated at all and can land
+            // on today at any hour, drawing on this exact same shared company allowance - so
+            // "today" is always the relevant day for this card, never a later "earliest
+            // orderable" day. Raw DateTime.UtcNow still isn't the right value to hand in,
+            // though - it's a real UTC instant, not the company-local wall-clock day
+            // GetUsedAllowanceForPeriod compares mobile orders' (company-local) ScheduleDate
+            // against - convert "today" into that same local representation first, mirroring
+            // CheckoutV2ApiController.BuildCheckoutWarningAsync's dateTimeHelper.ConvertToUtcTime
+            // pattern.
+            var orderDateUtc = selectedDeliveryTime;
+            if (orderDateUtc == null)
+            {
+                var company = await companyService.GetCompanyByCustomerIdAsync(customer.Id);
+                if (company != null)
+                {
+                    var companyTimezone = TZConvert.GetTimeZoneInfo(company.TimeZone);
+                    var todayLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, companyTimezone).Date;
+                    orderDateUtc = dateTimeHelper.ConvertToUtcTime(todayLocal, companyTimezone);
+                }
+            }
 
             var balanceResult = await companyAllowancePaymentMethod.GetCustomerRemainingAllowance(
                 new CustomerBalanceRequest
                 {
                     Customer = customer,
-                    OrderDateUtc = selectedDeliveryTime ?? DateTime.UtcNow
+                    OrderDateUtc = orderDateUtc ?? DateTime.UtcNow
                 });
 
             if (balanceResult == null)
