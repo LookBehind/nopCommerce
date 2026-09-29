@@ -175,7 +175,9 @@ namespace Nop.Web.Controllers.Api.Order
             }
 
             var company = await companyService.GetCompanyByCustomerIdAsync(customer.Id);
-            var companyTimezone = TZConvert.GetTimeZoneInfo(company.TimeZone);
+            var companyTimezone = company != null
+                ? TZConvert.GetTimeZoneInfo(company.TimeZone)
+                : TimeZoneInfo.FindSystemTimeZoneById("Asia/Yerevan");
             var scheduleDateUtc = dateTimeHelper.ConvertToUtcTime(scheduleDateLocal, companyTimezone);
 
             if (!await IsScheduleDateAllowedAsync(companyTimezone, scheduleDateUtc))
