@@ -290,6 +290,8 @@ export interface ProfilesResponse {
   defaultId: string;
   isAdmin: boolean;
   ownCompanyId: number | null;
+  /** True when the user is a company-scoped profile with no company link (and can't pick one) → denied scope. */
+  companyLinkRequired?: boolean;
   profiles: ProfileInfo[];
   companies: CompanyOption[];
 }

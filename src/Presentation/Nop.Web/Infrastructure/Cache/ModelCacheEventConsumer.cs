@@ -2,6 +2,7 @@
 using Nop.Core.Caching;
 using Nop.Core.Domain.Blogs;
 using Nop.Core.Domain.Catalog;
+using Nop.Core.Domain.Companies;
 using Nop.Core.Domain.Configuration;
 using Nop.Core.Domain.Localization;
 using Nop.Core.Domain.Media;
@@ -35,6 +36,15 @@ namespace Nop.Web.Infrastructure.Cache
         IConsumer<EntityInsertedEvent<Vendor>>,
         IConsumer<EntityUpdatedEvent<Vendor>>,
         IConsumer<EntityDeletedEvent<Vendor>>,
+        //company-vendor delivery schedule (day-off overrides + weekly working-day pattern) -
+        //PrepareCategorySimpleModelsAsync(filterVendorCategories: true) hides categories whose
+        //vendors are all off, cached under CategoryAllPrefixCacheKey; nothing else invalidates
+        //that cache when a schedule changes, so without this it can serve a stale category
+        //list for up to CacheConfig.DefaultCacheTime after marking a vendor off/on
+        IConsumer<EntityInsertedEvent<CompanyVendorDayOff>>,
+        IConsumer<EntityUpdatedEvent<CompanyVendorDayOff>>,
+        IConsumer<EntityInsertedEvent<CompanyVendorWorkingDay>>,
+        IConsumer<EntityDeletedEvent<CompanyVendorWorkingDay>>,
         //categories
         IConsumer<EntityInsertedEvent<Category>>,
         IConsumer<EntityUpdatedEvent<Category>>,
@@ -177,6 +187,30 @@ namespace Nop.Web.Infrastructure.Cache
         public async Task HandleEventAsync(EntityDeletedEvent<Vendor> eventMessage)
         {
             await _staticCacheManager.RemoveAsync(NopModelCacheDefaults.VendorNavigationModelKey);
+        }
+
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public async Task HandleEventAsync(EntityInsertedEvent<CompanyVendorDayOff> eventMessage)
+        {
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.CategoryAllPrefixCacheKey);
+        }
+
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public async Task HandleEventAsync(EntityUpdatedEvent<CompanyVendorDayOff> eventMessage)
+        {
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.CategoryAllPrefixCacheKey);
+        }
+
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public async Task HandleEventAsync(EntityInsertedEvent<CompanyVendorWorkingDay> eventMessage)
+        {
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.CategoryAllPrefixCacheKey);
+        }
+
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public async Task HandleEventAsync(EntityDeletedEvent<CompanyVendorWorkingDay> eventMessage)
+        {
+            await _staticCacheManager.RemoveByPrefixAsync(NopModelCacheDefaults.CategoryAllPrefixCacheKey);
         }
 
         #endregion

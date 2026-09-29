@@ -21,6 +21,7 @@ interface ProfilesData {
   isAdmin: boolean;
   defaultId: string;
   ownCompanyId: number | null;
+  companyLinkRequired?: boolean;
 }
 
 function uid(prefix: string): string {
@@ -232,6 +233,7 @@ export const useWorkspace = create<
               isAdmin: data.isAdmin,
               defaultId: data.defaultId,
               ownCompanyId: data.ownCompanyId,
+              companyLinkRequired: data.companyLinkRequired,
             },
             selectedProfileId,
           };

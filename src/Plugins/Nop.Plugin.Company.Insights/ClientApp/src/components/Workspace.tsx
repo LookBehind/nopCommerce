@@ -22,6 +22,7 @@ export function Workspace() {
   const theme = useWorkspace((s) => s.theme);
   const setTheme = useWorkspace((s) => s.setTheme);
   const caps = useWorkspace((s) => s.capabilities);
+  const companyLinkRequired = useWorkspace((s) => s.profilesData?.companyLinkRequired ?? false);
   const [showAutomations, setShowAutomations] = useState(false);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
@@ -73,6 +74,16 @@ export function Workspace() {
           <ProfilePicker />
         </div>
       </header>
+
+      {companyLinkRequired && (
+        <div className="ins-banner" role="alert">
+          <span className="ins-banner-icon">⚠</span>
+          <span>
+            Your account isn’t linked to a company yet, so Insights has no data to show. Ask an administrator
+            to add you to your company (Admin → Companies), then reopen Insights.
+          </span>
+        </div>
+      )}
 
       <TabBar />
 

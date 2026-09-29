@@ -111,6 +111,11 @@ namespace Nop.Web.Models.Catalog
 
         public bool DisplayDiscontinuedMessage { get; set; }
 
+        //true when the product's vendor is off/non-working (weekly schedule or day-off
+        //override) for the effective delivery date - same "product page bypasses catalog
+        //filtering" gap that DisplayDiscontinuedMessage covers for unpublished products
+        public bool DisplayVendorUnavailableMessage { get; set; }
+
         public string CurrentStoreName { get; set; }
 
         public bool InStock { get; set; }

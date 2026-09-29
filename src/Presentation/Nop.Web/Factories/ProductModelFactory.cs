@@ -17,6 +17,7 @@ using Nop.Core.Domain.Shipping;
 using Nop.Core.Domain.Vendors;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
+using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Helpers;
@@ -32,6 +33,7 @@ using Nop.Web.Infrastructure.Cache;
 using Nop.Web.Models.Catalog;
 using Nop.Web.Models.Common;
 using Nop.Web.Models.Media;
+using TimeZoneConverter;
 
 namespace Nop.Web.Factories
 {
@@ -46,10 +48,13 @@ namespace Nop.Web.Factories
         private readonly CatalogSettings _catalogSettings;
         private readonly CustomerSettings _customerSettings;
         private readonly ICategoryService _categoryService;
+        private readonly ICompanyService _companyService;
+        private readonly ICompanyVendorScheduleService _companyVendorScheduleService;
         private readonly ICurrencyService _currencyService;
         private readonly ICustomerService _customerService;
         private readonly IDateRangeService _dateRangeService;
         private readonly IDateTimeHelper _dateTimeHelper;
+        private readonly IDeliverySlotService _deliverySlotService;
         private readonly IDownloadService _downloadService;
         private readonly IGenericAttributeService _genericAttributeService;
         private readonly ILocalizationService _localizationService;
@@ -88,10 +93,13 @@ namespace Nop.Web.Factories
             CatalogSettings catalogSettings,
             CustomerSettings customerSettings,
             ICategoryService categoryService,
+            ICompanyService companyService,
+            ICompanyVendorScheduleService companyVendorScheduleService,
             ICurrencyService currencyService,
             ICustomerService customerService,
             IDateRangeService dateRangeService,
             IDateTimeHelper dateTimeHelper,
+            IDeliverySlotService deliverySlotService,
             IDownloadService downloadService,
             IGenericAttributeService genericAttributeService,
             ILocalizationService localizationService,
@@ -126,10 +134,13 @@ namespace Nop.Web.Factories
             _catalogSettings = catalogSettings;
             _customerSettings = customerSettings;
             _categoryService = categoryService;
+            _companyService = companyService;
+            _companyVendorScheduleService = companyVendorScheduleService;
             _currencyService = currencyService;
             _customerService = customerService;
             _dateRangeService = dateRangeService;
             _dateTimeHelper = dateTimeHelper;
+            _deliverySlotService = deliverySlotService;
             _downloadService = downloadService;
             _genericAttributeService = genericAttributeService;
             _localizationService = localizationService;
@@ -165,6 +176,34 @@ namespace Nop.Web.Factories
         #endregion
 
         #region Utilities
+
+        /// <summary>
+        /// Determines whether the product's vendor is off/non-working for the customer's
+        /// selected delivery date, or for the earliest date they could still order for (today
+        /// if before the last delivery slot's cutoff, otherwise tomorrow - see
+        /// IDeliverySlotService) if no date has been chosen yet. Product pages don't go
+        /// through ProductService.SearchProductsAsync's vendor-schedule filtering, so a direct
+        /// link to the product bypasses it entirely without this.
+        /// </summary>
+        /// <param name="product">Product</param>
+        /// <returns>True if the product's vendor is unavailable for the effective date</returns>
+        protected virtual async Task<bool> IsProductVendorUnavailableAsync(Product product)
+        {
+            if (product.VendorId == 0)
+                return false;
+
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            if (company == null)
+                return false;
+
+            var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
+            var selectedDate = await _genericAttributeService.GetAttributeAsync<DateTime?>(customer, "SELECTED_DELIVERY_TIME_KEY", storeId);
+            var effectiveDate = selectedDate ?? await _deliverySlotService.GetEarliestOrderableDateAsync(
+                storeId, TZConvert.GetTimeZoneInfo(company.TimeZone));
+
+            return !await _companyVendorScheduleService.IsVendorAvailableAsync(company.Id, product.VendorId, effectiveDate);
+        }
 
         /// <summary>
         /// Prepare the product specification models
@@ -1372,6 +1411,7 @@ namespace Nop.Web.Factories
                 StockAvailability = await _productService.FormatStockMessageAsync(product, string.Empty),
                 HasSampleDownload = product.IsDownload && product.HasSampleDownload,
                 DisplayDiscontinuedMessage = !product.Published && _catalogSettings.DisplayDiscontinuedMessageForUnpublishedProducts,
+                DisplayVendorUnavailableMessage = await IsProductVendorUnavailableAsync(product),
                 AvailableEndDate = product.AvailableEndDateTimeUtc,
                 VisibleIndividually = product.VisibleIndividually,
                 AllowAddingOnlyExistingAttributeCombinations = product.AllowAddingOnlyExistingAttributeCombinations,

@@ -1,17 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using LinqToDB;
 using Nop.Core;
 using Nop.Core.Domain.Orders;
 using Nop.Data;
 using Nop.Services.Companies;
-using Nop.Services.Configuration;
 using Nop.Services.Helpers;
-using Nop.Services.Logging;
 using Nop.Services.Orders;
 using TimeZoneConverter;
 
@@ -26,32 +22,10 @@ namespace Nop.Plugin.Company.Company.Services
 
         private const int ORDER_AHEAD_DAYS_DEFAULT = 14;
 
-        private static readonly JsonSerializerOptions _jsonOptions = new()
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            Converters = { new TimeSpanJsonConverter() }
-        };
-
-        private class TimeSpanJsonConverter : JsonConverter<TimeSpan>
-        {
-            public override TimeSpan Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-            {
-                var value = reader.GetString();
-                return TimeSpan.TryParse(value, out var ts) ? ts : TimeSpan.Zero;
-            }
-
-            public override void Write(Utf8JsonWriter writer, TimeSpan value, JsonSerializerOptions options)
-            {
-                writer.WriteStringValue(value.ToString(@"hh\:mm"));
-            }
-        }
-
-        private readonly ISettingService _settingService;
         private readonly IWorkContext _workContext;
         private readonly IDateTimeHelper _dateTimeHelper;
         private readonly ICompanyService _companyService;
-        private readonly ILogger _logger;
+        private readonly IDeliverySlotService _deliverySlotService;
         private readonly IRepository<Order> _orderRepository;
         private readonly IStoreContext _storeContext;
 
@@ -60,19 +34,17 @@ namespace Nop.Plugin.Company.Company.Services
         #region Ctor
 
         public DeliveryTimeService(
-            ISettingService settingService,
             IWorkContext workContext,
             IDateTimeHelper dateTimeHelper,
             ICompanyService companyService,
-            ILogger logger,
+            IDeliverySlotService deliverySlotService,
             IRepository<Order> orderRepository,
             IStoreContext storeContext)
         {
-            _settingService = settingService;
             _workContext = workContext;
             _dateTimeHelper = dateTimeHelper;
             _companyService = companyService;
-            _logger = logger;
+            _deliverySlotService = deliverySlotService;
             _orderRepository = orderRepository;
             _storeContext = storeContext;
         }
@@ -235,70 +207,7 @@ namespace Nop.Plugin.Company.Company.Services
         public virtual async Task<List<DeliverySlot>> GetDeliverySlotsAsync()
         {
             var store = await _storeContext.GetCurrentStoreAsync();
-            var orderSettings = await _settingService.LoadSettingAsync<OrderSettings>(store.Id);
-
-            if (string.IsNullOrWhiteSpace(orderSettings.ScheduleDate))
-                return new List<DeliverySlot>();
-
-            var raw = orderSettings.ScheduleDate.Trim();
-
-            try
-            {
-                // New JSON format
-                if (raw.StartsWith("["))
-                {
-                    var slots = JsonSerializer.Deserialize<List<DeliverySlot>>(raw, _jsonOptions);
-                    return slots?
-                        .Where(s => s.IsEnabled)
-                        .OrderBy(s => s.SortOrder)
-                        .ThenBy(s => s.DeliveryTime)
-                        .ToList() ?? new List<DeliverySlot>();
-                }
-
-                // Legacy CSV format: "HH:MM:SS-HH:MM:SS-HH:MM:SS,..."
-                return ParseLegacyCsv(raw);
-            }
-            catch (Exception ex)
-            {
-                await _logger.ErrorAsync($"Error parsing delivery schedule configuration: {raw}", ex);
-                return new List<DeliverySlot>();
-            }
-        }
-
-        private List<DeliverySlot> ParseLegacyCsv(string csv)
-        {
-            var slots = new List<DeliverySlot>();
-            var scheduleDateValues = csv.Split(',');
-            var sortOrder = 0;
-
-            foreach (var scheduleDate in scheduleDateValues)
-            {
-                var parts = scheduleDate.Split('-');
-                if (parts.Length < 3)
-                    continue;
-
-                try
-                {
-                    var openTime = TimeSpan.Parse(parts[0]);
-                    var cutoffTime = TimeSpan.Parse(parts[1]);
-                    var deliveryTime = TimeSpan.Parse(parts[2]);
-
-                    slots.Add(new DeliverySlot
-                    {
-                        OpenTime = openTime,
-                        CutoffTime = cutoffTime,
-                        DeliveryTime = deliveryTime,
-                        IsEnabled = true,
-                        SortOrder = sortOrder++
-                    });
-                }
-                catch
-                {
-                    // Skip malformed entries
-                }
-            }
-
-            return slots.OrderBy(s => s.DeliveryTime).ToList();
+            return (await _deliverySlotService.GetDeliverySlotsAsync(store.Id)).ToList();
         }
 
         /// <summary>

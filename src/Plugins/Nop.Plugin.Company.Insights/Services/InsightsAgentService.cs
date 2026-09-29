@@ -55,6 +55,17 @@ namespace Nop.Plugin.Company.Insights.Services
         {
             profile ??= new InsightsProfile { Id = "analyst", Name = "Analyst", Persona = "a general BI analyst" };
             scope ??= ReportScope.Unscoped();
+
+            // A denied scope means the user is a company-scoped profile with no resolvable company. Don't run
+            // the model (every tool would return empty and the agent would wrongly call it an empty catalog) —
+            // say plainly what's wrong.
+            if (scope.Denied)
+                return new AgentTurnResult
+                {
+                    Reply = "Your account isn't linked to a company yet, so there's no data in scope. "
+                        + "Ask an administrator to add you to your company (Admin → Companies), then reopen Insights."
+                };
+
             var memoryKey = profile.Id;
 
             var messages = new List<InsightsLlmClient.LlmMessage>

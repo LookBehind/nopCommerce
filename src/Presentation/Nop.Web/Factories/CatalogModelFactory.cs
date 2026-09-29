@@ -23,10 +23,12 @@ using Nop.Core.Domain.Vendors;
 using Nop.Core.Events;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
+using Nop.Services.Companies;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Localization;
 using Nop.Services.Media;
+using Nop.Services.Orders;
 using Nop.Services.Seo;
 using Nop.Services.Topics;
 using Nop.Services.Vendors;
@@ -35,6 +37,7 @@ using Nop.Web.Infrastructure.Cache;
 using Nop.Web.Models.Catalog;
 using Nop.Web.Models.Media;
 using Nop.Services.Configuration;
+using TimeZoneConverter;
 
 namespace Nop.Web.Factories
 {
@@ -49,6 +52,8 @@ namespace Nop.Web.Factories
         private readonly IActionContextAccessor _actionContextAccessor;
         private readonly ICategoryService _categoryService;
         private readonly ICategoryTemplateService _categoryTemplateService;
+        private readonly ICompanyService _companyService;
+        private readonly IDeliverySlotService _deliverySlotService;
         private readonly ICurrencyService _currencyService;
         private readonly ICustomerService _customerService;
         private readonly IEventPublisher _eventPublisher;
@@ -87,6 +92,8 @@ namespace Nop.Web.Factories
             IActionContextAccessor actionContextAccessor,
             ICategoryService categoryService,
             ICategoryTemplateService categoryTemplateService,
+            ICompanyService companyService,
+            IDeliverySlotService deliverySlotService,
             ICurrencyService currencyService,
             ICustomerService customerService,
             IEventPublisher eventPublisher,
@@ -121,6 +128,8 @@ namespace Nop.Web.Factories
             _forumSettings = forumSettings;
             _actionContextAccessor = actionContextAccessor;
             _categoryService = categoryService;
+            _companyService = companyService;
+            _deliverySlotService = deliverySlotService;
             _categoryTemplateService = categoryTemplateService;
             _currencyService = currencyService;
             _customerService = customerService;
@@ -154,19 +163,33 @@ namespace Nop.Web.Factories
         #region Utilities
 
         /// <summary>
-        /// Gets the customer's currently selected delivery date, for filtering out products from
-        /// vendors that are off/non-working that day. Reads the same generic attribute the
+        /// Gets the effective delivery date to filter product listings by, for excluding products
+        /// from vendors that are off/non-working that day. Reads the same generic attribute the
         /// Company plugin's IDeliveryTimeStorageService uses (this core factory can't reference
         /// that plugin-defined service directly - see Nop.Plugin.Company.Company.Services.
-        /// DeliveryTimeStorageService for the counterpart write path). Returns null if the
-        /// customer hasn't selected a delivery time yet, in which case callers should not filter.
+        /// DeliveryTimeStorageService for the counterpart write path). If the customer hasn't
+        /// selected a delivery date yet, falls back to the earliest date they could still order
+        /// for (today if before the last delivery slot's cutoff, otherwise tomorrow - see
+        /// IDeliverySlotService) instead of returning null - browsing with no date picked should
+        /// still hide vendors that are off on the date that would actually apply, rather than
+        /// optimistically showing everything as available or checking a cutoff-passed "today".
+        /// Returns null only when the customer has no company (nothing to filter against).
         /// </summary>
         protected virtual async Task<DateTime?> GetSelectedDeliveryDateAsync()
         {
             var customer = await _workContext.GetCurrentCustomerAsync();
             var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
 
-            return await _genericAttributeService.GetAttributeAsync<DateTime?>(customer, "SELECTED_DELIVERY_TIME_KEY", storeId);
+            var selectedDate = await _genericAttributeService.GetAttributeAsync<DateTime?>(customer, "SELECTED_DELIVERY_TIME_KEY", storeId);
+            if (selectedDate.HasValue)
+                return selectedDate;
+
+            var company = await _companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            if (company == null)
+                return null;
+
+            var companyTimeZone = TZConvert.GetTimeZoneInfo(company.TimeZone);
+            return await _deliverySlotService.GetEarliestOrderableDateAsync(storeId, companyTimeZone);
         }
 
         protected virtual CategorySimpleModel GetCategorySimpleModel(XElement elem)
