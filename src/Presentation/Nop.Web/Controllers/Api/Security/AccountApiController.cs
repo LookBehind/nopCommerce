@@ -1,11 +1,15 @@
 ﻿using System;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
 using Newtonsoft.Json;
 using Nop.Core;
@@ -99,6 +103,14 @@ namespace Nop.Web.Controllers.Api.Security
             public string Password { get; set; }
             public string PushToken { get; set; }
             public string GoogleToken { get; set; }
+            public string AppleToken { get; set; }
+            // Apple only ever returns the user's name in the client's native authorization
+            // response (AuthenticationServices' ASAuthorizationAppleIDCredential.fullName), and
+            // only on that user's very first authorization with this app - never inside the
+            // identity token JWT, and never again on later logins. The client must capture and
+            // send these the one time it has them.
+            public string AppleFirstName { get; set; }
+            public string AppleLastName { get; set; }
         }
 
         //to serialize json into class
@@ -235,6 +247,109 @@ namespace Nop.Web.Controllers.Api.Security
                             message = await _localizationService.GetResourceAsync("Account.Login.WrongCredentials")
                         });
                     }
+                }
+            }
+
+            //checking if customer comes from Sign in with Apple
+            if (!string.IsNullOrWhiteSpace(model.AppleToken))
+            {
+                var requestUserAgent = _httpContextAccessor.HttpContext?.Request?.Headers[HeaderNames.UserAgent].ToString();
+
+                // Unlike Google's tokeninfo endpoint, Apple has no hosted "decode and validate
+                // for me" endpoint - the identity token is a JWT we have to verify ourselves
+                // against Apple's own rotating public keys (no long-lived secret involved).
+                ClaimsPrincipal applePrincipal;
+                try
+                {
+                    var jwks = await new HttpClient().GetStringAsync("https://appleid.apple.com/auth/keys");
+                    var signingKeys = new JsonWebKeySet(jwks).GetSigningKeys();
+
+                    var validationParameters = new TokenValidationParameters
+                    {
+                        ValidIssuer = "https://appleid.apple.com",
+                        // Native Sign in with Apple (AuthenticationServices, not the web JS flow)
+                        // issues the identity token with aud = the app's bundle identifier.
+                        ValidAudience = "com.mysnacks.app",
+                        IssuerSigningKeys = signingKeys,
+                        ValidateLifetime = true
+                    };
+                    applePrincipal = new JwtSecurityTokenHandler().ValidateToken(model.AppleToken, validationParameters, out _);
+                }
+                catch (Exception ex)
+                {
+                    await _logger.ErrorAsync($"AccountApiController.Login (apple): identity token validation failed (userAgent='{requestUserAgent}')", ex);
+                    return Ok(new
+                    {
+                        success = false,
+                        message = await _localizationService.GetResourceAsync("Google.Token.IsNotValid")
+                    });
+                }
+
+                var appleSub = applePrincipal.FindFirst("sub")?.Value;
+                // Only present when the user chose to share their real address, or on later
+                // logins if Apple already forwarded it before - otherwise this is Apple's own
+                // "<unique-id>@privaterelay.appleid.com" address, which is a real, deliverable
+                // inbox and works fine as this customer's Email going forward.
+                var appleEmail = applePrincipal.FindFirst("email")?.Value;
+
+                if (string.IsNullOrWhiteSpace(appleSub) || string.IsNullOrWhiteSpace(appleEmail))
+                {
+                    await _logger.WarningAsync($"AccountApiController.Login (apple): identity token missing sub/email claims (userAgent='{requestUserAgent}')");
+                    return Ok(new
+                    {
+                        success = false,
+                        message = await _localizationService.GetResourceAsync("Google.Token.IsNotValid")
+                    });
+                }
+
+                var authParameters = new ExternalAuthenticationParameters
+                {
+                    ProviderSystemName = "ExternalAuth",
+                    Email = appleEmail,
+                    ExternalIdentifier = appleSub,
+                    ExternalDisplayIdentifier = $"{model.AppleFirstName} {model.AppleLastName}".Trim(),
+                    AccessToken = model.AppleToken,
+                    IsApproved = false // Not approved by default, decided by Company plugin
+                };
+
+                if (!string.IsNullOrWhiteSpace(model.AppleFirstName))
+                    authParameters.Claims.Add(new ExternalAuthenticationClaim("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/given_name", model.AppleFirstName));
+                if (!string.IsNullOrWhiteSpace(model.AppleLastName))
+                    authParameters.Claims.Add(new ExternalAuthenticationClaim("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname", model.AppleLastName));
+
+                try
+                {
+                    var authResult = await _externalAuthenticationService.AuthenticateAsync(authParameters);
+
+                    var customer = await _customerService.GetCustomerByEmailAsync(appleEmail);
+                    if (customer != null)
+                    {
+                        loginResult = CustomerLoginResults.Successful;
+                        model.Email = appleEmail;
+
+                        if (!customer.Active)
+                            loginResult = CustomerLoginResults.NotActive;
+
+                        await _logger.InformationAsync($"AccountApiController.Login (apple): resolved customer Id={customer.Id} Email='{customer.Email}' Active={customer.Active} for external email '{appleEmail}' (authResult={authResult?.GetType().Name}, userAgent='{requestUserAgent}')");
+                    }
+                    else
+                    {
+                        await _logger.WarningAsync($"AccountApiController.Login (apple): NO customer found by email '{appleEmail}' after AuthenticateAsync (authResult={authResult?.GetType().Name}, userAgent='{requestUserAgent}') - returning CustomerNotExist.");
+                        return Ok(new
+                        {
+                            success = false,
+                            message = await _localizationService.GetResourceAsync("Account.Login.WrongCredentials.CustomerNotExist")
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await _logger.ErrorAsync($"AccountApiController.Login (apple): AuthenticateAsync threw for external email '{appleEmail}' (userAgent='{requestUserAgent}')", ex);
+                    return Ok(new
+                    {
+                        success = false,
+                        message = await _localizationService.GetResourceAsync("Account.Login.WrongCredentials")
+                    });
                 }
             }
 
