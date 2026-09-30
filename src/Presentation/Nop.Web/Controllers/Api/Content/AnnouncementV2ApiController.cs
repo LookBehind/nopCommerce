@@ -29,9 +29,11 @@ namespace Nop.Web.Controllers.Api.Content
     /// used here don't also show up unstyled on the web store - this endpoint is the
     /// only consumer of News data now.
     /// </summary>
+    /// Deliberately anonymous (no [Authorize]) - a pure content read with no dependency on an
+    /// authenticated identity, and mobile browsing (Home's announcements) must not require an
+    /// account (App Store Guideline 5.1.1(v)).
     [Produces("application/json")]
     [Route("api/v2/announcements")]
-    [Authorize]
     public class AnnouncementV2ApiController(
         INewsService newsService,
         IGenericAttributeService genericAttributeService,

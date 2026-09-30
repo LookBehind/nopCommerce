@@ -49,9 +49,13 @@ namespace Nop.Web.Controllers.Api.Catalog
     /// parallelism (the remaining per-product calls - picture, product-category mapping,
     /// product-specification mapping - are genuinely independent I/O once the shared lookups
     /// are precomputed).
+    /// Deliberately anonymous (no [Authorize]) - every action here is a pure catalog read
+    /// with no dependency on an authenticated identity (no IWorkContext/ICustomerService even
+    /// injected), and mobile browsing must not require an account (App Store Guideline
+    /// 5.1.1(v)). A guest's requests just carry no Authorization header (see mobile's
+    /// baseApiQuery) and land here the same as a logged-in customer's.
     [Produces("application/json")]
     [Route("api/v2/catalog")]
-    [Authorize]
     public class CatalogV2ApiController(
         IProductService productService,
         ICategoryService categoryService,
