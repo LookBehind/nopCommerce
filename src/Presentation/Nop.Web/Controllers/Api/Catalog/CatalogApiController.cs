@@ -850,6 +850,11 @@ namespace Nop.Web.Controllers.Api.Security
         /// cart-item mechanism rather than a new table - confirmed wired end-to-end (permission
         /// check, settings, storefront Wishlist controller actions) before building on it here.
         /// </summary>
+        // Guests must be able to browse/favourite without an account (App Store Guideline
+        // 5.1.1(v)) - backed by the guest's own anonymous customer wishlist, same as a real
+        // customer's. The class-level [AuthorizeAttribute] doesn't know about the standard
+        // [Microsoft.AspNetCore.Authorization.AllowAnonymous] on its own (see that attribute's own fix), so this needs both.
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         [HttpGet("favourites")]
         public async Task<IActionResult> GetFavourites()
         {
@@ -872,6 +877,7 @@ namespace Nop.Web.Controllers.Api.Security
             return Ok(model);
         }
 
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         [HttpPost("favourites/{productId}")]
         public async Task<IActionResult> AddFavourite(int productId)
         {
@@ -907,6 +913,7 @@ namespace Nop.Web.Controllers.Api.Security
             return Ok(new { success = true });
         }
 
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         [HttpDelete("favourites/{productId}")]
         public async Task<IActionResult> RemoveFavourite(int productId)
         {
