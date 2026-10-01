@@ -99,6 +99,12 @@ namespace Nop.Web.Controllers.Api.Catalog
             public string CategoryName { get; set; }
             public bool RibbonEnable { get; set; }
             public string RibbonText { get; set; }
+            // Drives the "new" curated row (see GetCuratedProducts) - RibbonText/RibbonEnable
+            // is a separate, staff-set product-card badge (not necessarily "new" at all; could
+            // be "sale" or any other free text) and was never a reliable signal for this, since
+            // it required a staff member to remember to set it per product. Not currently
+            // exposed to mobile for anything else, but harmless to carry on the model.
+            public DateTime CreatedOnUtc { get; set; }
             public int RatingSum { get; set; }
             public int TotalReviews { get; set; }
             // Real order-driven signal (total quantity sold, per vendor's bestsellers
@@ -194,7 +200,12 @@ namespace Nop.Web.Controllers.Api.Catalog
 
             IEnumerable<ProductOverviewV2Model> curated = section?.ToLowerInvariant() switch
             {
-                "new" => products.Where(p => p.RibbonEnable && p.RibbonText == "new"),
+                // Was RibbonEnable/RibbonText == "new" - that's a separate, manually-set
+                // product-card badge (staff has to remember to flip it per product, and
+                // RibbonText is free text, not reliably "new") rather than a real "just
+                // added" signal. CreatedOnUtc is the actual, always-accurate timestamp
+                // every product already has, so this needs no admin action at all.
+                "new" => products.OrderByDescending(p => p.CreatedOnUtc).Take(20),
                 "trending" => products.OrderByDescending(p => p.PopularityCount).Take(8),
                 "toprated" => products.OrderByDescending(p => VendorAverageRating(p.Vendor)).Take(4),
                 _ => null
@@ -439,6 +450,7 @@ namespace Nop.Web.Controllers.Api.Catalog
                 CategoryName = categoryName,
                 RibbonEnable = product.RibbonEnable,
                 RibbonText = product.RibbonText,
+                CreatedOnUtc = product.CreatedOnUtc,
                 RatingSum = product.ApprovedRatingSum,
                 TotalReviews = product.ApprovedTotalReviews,
                 PopularityCount = popularityCount,
