@@ -1,4 +1,3 @@
-using System;
 using Microsoft.Extensions.DependencyInjection;
 using Nop.Core.Configuration;
 using Nop.Core.Infrastructure;
@@ -15,14 +14,8 @@ namespace Nop.Plugin.Company.AiChat.Infrastructure
             services.AddScoped<IAiChatCatalogService, AiChatCatalogService>();
             services.AddScoped<IAiChatService, AiChatService>();
 
-            // Typed client for the in-cluster KubeAI/vLLM gateway (OpenAI-compatible) - same
-            // gateway/model as Nop.Plugin.Company.Insights, registered independently since
-            // plugins in this codebase don't take project references on each other.
-            services.AddHttpClient<AiChatLlmClient>(client =>
-            {
-                client.BaseAddress = new Uri(AiChatLlmClient.BaseUrl);
-                client.Timeout = TimeSpan.FromSeconds(180);
-            });
+            // Chat completions go through the shared IKubeAiChatClient (Nop.Web.Framework's core
+            // DependencyRegistrar) - same gateway/client Insights and Support use.
         }
 
         public int Order => 3;

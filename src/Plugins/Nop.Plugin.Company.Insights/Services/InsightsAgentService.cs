@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Nop.Plugin.Company.Insights.Models;
+using Nop.Services.Ai;
 using Nop.Services.Logging;
 
 namespace Nop.Plugin.Company.Insights.Services
@@ -31,20 +32,23 @@ namespace Nop.Plugin.Company.Insights.Services
         // say the data isn't available) so it doesn't spin forever on an unanswerable question.
         private const int SoftNudgeAfter = 6;
 
-        private readonly InsightsLlmClient _llm;
+        private readonly IKubeAiChatClient _llm;
+        private readonly AiSettings _aiSettings;
         private readonly IInsightsReportService _reportService;
         private readonly IInsightsMemoryService _memory;
         private readonly IInsightsAgentConfigService _agents;
         private readonly ILogger _logger;
 
         public InsightsAgentService(
-            InsightsLlmClient llm,
+            IKubeAiChatClient llm,
+            AiSettings aiSettings,
             IInsightsReportService reportService,
             IInsightsMemoryService memory,
             IInsightsAgentConfigService agents,
             ILogger logger)
         {
             _llm = llm;
+            _aiSettings = aiSettings;
             _reportService = reportService;
             _memory = memory;
             _agents = agents;
@@ -68,16 +72,16 @@ namespace Nop.Plugin.Company.Insights.Services
 
             var memoryKey = profile.Id;
 
-            var messages = new List<InsightsLlmClient.LlmMessage>
+            var messages = new List<LlmMessage>
             {
-                new InsightsLlmClient.LlmMessage { Role = "system", Content = BuildSystemPrompt(profile, scope, _memory.Enabled, _agents.Enabled) }
+                new LlmMessage { Role = "system", Content = BuildSystemPrompt(profile, scope, _memory.Enabled, _agents.Enabled) }
             };
 
             foreach (var m in request.Messages ?? new List<AgentChatMessage>())
             {
                 if (string.IsNullOrWhiteSpace(m?.Content))
                     continue;
-                messages.Add(new InsightsLlmClient.LlmMessage
+                messages.Add(new LlmMessage
                 {
                     Role = string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? "assistant" : "user",
                     Content = m.Content
@@ -100,10 +104,10 @@ namespace Nop.Plugin.Company.Insights.Services
             sb.AppendLine("If, after checking the data, there is nothing worth sending (no issue, nothing actionable, everything looks fine), answer with EXACTLY the text NO_REPORT and nothing else — the run is recorded but no message is sent to the outputs. Only produce a full report when it is genuinely useful; don't send noise.");
             AppendProtocolAndTools(sb, scope, _memory.Enabled, automationsEnabled: false, includeWidgets: false);
 
-            var messages = new List<InsightsLlmClient.LlmMessage>
+            var messages = new List<LlmMessage>
             {
-                new InsightsLlmClient.LlmMessage { Role = "system", Content = sb.ToString() },
-                new InsightsLlmClient.LlmMessage
+                new LlmMessage { Role = "system", Content = sb.ToString() },
+                new LlmMessage
                 {
                     Role = "user",
                     Content = (config.Instruction ?? "Analyse the trigger and produce a concise, actionable note.").Trim()
@@ -122,7 +126,7 @@ namespace Nop.Plugin.Company.Insights.Services
         /// <summary>The shared native tool-calling loop used by both the interactive chat and background
         /// agents. The model calls read-only tools via the OpenAI/vLLM function-calling interface (parsed by
         /// vLLM's qwen3_coder tool-call parser into structured tool_calls) until it answers with content.</summary>
-        private async Task<AgentTurnResult> RunLoopAsync(List<InsightsLlmClient.LlmMessage> messages, string memoryKey,
+        private async Task<AgentTurnResult> RunLoopAsync(List<LlmMessage> messages, string memoryKey,
             ReportScope scope, bool allowWidgets, bool readOnly, bool automationsEnabled, Action<string> reportStatus,
             CancellationToken cancellationToken)
         {
@@ -142,7 +146,7 @@ namespace Nop.Plugin.Company.Insights.Services
                         break; // whole-turn safety ceiling reached → final tool-free synthesis below
                     Report(i == 0 ? "Thinking…" : "Analyzing…");
                     var completion = await _llm.CompleteWithToolsAsync(
-                        InsightsLlmClient.DefaultModel, messages, 0.0, tools, LlmTimeout, cancellationToken);
+                        _aiSettings.InsightsModel, messages, 0.0, tools, LlmTimeout, cancellationToken);
 
                     // Model answered (no tool calls) → that content is the reply (plain Markdown). Keep a
                     // tolerant fallback for the old {"final":...} JSON envelope and any stray native markup.
@@ -155,7 +159,7 @@ namespace Nop.Plugin.Company.Insights.Services
 
                     // Echo the assistant tool-call message, then run each tool and feed the result back as a
                     // role:"tool" message (required by the tool-calling protocol) so the model can continue.
-                    messages.Add(new InsightsLlmClient.LlmMessage
+                    messages.Add(new LlmMessage
                     {
                         Role = "assistant",
                         Content = completion.Content,
@@ -224,7 +228,7 @@ namespace Nop.Plugin.Company.Insights.Services
                                     lastDataset = dataset;
                             }
 
-                            messages.Add(new InsightsLlmClient.LlmMessage
+                            messages.Add(new LlmMessage
                             {
                                 Role = "tool",
                                 ToolCallId = call.Id,
@@ -244,7 +248,7 @@ namespace Nop.Plugin.Company.Insights.Services
                     if (!nudged && i + 1 >= SoftNudgeAfter)
                     {
                         nudged = true;
-                        messages.Add(new InsightsLlmClient.LlmMessage
+                        messages.Add(new LlmMessage
                         {
                             Role = "user",
                             Content = "You've made several tool calls. If you now have enough to answer, give your answer. "
@@ -256,7 +260,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 // Time ceiling reached. Make ONE final call with NO tools so the model must answer with
                 // what it gathered (or explain what data is missing) instead of a canned give-up.
                 Report("Summarizing…");
-                messages.Add(new InsightsLlmClient.LlmMessage
+                messages.Add(new LlmMessage
                 {
                     Role = "user",
                     Content = "Time to wrap up. Answer now in Markdown using the data you've already gathered. "
@@ -265,7 +269,7 @@ namespace Nop.Plugin.Company.Insights.Services
                 try
                 {
                     var finalCompletion = await _llm.CompleteWithToolsAsync(
-                        InsightsLlmClient.DefaultModel, messages, 0.0, null, LlmTimeout, cancellationToken);
+                        _aiSettings.InsightsModel, messages, 0.0, null, LlmTimeout, cancellationToken);
                     var answer = FinishAnswer(finalCompletion.Content ?? "", allowWidgets, pendingWidgets, lastDataset);
                     answer.CombinedReports = pendingCombined;
                     if (!string.IsNullOrWhiteSpace(answer.Reply))
@@ -321,15 +325,15 @@ namespace Nop.Plugin.Company.Insights.Services
             sb.AppendLine("Pick triggerKind \"schedule\" only if the user asks for a periodic/scheduled run; else \"event\". Choose the single best eventType. Default outputSinks to [\"dashboard\"].");
             sb.AppendLine("Write a genuinely useful systemPrompt + instruction for the described task. The agent is READ-ONLY (it can never modify data).");
 
-            var messages = new List<InsightsLlmClient.LlmMessage>
+            var messages = new List<LlmMessage>
             {
-                new InsightsLlmClient.LlmMessage { Role = "system", Content = sb.ToString() },
-                new InsightsLlmClient.LlmMessage { Role = "user", Content = description.Trim() }
+                new LlmMessage { Role = "system", Content = sb.ToString() },
+                new LlmMessage { Role = "user", Content = description.Trim() }
             };
 
             try
             {
-                var content = await _llm.CompleteAsync(InsightsLlmClient.DefaultModel, messages, 0.2, null, LlmTimeout, cancellationToken);
+                var content = await _llm.CompleteAsync(_aiSettings.InsightsModel, messages, 0.2, null, LlmTimeout, cancellationToken);
                 var json = ExtractJsonObject(content);
                 if (json == null)
                     return null;
@@ -571,7 +575,7 @@ namespace Nop.Plugin.Company.Insights.Services
 
         /// <summary>Auto-recalls relevant saved notes for the latest user message and injects them as context.</summary>
         private async Task InjectMemoryContextAsync(
-            List<InsightsLlmClient.LlmMessage> messages, ChatTurnRequest request, string memoryKey, CancellationToken ct)
+            List<LlmMessage> messages, ChatTurnRequest request, string memoryKey, CancellationToken ct)
         {
             if (!_memory.Enabled)
                 return;
@@ -596,7 +600,7 @@ namespace Nop.Plugin.Company.Insights.Services
             if (system != null)
                 system.Content += sb.ToString();
             else
-                messages.Insert(0, new InsightsLlmClient.LlmMessage { Role = "system", Content = sb.ToString() });
+                messages.Insert(0, new LlmMessage { Role = "system", Content = sb.ToString() });
         }
 
         private static string SummarizeDataset(InsightsReportResult result)
@@ -690,14 +694,14 @@ namespace Nop.Plugin.Company.Insights.Services
 
         /// <summary>Native tool schemas (OpenAI function-calling shape) offered to the model — the read-only
         /// data tools plus, per flags, memory, widget, and automation-management tools.</summary>
-        private static List<InsightsLlmClient.LlmTool> BuildToolSchemas(ReportScope scope, bool memoryEnabled, bool automationsEnabled, bool includeWidgets)
+        private static List<LlmTool> BuildToolSchemas(ReportScope scope, bool memoryEnabled, bool automationsEnabled, bool includeWidgets)
         {
-            InsightsLlmClient.LlmTool Fn(string name, string desc, Dictionary<string, object> props, string[] required = null)
+            LlmTool Fn(string name, string desc, Dictionary<string, object> props, string[] required = null)
             {
                 var parameters = new Dictionary<string, object> { ["type"] = "object", ["properties"] = props ?? new Dictionary<string, object>() };
                 if (required != null && required.Length > 0)
                     parameters["required"] = required;
-                return new InsightsLlmClient.LlmTool { Function = new InsightsLlmClient.LlmFunctionDef { Name = name, Description = desc, Parameters = parameters } };
+                return new LlmTool { Function = new LlmFunctionDef { Name = name, Description = desc, Parameters = parameters } };
             }
             Dictionary<string, object> Str(string desc) => new() { ["type"] = "string", ["description"] = desc };
             Dictionary<string, object> Int(string desc) => new() { ["type"] = "integer", ["description"] = desc };
@@ -707,7 +711,7 @@ namespace Nop.Plugin.Company.Insights.Services
             Dictionary<string, object> Obj(string desc) => new() { ["type"] = "object", ["description"] = desc };
             Dictionary<string, object> ObjArray(string desc, Dictionary<string, object> props) => new() { ["type"] = "array", ["description"] = desc, ["items"] = new Dictionary<string, object> { ["type"] = "object", ["properties"] = props } };
 
-            var tools = new List<InsightsLlmClient.LlmTool>
+            var tools = new List<LlmTool>
             {
                 Fn("list_reports", "List the available named reports and their parameters (with min/max).", new Dictionary<string, object>()),
                 Fn("run_report", "Run a named report and return its columns and rows.", new Dictionary<string, object>

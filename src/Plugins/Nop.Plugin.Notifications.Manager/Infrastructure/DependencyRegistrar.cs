@@ -73,9 +73,6 @@ namespace Nop.Plugin.Notifications.Manager.Infrastructure
             services.AddScoped<RateReminderReconciler>();
             services.AddScoped<RateReminderJob>();
             services.AddScoped<IRecurringTaskRegistrar, RateReminderBootReconciler>();
-
-            services.AddHttpClient<KubeAiChatClient>(client =>
-                client.BaseAddress = new Uri(KubeAiChatClient.BaseUrl));
         }
     }
 }
