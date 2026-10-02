@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Nop.Core.Domain.Customers;
 using Nop.Plugin.Company.AiChat.Domain;
+using Nop.Services.Ai;
 
 namespace Nop.Plugin.Company.AiChat.Services
 {
@@ -25,16 +26,19 @@ namespace Nop.Plugin.Company.AiChat.Services
 
         private readonly IAiChatConversationService _conversationService;
         private readonly IAiChatCatalogService _catalogService;
-        private readonly AiChatLlmClient _llmClient;
+        private readonly IKubeAiChatClient _llmClient;
+        private readonly AiSettings _aiSettings;
 
         public AiChatService(
             IAiChatConversationService conversationService,
             IAiChatCatalogService catalogService,
-            AiChatLlmClient llmClient)
+            IKubeAiChatClient llmClient,
+            AiSettings aiSettings)
         {
             _conversationService = conversationService;
             _catalogService = catalogService;
             _llmClient = llmClient;
+            _aiSettings = aiSettings;
         }
 
         public virtual async Task<AiChatTurnResult> SendMessageAsync(Customer customer, int storeId, string userText, CancellationToken cancellationToken = default)
@@ -51,17 +55,17 @@ namespace Nop.Plugin.Company.AiChat.Services
 
             var allergies = await _catalogService.GetCustomerAllergiesAsync(customer, storeId);
 
-            var messages = new List<AiChatLlmClient.LlmMessage>
+            var messages = new List<LlmMessage>
             {
                 new() { Role = "system", Content = BuildSystemPrompt(allergies) }
             };
-            messages.AddRange(recentHistory.Select(m => new AiChatLlmClient.LlmMessage
+            messages.AddRange(recentHistory.Select(m => new LlmMessage
             {
                 Role = m.IsFromCustomer ? "user" : "assistant",
                 Content = m.Body
             }));
 
-            var tools = new List<AiChatLlmClient.LlmTool> { BuildSearchProductsTool() };
+            var tools = new List<LlmTool> { BuildSearchProductsTool() };
 
             // Accumulated across every search_products call this turn (a reasoning model
             // routinely searches more than once per reply - e.g. once for a light option and
@@ -73,7 +77,7 @@ namespace Nop.Plugin.Company.AiChat.Services
             for (var round = 0; round < MaxToolRounds; round++)
             {
                 var completion = await _llmClient.CompleteWithToolsAsync(
-                    AiChatLlmClient.DefaultModel,
+                    _aiSettings.AiChatModel,
                     messages,
                     temperature: 0.5,
                     tools: tools,
@@ -86,7 +90,7 @@ namespace Nop.Plugin.Company.AiChat.Services
                     break;
                 }
 
-                messages.Add(new AiChatLlmClient.LlmMessage { Role = "assistant", ToolCalls = completion.ToolCalls.ToList() });
+                messages.Add(new LlmMessage { Role = "assistant", ToolCalls = completion.ToolCalls.ToList() });
 
                 foreach (var toolCall in completion.ToolCalls)
                 {
@@ -97,7 +101,7 @@ namespace Nop.Plugin.Company.AiChat.Services
                         if (!seenProductIds.Contains(id))
                             seenProductIds.Add(id);
 
-                    messages.Add(new AiChatLlmClient.LlmMessage
+                    messages.Add(new LlmMessage
                     {
                         Role = "tool",
                         ToolCallId = toolCall.Id,
@@ -156,9 +160,9 @@ namespace Nop.Plugin.Company.AiChat.Services
             return null;
         }
 
-        private static AiChatLlmClient.LlmTool BuildSearchProductsTool() => new()
+        private static LlmTool BuildSearchProductsTool() => new()
         {
-            Function = new AiChatLlmClient.LlmFunctionDef
+            Function = new LlmFunctionDef
             {
                 Name = SearchProductsToolName,
                 Description = "Searches the real MySnacks catalog (across all vendors) for purchasable products matching a short keyword query, e.g. a dish, cuisine, ingredient, or dietary need. Results already exclude anything conflicting with the customer's saved allergies. Always call this before recommending specific products - never invent a product, price, or vendor.",

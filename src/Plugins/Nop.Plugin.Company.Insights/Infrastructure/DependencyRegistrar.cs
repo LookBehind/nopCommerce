@@ -35,12 +35,9 @@ namespace Nop.Plugin.Company.Insights.Infrastructure
             services.AddScoped<IInsightsTelegramChatService, InsightsTelegramChatService>();
             services.AddSingleton<InsightsMemoryConfig>();
 
-            // Typed client for the in-cluster KubeAI/vLLM gateway (OpenAI-compatible).
-            services.AddHttpClient<InsightsLlmClient>(client =>
-            {
-                client.BaseAddress = new Uri(InsightsLlmClient.BaseUrl);
-                client.Timeout = TimeSpan.FromSeconds(180);
-            });
+            // Chat completions go through the shared IKubeAiChatClient (Nop.Web.Framework's core
+            // DependencyRegistrar) - its HttpClient.Timeout is sized for this agent's long tool-calling
+            // turns, the longest of any consumer.
 
             // Typed client for the CPU embedder (absolute URL from config, so no BaseAddress).
             services.AddHttpClient<InsightsEmbedderClient>(client =>

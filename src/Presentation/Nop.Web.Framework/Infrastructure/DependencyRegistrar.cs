@@ -10,6 +10,7 @@ using Nop.Core.Infrastructure;
 using Nop.Core.Infrastructure.DependencyManagement;
 using Nop.Data;
 using Nop.Services.Affiliates;
+using Nop.Services.Ai;
 using Nop.Services.Authentication;
 using Nop.Services.Authentication.External;
 using Nop.Services.Authentication.MultiFactor;
@@ -77,6 +78,17 @@ namespace Nop.Web.Framework.Infrastructure
 
             //user agent helper
             services.AddScoped<IUserAgentHelper, UserAgentHelper>();
+
+            //shared KubeAI chat-completions client - one HTTP client reused by every feature that talks
+            //to the model (support-case subject generation, RemindMe's recommendation, the Insights BI
+            //agent's tool-calling loop, ...); each caller still picks its own model id and per-call
+            //timeout via its own CancellationToken - HttpClient.Timeout itself just needs to be no
+            //shorter than the longest of those (Insights' agent turns, up to 240s per call)
+            services.AddHttpClient<IKubeAiChatClient, KubeAiChatClient>(client =>
+            {
+                client.BaseAddress = new Uri(KubeAiChatClient.BaseUrl);
+                client.Timeout = TimeSpan.FromSeconds(300);
+            });
 
             //data layer
             services.AddTransient<IDataProviderManager, DataProviderManager>();
