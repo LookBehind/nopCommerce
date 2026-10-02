@@ -60,6 +60,16 @@ namespace Nop.Services.Ai
             [JsonPropertyName("tool_choice")]
             [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
             public string ToolChoice { get; set; }
+
+            // Qwen3 chat-template control. Thinking is the model default (left on by every existing
+            // caller - it's what makes tool-calling/reasoning answers good) - only set this to disable
+            // it for a trivial, non-reasoning task where the <think> preamble is pure latency with no
+            // quality benefit (e.g. a one-line subject rewrite). Confirmed live: with thinking on, a
+            // short subject-generation prompt burned its whole token budget on reasoning and never
+            // reached the answer (finish_reason=length, empty content) even on a warm model.
+            [JsonPropertyName("chat_template_kwargs")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public Dictionary<string, object> ChatTemplateKwargs { get; set; }
         }
 
         private class CompletionChoice
@@ -92,7 +102,8 @@ namespace Nop.Services.Ai
         }
 
         public async Task<string> GetChatCompletionAsync(string model, string systemPrompt, string userPrompt,
-            TimeSpan timeout, CancellationToken cancellationToken = default, int? maxTokens = null)
+            TimeSpan timeout, CancellationToken cancellationToken = default, int? maxTokens = null,
+            bool? enableThinking = null)
         {
             var messages = new List<LlmMessage>
             {
@@ -100,7 +111,7 @@ namespace Nop.Services.Ai
                 new() { Role = "user", Content = userPrompt }
             };
 
-            return await CompleteAsync(model, messages, temperature: 0.0, maxTokens, timeout, cancellationToken);
+            return await CompleteAsync(model, messages, temperature: 0.0, maxTokens, timeout, cancellationToken, enableThinking);
         }
 
         public async Task<string> CompleteAsync(
@@ -109,7 +120,8 @@ namespace Nop.Services.Ai
             double temperature,
             int? maxTokens,
             TimeSpan timeout,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool? enableThinking = null)
         {
             var request = new CompletionRequest
             {
@@ -117,7 +129,10 @@ namespace Nop.Services.Ai
                 Stream = false,
                 Temperature = temperature,
                 MaxTokens = maxTokens,
-                Messages = messages.ToList()
+                Messages = messages.ToList(),
+                ChatTemplateKwargs = enableThinking.HasValue
+                    ? new Dictionary<string, object> { ["enable_thinking"] = enableThinking.Value }
+                    : null
             };
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

@@ -25,16 +25,20 @@ namespace Nop.Services.Ai
         /// exception).
         /// </summary>
         Task<string> GetChatCompletionAsync(string model, string systemPrompt, string userPrompt,
-            TimeSpan timeout, CancellationToken cancellationToken = default, int? maxTokens = null);
+            TimeSpan timeout, CancellationToken cancellationToken = default, int? maxTokens = null,
+            bool? enableThinking = null);
 
         /// <summary>
         /// Posts a chat completion over a full message transcript and returns the assistant content.
         /// Pass maxTokens=null to leave the completion uncapped so a reasoning model can finish
         /// thinking AND answer - a cap that truncates the think block yields empty content. Throws on
-        /// HTTP error/timeout/empty content.
+        /// HTTP error/timeout/empty content. Pass enableThinking=false only for a trivial,
+        /// non-reasoning task where skipping the &lt;think&gt; preamble is pure latency savings (leave
+        /// null/default-on for anything that benefits from reasoning, e.g. tool-calling).
         /// </summary>
         Task<string> CompleteAsync(string model, IEnumerable<LlmMessage> messages, double temperature,
-            int? maxTokens, TimeSpan timeout, CancellationToken cancellationToken = default);
+            int? maxTokens, TimeSpan timeout, CancellationToken cancellationToken = default,
+            bool? enableThinking = null);
 
         /// <summary>
         /// Posts a chat completion WITH native tool-calling (requires a vLLM gateway configured with
