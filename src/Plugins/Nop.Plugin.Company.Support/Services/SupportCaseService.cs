@@ -26,8 +26,11 @@ namespace Nop.Plugin.Company.Support.Services
         /// is scale-to-zero (see RemindMeNotificationTask's multi-minute cold-start budget for the
         /// batch-job equivalent) - a customer submitting a case can't be made to wait minutes for a
         /// cold GPU pod, so a cold/slow model should fail fast and fall back, not block the request.
+        /// Measured live against a WARM qwen3-8-27b-awq with thinking disabled: ~9s - this leaves
+        /// headroom above that without making a human wait anywhere near RemindMe's 30s per-call
+        /// budget (that's a background job, this is a live "Submit" button press).
         /// </summary>
-        private static readonly TimeSpan SUBJECT_GENERATION_TIMEOUT = TimeSpan.FromSeconds(6);
+        private static readonly TimeSpan SUBJECT_GENERATION_TIMEOUT = TimeSpan.FromSeconds(15);
 
         public SupportCaseService(
             IRepository<SupportCase> supportCaseRepository,
@@ -121,6 +124,10 @@ namespace Nop.Plugin.Company.Support.Services
 
             try
             {
+                // No max_tokens cap: Qwen3 spends tokens on a <think> preamble before any answer,
+                // so a cap truncates mid-thought and returns empty content (finish_reason=length) -
+                // confirmed live. enableThinking:false is the right lever for a trivial one-line
+                // rewrite like this (no reasoning benefit, pure latency), not a token cap.
                 var raw = await _subjectLlmClient.GetChatCompletionAsync(
                     _aiSettings.SupportSubjectModel,
                     "You write short subject lines for customer support tickets. Reply with ONLY the "
@@ -128,7 +135,7 @@ namespace Nop.Plugin.Company.Support.Services
                     + "\"Subject:\". Keep it under 8 words and in the same language as the description.",
                     description,
                     SUBJECT_GENERATION_TIMEOUT,
-                    maxTokens: 40);
+                    enableThinking: false);
 
                 var subject = raw?.Trim().Trim('"', '\'');
                 return string.IsNullOrWhiteSpace(subject) ? fallback : subject;
