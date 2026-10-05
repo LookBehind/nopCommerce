@@ -69,7 +69,7 @@
             <span asp-validation-for="Price"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.OldPrice ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="OldPrice" />
         </div>
@@ -87,7 +87,7 @@
             <span asp-validation-for="ProductCost"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.DisableBuyButton ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="DisableBuyButton" />
         </div>
@@ -100,7 +100,7 @@
        piggybacks on this exact flag - see CatalogApiController's Favourites region and
        EnableProductFavouritesMigration) - staff toggling it per-product silently breaks Favourites
        for that product with no visible symptom in the admin UI. *@
-    <div class="form-group row @(Model.ProductEditorSettingsModel.AvailableForPreOrder ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="AvailableForPreOrder" />
         </div>
@@ -110,7 +110,7 @@
         </div>
     </div>
     <nop-nested-setting asp-for="AvailableForPreOrder">
-        <div class="form-group row @(Model.ProductEditorSettingsModel.AvailableForPreOrder ? null : "advanced-setting")" id="pnlPreOrderAvailabilityStartDateTimeUtc">
+        <div class="form-group row advanced-setting" id="pnlPreOrderAvailabilityStartDateTimeUtc">
             <div class="col-md-3">
                 <nop-label asp-for="PreOrderAvailabilityStartDateTimeUtc" />
             </div>
@@ -120,7 +120,7 @@
             </div>
         </div>
     </nop-nested-setting>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.CallForPrice ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="CallForPrice" />
         </div>
@@ -129,7 +129,7 @@
             <span asp-validation-for="CallForPrice"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.CustomerEntersPrice ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="CustomerEntersPrice" />
         </div>
@@ -139,7 +139,7 @@
         </div>
     </div>
     <nop-nested-setting asp-for="CustomerEntersPrice">
-        <div class="form-group row @(Model.ProductEditorSettingsModel.CustomerEntersPrice ? null : "advanced-setting")" id="pnlMinimumCustomerEnteredPrice">
+        <div class="form-group row advanced-setting" id="pnlMinimumCustomerEnteredPrice">
             <div class="col-md-3">
                 <nop-label asp-for="MinimumCustomerEnteredPrice" />
             </div>
@@ -148,7 +148,7 @@
                 <span asp-validation-for="MinimumCustomerEnteredPrice"></span>
             </div>
         </div>
-        <div class="form-group row @(Model.ProductEditorSettingsModel.CustomerEntersPrice ? null : "advanced-setting")" id="pnlMaximumCustomerEnteredPrice">
+        <div class="form-group row advanced-setting" id="pnlMaximumCustomerEnteredPrice">
             <div class="col-md-3">
                 <nop-label asp-for="MaximumCustomerEnteredPrice" />
             </div>
@@ -158,7 +158,7 @@
             </div>
         </div>
     </nop-nested-setting>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.PAngV ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="BasepriceEnabled" />
         </div>
@@ -168,7 +168,7 @@
         </div>
     </div>
     <nop-nested-setting asp-for="BasepriceEnabled">
-        <div class="form-group row @(Model.ProductEditorSettingsModel.PAngV ? null : "advanced-setting")" id="pnlBasepriceAmount">
+        <div class="form-group row advanced-setting" id="pnlBasepriceAmount">
             <div class="col-md-3">
                 <nop-label asp-for="BasepriceAmount" />
             </div>
@@ -177,7 +177,7 @@
                 <span asp-validation-for="BasepriceAmount"></span>
             </div>
         </div>
-        <div class="form-group row @(Model.ProductEditorSettingsModel.PAngV ? null : "advanced-setting")" id="pnlBasepriceUnit">
+        <div class="form-group row advanced-setting" id="pnlBasepriceUnit">
             <div class="col-md-3">
                 <nop-label asp-for="BasepriceUnitId" />
             </div>
@@ -186,7 +186,7 @@
                 <span asp-validation-for="BasepriceUnitId"></span>
             </div>
         </div>
-        <div class="form-group row @(Model.ProductEditorSettingsModel.PAngV ? null : "advanced-setting")" id="pnlBasepriceBaseAmount">
+        <div class="form-group row advanced-setting" id="pnlBasepriceBaseAmount">
             <div class="col-md-3">
                 <nop-label asp-for="BasepriceBaseAmount" />
             </div>
@@ -195,7 +195,7 @@
                 <span asp-validation-for="BasepriceBaseAmount"></span>
             </div>
         </div>
-        <div class="form-group row @(Model.ProductEditorSettingsModel.PAngV ? null : "advanced-setting")" id="pnlBasepriceBaseUnit">
+        <div class="form-group row advanced-setting" id="pnlBasepriceBaseUnit">
             <div class="col-md-3">
                 <nop-label asp-for="BasepriceBaseUnitId" />
             </div>
@@ -234,7 +234,7 @@
             </script>
         </div>
     </div>
-    <div id="product-tax-area">
+    <div id="product-tax-area" class="advanced-setting">
         <div class="form-group row">
             <div class="col-md-3">
                 <nop-label asp-for="IsTaxExempt" />
@@ -254,7 +254,7 @@
             </div>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.TelecommunicationsBroadcastingElectronicServices ? null : "advanced-setting")" id="pnlIsTelecommunicationsOrBroadcastingOrElectronicServices">
+    <div class="form-group row advanced-setting" id="pnlIsTelecommunicationsOrBroadcastingOrElectronicServices">
         <div class="col-md-3">
             <nop-label asp-for="IsTelecommunicationsOrBroadcastingOrElectronicServices" />
         </div>
@@ -263,7 +263,7 @@
             <span asp-validation-for="IsTelecommunicationsOrBroadcastingOrElectronicServices"></span>
         </div>
     </div>
-    <div class="card card-default @(Model.ProductEditorSettingsModel.TierPrices ? null : "advanced-setting")">
+    <div class="card card-default advanced-setting">
         <div class="card-header">
             @T("Admin.Catalog.Products.TierPrices")
         </div>
