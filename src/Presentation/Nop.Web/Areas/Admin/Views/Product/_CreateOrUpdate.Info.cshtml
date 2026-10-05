@@ -317,7 +317,7 @@
             </script>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.Manufacturers ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="SelectedManufacturerIds" />
         </div>
@@ -355,7 +355,7 @@
             <span asp-validation-for="Published"></span>
         </div>
     </div>
-    <div class="form-group row">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="RibbonEnable" />
         </div>
@@ -364,7 +364,7 @@
             <span asp-validation-for="RibbonEnable"></span>
         </div>
     </div>
-    <div class="form-group row" id="pnlRibbon">
+    <div class="form-group row advanced-setting" id="pnlRibbon">
         <div class="col-md-3">
             <nop-label asp-for="RibbonText" />
         </div>
@@ -373,7 +373,7 @@
             <span asp-validation-for="RibbonText"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.ProductTags ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="ProductTags" />
         </div>
@@ -382,7 +382,7 @@
             <span asp-validation-for="ProductTags"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.GTIN ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="Gtin" />
         </div>
@@ -391,7 +391,7 @@
             <span asp-validation-for="Gtin"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.ManufacturerPartNumber ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="ManufacturerPartNumber" />
         </div>
@@ -400,7 +400,7 @@
             <span asp-validation-for="ManufacturerPartNumber"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.ShowOnHomepage ? null : "advanced-setting")" @(Model.IsLoggedInAsVendor ? Html.Raw("style='display: none;'") : null)>
+    <div class="form-group row advanced-setting" @(Model.IsLoggedInAsVendor ? Html.Raw("style='display: none;'") : null)>
         <div class="col-md-3">
             <nop-label asp-for="ShowOnHomepage" />
         </div>
@@ -410,7 +410,7 @@
         </div>
     </div>
     <nop-nested-setting asp-for="ShowOnHomepage">
-        <div class="form-group row @(Model.ProductEditorSettingsModel.ShowOnHomepage  ? null : "advanced-setting")" id="pnlDisplayOrder" @(Model.IsLoggedInAsVendor ? Html.Raw("style='display: none;'") : null)>
+        <div class="form-group row advanced-setting" id="pnlDisplayOrder" @(Model.IsLoggedInAsVendor ? Html.Raw("style='display: none;'") : null)>
             <div class="col-md-3">
                 <nop-label asp-for="DisplayOrder" />
             </div>
@@ -421,7 +421,7 @@
         </div>
     </nop-nested-setting>
 
-    <div class="form-group row @(Model.ProductEditorSettingsModel.ProductType ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="ProductTypeId" />
         </div>
@@ -523,7 +523,7 @@
     @T("Admin.Catalog.Products.AssociatedProducts.SaveBeforeEdit")
 </div>}
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.ProductTemplate ? null : "advanced-setting")" @(Model.AvailableProductTemplates.SelectionIsNotPossible() ? Html.Raw("style=\"display:none\"") : null) id="nnpnlProductTemplateId">
+    <div class="form-group row advanced-setting" @(Model.AvailableProductTemplates.SelectionIsNotPossible() ? Html.Raw("style=\"display:none\"") : null) id="nnpnlProductTemplateId">
         <div class="col-md-3">
             <nop-label asp-for="ProductTemplateId" />
         </div>
@@ -532,7 +532,7 @@
             <span asp-validation-for="ProductTemplateId"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.VisibleIndividually ? null : "advanced-setting")" id="group-visible-individually">
+    <div class="form-group row advanced-setting" id="group-visible-individually">
         <div class="col-md-3">
             <nop-label asp-for="VisibleIndividually" />
         </div>
@@ -541,7 +541,7 @@
             <span asp-validation-for="VisibleIndividually"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.ACL ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="SelectedCustomerRoleIds" />
         </div>
@@ -614,7 +614,7 @@
             </div>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.Vendor ? null : "advanced-setting")" @(Model.IsLoggedInAsVendor ? Html.Raw("style='display: none;'") : null)>
+    <div class="form-group row" @(Model.IsLoggedInAsVendor ? Html.Raw("style='display: none;'") : null)>
         <div class="col-md-3">
             <nop-label asp-for="VendorId" />
         </div>
@@ -623,7 +623,7 @@
             <span asp-validation-for="VendorId"></span>
         </div>
     </div>
-    <div class="@(Model.ProductEditorSettingsModel.RequireOtherProductsAddedToCart ? null : "advanced-setting")" id="group-required-other-products">
+    <div class="advanced-setting" id="group-required-other-products">
         <div class="form-group row">
             <div class="col-md-3">
                 <nop-label asp-for="RequireOtherProducts" />
@@ -675,7 +675,7 @@
             </div>
         </nop-nested-setting>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.AllowCustomerReviews ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="AllowCustomerReviews" />
         </div>
@@ -684,7 +684,7 @@
             <span asp-validation-for="AllowCustomerReviews"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.AvailableStartDate ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="AvailableStartDateTimeUtc" />
         </div>
@@ -693,7 +693,7 @@
             <span asp-validation-for="AvailableStartDateTimeUtc"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.AvailableEndDate ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="AvailableEndDateTimeUtc" />
         </div>
@@ -702,7 +702,7 @@
             <span asp-validation-for="AvailableEndDateTimeUtc"></span>
         </div>
     </div>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.MarkAsNew ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="MarkAsNew" />
         </div>
@@ -712,7 +712,7 @@
         </div>
     </div>
     <nop-nested-setting asp-for="MarkAsNew">
-        <div class="form-group row @(Model.ProductEditorSettingsModel.MarkAsNew  ? null : "advanced-setting")" id="pnlMarkAsNewStartDateTimeUtc">
+        <div class="form-group row advanced-setting" id="pnlMarkAsNewStartDateTimeUtc">
             <div class="col-md-3">
                 <nop-label asp-for="MarkAsNewStartDateTimeUtc" />
             </div>
@@ -721,7 +721,7 @@
                 <span asp-validation-for="MarkAsNewStartDateTimeUtc"></span>
             </div>
         </div>
-        <div class="form-group row @(Model.ProductEditorSettingsModel.MarkAsNew  ? null : "advanced-setting")" id="pnlMarkAsNewEndDateTimeUtc">
+        <div class="form-group row advanced-setting" id="pnlMarkAsNewEndDateTimeUtc">
             <div class="col-md-3">
                 <nop-label asp-for="MarkAsNewEndDateTimeUtc" />
             </div>
@@ -731,7 +731,7 @@
             </div>
         </div>
     </nop-nested-setting>
-    <div class="form-group row @(Model.ProductEditorSettingsModel.AdminComment ? null : "advanced-setting")">
+    <div class="form-group row advanced-setting">
         <div class="col-md-3">
             <nop-label asp-for="AdminComment" />
         </div>

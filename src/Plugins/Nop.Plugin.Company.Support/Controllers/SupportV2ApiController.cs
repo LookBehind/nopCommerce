@@ -52,7 +52,6 @@ namespace Nop.Plugin.Company.Support.Controllers
         {
             public string Category { get; set; }
             public int? VendorId { get; set; }
-            public string Subject { get; set; }
             public string Description { get; set; }
         }
 
@@ -101,8 +100,8 @@ namespace Nop.Plugin.Company.Support.Controllers
                 });
             }
 
-            if (string.IsNullOrWhiteSpace(model?.Subject) || string.IsNullOrWhiteSpace(model?.Description))
-                return Ok(new { success = false, message = "Subject and description are both required." });
+            if (string.IsNullOrWhiteSpace(model?.Description))
+                return Ok(new { success = false, message = "Please describe what's going on." });
 
             // Vendor Quality is the one category that requires a real, existing vendor -
             // every other category always stores VendorId: null, even if one was sent.
@@ -122,13 +121,14 @@ namespace Nop.Plugin.Company.Support.Controllers
             var customer = await workContext.GetCurrentCustomerAsync();
             var store = await storeContext.GetCurrentStoreAsync();
 
+            // Subject isn't customer-entered - InsertSupportCaseAsync derives it from Description
+            // (AI-generated, falling back to "Case #<id>" if the model's unavailable).
             var supportCase = await supportCaseService.InsertSupportCaseAsync(new SupportCase
             {
                 CustomerId = customer.Id,
                 StoreId = store.Id,
                 Category = category,
                 VendorId = vendorId,
-                Subject = model.Subject.Trim(),
                 Description = model.Description.Trim()
             });
 

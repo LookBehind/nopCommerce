@@ -348,6 +348,24 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
+        // Whether the "Ingredients" specification attribute exists AND has at
+        // least one option configured for this tenant - i.e. whether the create
+        // page should force an explicit ingredient/allergen declaration. Mirrors
+        // the resolution SaveIngredientMappingsAsync does (resolve by NAME, since
+        // the attribute/option ids differ per tenant).
+        /// <returns>A task that represents the asynchronous operation</returns>
+        protected virtual async Task<bool> HasIngredientOptionsAsync()
+        {
+            var ingredientsAttribute = (await _specificationAttributeService.GetSpecificationAttributesAsync())
+                .FirstOrDefault(a => a.Name == "Ingredients");
+            if (ingredientsAttribute == null)
+                return false;
+
+            var options = await _specificationAttributeService
+                .GetSpecificationAttributeOptionsBySpecificationAttributeAsync(ingredientsAttribute.Id);
+            return options.Any();
+        }
+
         /// <returns>A task that represents the asynchronous operation</returns>
         protected virtual async Task SaveManufacturerMappingsAsync(Product product, ProductModel model)
         {
@@ -884,6 +902,26 @@ namespace Nop.Web.Areas.Admin.Controllers
                 _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Catalog.Products.ExceededMaximumNumber"),
                     _vendorSettings.MaximumProductNumber));
                 return RedirectToAction("List");
+            }
+
+            //require an explicit ingredient/allergen declaration when adding a product -
+            //either at least one ingredient option selected, or the "contains none of the
+            //above" confirmation ticked. Only enforced when the tenant actually has the
+            //Ingredients attribute configured.
+            if (await HasIngredientOptionsAsync() && !model.NoIngredients &&
+                !(model.SelectedIngredientOptionIds?.Any() ?? false))
+            {
+                ModelState.AddModelError(string.Empty,
+                    await _localizationService.GetResourceAsync("Admin.Catalog.Products.Ingredients.Required"));
+            }
+
+            //require a weight on new (shippable) products - existing products are
+            //grandfathered in (this check only runs on create). Gated on shipping
+            //being enabled since the Weight field is hidden otherwise.
+            if (model.IsShipEnabled && model.Weight <= decimal.Zero)
+            {
+                ModelState.AddModelError(nameof(model.Weight),
+                    await _localizationService.GetResourceAsync("Admin.Catalog.Products.Fields.Weight.Required"));
             }
 
             if (ModelState.IsValid)

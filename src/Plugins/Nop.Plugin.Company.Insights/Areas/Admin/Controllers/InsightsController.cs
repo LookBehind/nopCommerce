@@ -13,6 +13,7 @@ using Nop.Core;
 using Nop.Plugin.Company.Insights.Models;
 using Nop.Plugin.Company.Insights.Security;
 using Nop.Plugin.Company.Insights.Services;
+using Nop.Services.Ai;
 using Nop.Services.Security;
 using Nop.Web.Areas.Admin.Controllers;
 using Nop.Web.Framework.Mvc.Filters;
@@ -42,7 +43,8 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
         private readonly IInsightsScheduleRunner _scheduleRunner;
         private readonly IInsightsTelegramChatService _telegramChatService;
         private readonly InsightsDeliveryTriggerReconciler _deliveryReconciler;
-        private readonly InsightsLlmClient _llmClient;
+        private readonly IKubeAiChatClient _llmClient;
+        private readonly AiSettings _aiSettings;
         private readonly IWorkContext _workContext;
         private readonly InsightsMemoryConfig _config;
         private readonly IAntiforgery _antiforgery;
@@ -80,7 +82,8 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             IInsightsScheduleRunner scheduleRunner,
             IInsightsTelegramChatService telegramChatService,
             InsightsDeliveryTriggerReconciler deliveryReconciler,
-            InsightsLlmClient llmClient,
+            IKubeAiChatClient llmClient,
+            AiSettings aiSettings,
             IWorkContext workContext,
             InsightsMemoryConfig config,
             IAntiforgery antiforgery)
@@ -99,6 +102,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             _telegramChatService = telegramChatService;
             _deliveryReconciler = deliveryReconciler;
             _llmClient = llmClient;
+            _aiSettings = aiSettings;
             _workContext = workContext;
             _config = config;
             _antiforgery = antiforgery;
@@ -826,7 +830,7 @@ namespace Nop.Plugin.Company.Insights.Areas.Admin.Controllers
             if (!await HasAccessAsync())
                 return StatusCode(StatusCodes.Status403Forbidden);
 
-            var ready = await _llmClient.ProbeAsync(TimeSpan.FromSeconds(20), HttpContext.RequestAborted);
+            var ready = await _llmClient.IsReadyAsync(_aiSettings.InsightsModel, TimeSpan.FromSeconds(20), HttpContext.RequestAborted);
             return Json(new { ready });
         }
 

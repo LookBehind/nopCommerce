@@ -15,6 +15,7 @@ using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Orders;
 using Nop.Data;
 using Nop.Plugin.Notifications.Manager.Services;
+using Nop.Services.Ai;
 using Nop.Services.Catalog;
 using Nop.Services.Companies;
 using Nop.Services.Configuration;
@@ -42,7 +43,8 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         private readonly IOrderService _orderService;
         private readonly IProductService _productService;
         private readonly ICompanyService _companyService;
-        private readonly KubeAiChatClient _kubeAiChatClient;
+        private readonly IKubeAiChatClient _kubeAiChatClient;
+        private readonly AiSettings _aiSettings;
         private readonly IRepository<ProductReview> _productReviewRepository;
         private readonly ILogger _logger;
         private readonly IPushNotificationService _pushNotificationService;
@@ -53,9 +55,6 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
         /// is registered as a Hangfire recurring job on the matching "*/15 * * * *" CRON.
         /// </summary>
         private const int SLOT_MINUTES = 15;
-
-        /// <summary>Env override for the KubeAI model id. Defaults to qwen3-8-27b-awq.</summary>
-        private static readonly string LLM_MODEL = Env("REMINDME_LLM_MODEL", "qwen3-8-27b-awq");
 
         /// <summary>
         /// Hard ceiling on the whole run, measured from ExecuteAsync entry. Leaves a 5-minute
@@ -114,7 +113,8 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             ICustomerService customerService,
             IOrderService orderService,
             ICompanyService companyService,
-            KubeAiChatClient kubeAiChatClient,
+            IKubeAiChatClient kubeAiChatClient,
+            AiSettings aiSettings,
             IRepository<ProductReview> productReviewRepository,
             ILogger logger,
             IProductService productService,
@@ -126,6 +126,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
             _orderService = orderService;
             _companyService = companyService;
             _kubeAiChatClient = kubeAiChatClient;
+            _aiSettings = aiSettings;
             _productReviewRepository = productReviewRepository;
             _logger = logger;
             _productService = productService;
@@ -346,7 +347,7 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
 
                 using var cts = new CancellationTokenSource(LLM_PER_CALL_TIMEOUT);
                 var rawContent = await _kubeAiChatClient.GetChatCompletionAsync(
-                    LLM_MODEL, SYSTEM_PROMPT, userPrompt, LLM_PER_CALL_TIMEOUT, cts.Token);
+                    _aiSettings.RemindMeModel, SYSTEM_PROMPT, userPrompt, LLM_PER_CALL_TIMEOUT, cts.Token);
 
                 var recommendation = JsonSerializer.Deserialize<LLMRecommendationResponse>(rawContent);
                 reminderBody = $"""
@@ -385,14 +386,14 @@ namespace Nop.Plugin.Notifications.Manager.ScheduledTasks
 
             while (true)
             {
-                if (await _kubeAiChatClient.IsReadyAsync(LLM_MODEL, LLM_PER_CALL_TIMEOUT))
+                if (await _kubeAiChatClient.IsReadyAsync(_aiSettings.RemindMeModel, LLM_PER_CALL_TIMEOUT))
                     return true;
 
                 var remaining = coldStartDeadlineUtc - DateTime.UtcNow;
                 if (remaining <= TimeSpan.Zero)
                 {
                     await _logger.WarningAsync(
-                        $"RemindMe: {LLM_MODEL} was not ready within the {COLD_START_BUDGET.TotalMinutes:0}-minute " +
+                        $"RemindMe: {_aiSettings.RemindMeModel} was not ready within the {COLD_START_BUDGET.TotalMinutes:0}-minute " +
                         "cold-start budget; sending generic reminders (no recommendation) for this run");
                     return false;
                 }

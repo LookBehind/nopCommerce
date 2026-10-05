@@ -442,6 +442,12 @@ namespace Nop.Web.Areas.Admin.Models.Catalog
         [NopResourceDisplayName("Admin.Catalog.Products.Ingredients.Fields.SelectedIngredientOptionIds")]
         public IList<int> SelectedIngredientOptionIds { get; set; }
         public IList<ProductIngredientOptionModel> AvailableIngredientOptions { get; set; }
+        //explicit "this product contains none of the above" confirmation - on the
+        //create page a product must either have at least one ingredient option
+        //selected or this ticked (see ProductController.Create). Not persisted;
+        //just satisfies the required-declaration gate.
+        [NopResourceDisplayName("Admin.Catalog.Products.Ingredients.Fields.NoIngredients")]
+        public bool NoIngredients { get; set; }
 
         //vendor
         public bool IsLoggedInAsVendor { get; set; }

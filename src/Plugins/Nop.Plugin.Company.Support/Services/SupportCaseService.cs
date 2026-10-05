@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Nop.Core;
 using Nop.Data;
 using Nop.Plugin.Company.Support.Domain;
+using Nop.Services.Ai;
+using Nop.Services.Logging;
 using Nop.Services.Notifications;
 
 namespace Nop.Plugin.Company.Support.Services
@@ -15,17 +17,37 @@ namespace Nop.Plugin.Company.Support.Services
         private readonly IRepository<SupportCaseStatusHistory> _statusHistoryRepository;
         private readonly IRepository<SupportCaseMessage> _messageRepository;
         private readonly IPushNotificationService _pushNotificationService;
+        private readonly IKubeAiChatClient _subjectLlmClient;
+        private readonly AiSettings _aiSettings;
+        private readonly ILogger _logger;
+
+        /// <summary>
+        /// Deliberately short - this runs inline in the customer's "submit case" request. The model
+        /// is scale-to-zero (see RemindMeNotificationTask's multi-minute cold-start budget for the
+        /// batch-job equivalent) - a customer submitting a case can't be made to wait minutes for a
+        /// cold GPU pod, so a cold/slow model should fail fast and fall back, not block the request.
+        /// Measured live against a WARM qwen3-8-27b-awq with thinking disabled: ~9s - this leaves
+        /// headroom above that without making a human wait anywhere near RemindMe's 30s per-call
+        /// budget (that's a background job, this is a live "Submit" button press).
+        /// </summary>
+        private static readonly TimeSpan SUBJECT_GENERATION_TIMEOUT = TimeSpan.FromSeconds(15);
 
         public SupportCaseService(
             IRepository<SupportCase> supportCaseRepository,
             IRepository<SupportCaseStatusHistory> statusHistoryRepository,
             IRepository<SupportCaseMessage> messageRepository,
-            IPushNotificationService pushNotificationService)
+            IPushNotificationService pushNotificationService,
+            IKubeAiChatClient subjectLlmClient,
+            AiSettings aiSettings,
+            ILogger logger)
         {
             _supportCaseRepository = supportCaseRepository;
             _statusHistoryRepository = statusHistoryRepository;
             _messageRepository = messageRepository;
             _pushNotificationService = pushNotificationService;
+            _subjectLlmClient = subjectLlmClient;
+            _aiSettings = aiSettings;
+            _logger = logger;
         }
 
         public virtual async Task<SupportCase> GetSupportCaseByIdAsync(int supportCaseId)
@@ -86,7 +108,45 @@ namespace Nop.Plugin.Company.Support.Services
                 ChangedByCustomerId = null
             });
 
+            // The case needs its real, DB-assigned Id first (the "AI not available" fallback IS
+            // that id), so this can only happen after the insert above, as a follow-up update.
+            supportCase.Subject = await GenerateSubjectAsync(supportCase.Id, supportCase.Description);
+            await _supportCaseRepository.UpdateAsync(supportCase);
+
             return supportCase;
+        }
+
+        private async Task<string> GenerateSubjectAsync(int caseId, string description)
+        {
+            var fallback = $"Case #{caseId}";
+            if (string.IsNullOrWhiteSpace(description))
+                return fallback;
+
+            try
+            {
+                // No max_tokens cap: Qwen3 spends tokens on a <think> preamble before any answer,
+                // so a cap truncates mid-thought and returns empty content (finish_reason=length) -
+                // confirmed live. enableThinking:false is the right lever for a trivial one-line
+                // rewrite like this (no reasoning benefit, pure latency), not a token cap.
+                var raw = await _subjectLlmClient.GetChatCompletionAsync(
+                    _aiSettings.SupportSubjectModel,
+                    "You write short subject lines for customer support tickets. Reply with ONLY the "
+                    + "subject line itself - no quotes, no trailing punctuation, no preamble like "
+                    + "\"Subject:\". Keep it under 8 words and in the same language as the description.",
+                    description,
+                    SUBJECT_GENERATION_TIMEOUT,
+                    enableThinking: false);
+
+                var subject = raw?.Trim().Trim('"', '\'');
+                return string.IsNullOrWhiteSpace(subject) ? fallback : subject;
+            }
+            catch (Exception e)
+            {
+                await _logger.WarningAsync(
+                    $"Support case #{caseId}: could not generate an AI subject (model unavailable/slow), falling back to the case number",
+                    e);
+                return fallback;
+            }
         }
 
         public virtual async Task UpdateSupportCaseAsync(SupportCase supportCase)

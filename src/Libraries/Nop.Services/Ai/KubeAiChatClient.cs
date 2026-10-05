@@ -7,104 +7,29 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Nop.Plugin.Company.Insights.Services
+namespace Nop.Services.Ai
 {
-    /// <summary>
-    /// Minimal OpenAI-compatible chat-completions client for the self-hosted KubeAI/vLLM gateway.
-    /// Self-contained (no dependency on Notifications.Manager). Supports NATIVE function/tool-calling:
-    /// the gateway runs vLLM with <c>--enable-auto-tool-choice --tool-call-parser=qwen3_coder</c>, so a
-    /// request carrying <c>tools</c> comes back with structured <c>message.tool_calls</c> (and the
-    /// reasoning in <c>message.reasoning</c>) rather than tool-call markup leaking into the content.
-    /// </summary>
-    public class InsightsLlmClient
+    /// <inheritdoc cref="IKubeAiChatClient"/>
+    public class KubeAiChatClient : IKubeAiChatClient
     {
-        /// <summary>In-cluster KubeAI gateway (gpu-mgmt/kubeai). Internal, not admin-configurable.</summary>
+        /// <summary>
+        /// In-cluster KubeAI gateway address (see gpu-mgmt/kubeai in the infra repo). This is an
+        /// internal service URL, not merchant-facing, so it is a constant rather than an
+        /// admin-configurable setting.
+        /// </summary>
         public const string BaseUrl = "http://kubeai.gpu-mgmt.svc.cluster.local/openai/v1/";
 
-        /// <summary>Default model served by KubeAI (see the Model CRs in gpu-mgmt).</summary>
+        /// <summary>
+        /// Default model served by KubeAI (see the Model CRs in gpu-mgmt). Every per-use-case model
+        /// id in <see cref="AiSettings"/> defaults to this - admin-configurable from there, not here.
+        /// </summary>
         public const string DefaultModel = "qwen3-8-27b-awq";
 
         private readonly HttpClient _httpClient;
 
-        public InsightsLlmClient(HttpClient httpClient)
+        public KubeAiChatClient(HttpClient httpClient)
         {
             _httpClient = httpClient;
-        }
-
-        public class LlmMessage
-        {
-            [JsonPropertyName("role")]
-            public string Role { get; set; }
-
-            [JsonPropertyName("content")]
-            public string Content { get; set; }
-
-            // Assistant messages that call tools carry the calls; echoing them back (with the tool results
-            // as role:"tool" messages) is required by the OpenAI/vLLM tool-calling protocol.
-            [JsonPropertyName("tool_calls")]
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public List<LlmToolCall> ToolCalls { get; set; }
-
-            // role:"tool" result plumbing.
-            [JsonPropertyName("tool_call_id")]
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string ToolCallId { get; set; }
-
-            [JsonPropertyName("name")]
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string Name { get; set; }
-        }
-
-        public class LlmToolCall
-        {
-            [JsonPropertyName("id")]
-            public string Id { get; set; }
-
-            [JsonPropertyName("type")]
-            public string Type { get; set; } = "function";
-
-            [JsonPropertyName("function")]
-            public LlmFunctionCall Function { get; set; }
-        }
-
-        public class LlmFunctionCall
-        {
-            [JsonPropertyName("name")]
-            public string Name { get; set; }
-
-            /// <summary>Arguments as a JSON string (per the OpenAI schema), e.g. <c>{"days":7}</c>.</summary>
-            [JsonPropertyName("arguments")]
-            public string Arguments { get; set; }
-        }
-
-        /// <summary>A tool the model may call. <see cref="LlmFunctionDef.Parameters"/> is a JSON-schema object.</summary>
-        public class LlmTool
-        {
-            [JsonPropertyName("type")]
-            public string Type { get; set; } = "function";
-
-            [JsonPropertyName("function")]
-            public LlmFunctionDef Function { get; set; }
-        }
-
-        public class LlmFunctionDef
-        {
-            [JsonPropertyName("name")]
-            public string Name { get; set; }
-
-            [JsonPropertyName("description")]
-            public string Description { get; set; }
-
-            [JsonPropertyName("parameters")]
-            public object Parameters { get; set; }
-        }
-
-        /// <summary>Result of a tool-enabled completion: the model either called tools OR returned an answer.</summary>
-        public class LlmCompletion
-        {
-            public string Content { get; set; }
-            public IList<LlmToolCall> ToolCalls { get; set; }
-            public bool HasToolCalls => ToolCalls != null && ToolCalls.Count > 0;
         }
 
         private class CompletionRequest
@@ -123,17 +48,10 @@ namespace Nop.Plugin.Company.Insights.Services
 
             // Omit entirely when null so vLLM lets the model generate up to its context limit. A fixed cap
             // truncates unpredictable reasoning-model "thinking" mid-stream, which returns EMPTY content
-            // (finish_reason=length). We bound cost by wall-clock time instead, never by a token count.
+            // (finish_reason=length). Callers that want cost/latency control pass an explicit value instead.
             [JsonPropertyName("max_tokens")]
             [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
             public int? MaxTokens { get; set; }
-
-            // Qwen3 chat-template controls. We disable the <think> block for this agent: it uses a strict
-            // JSON tool protocol that doesn't need chain-of-thought, and thinking burns huge token budgets
-            // (slow on the self-hosted GPU, and it truncated to empty content). Omitted when null.
-            [JsonPropertyName("chat_template_kwargs")]
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public Dictionary<string, object> ChatTemplateKwargs { get; set; }
 
             [JsonPropertyName("tools")]
             [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -142,6 +60,16 @@ namespace Nop.Plugin.Company.Insights.Services
             [JsonPropertyName("tool_choice")]
             [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
             public string ToolChoice { get; set; }
+
+            // Qwen3 chat-template control. Thinking is the model default (left on by every existing
+            // caller - it's what makes tool-calling/reasoning answers good) - only set this to disable
+            // it for a trivial, non-reasoning task where the <think> preamble is pure latency with no
+            // quality benefit (e.g. a one-line subject rewrite). Confirmed live: with thinking on, a
+            // short subject-generation prompt burned its whole token budget on reasoning and never
+            // reached the answer (finish_reason=length, empty content) even on a warm model.
+            [JsonPropertyName("chat_template_kwargs")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public Dictionary<string, object> ChatTemplateKwargs { get; set; }
         }
 
         private class CompletionChoice
@@ -162,8 +90,7 @@ namespace Nop.Plugin.Company.Insights.Services
             [JsonPropertyName("reasoning")]
             public string Reasoning { get; set; }
 
-            // Populated (and content null) when the model invokes tools — the qwen3_coder parser turns the
-            // model's native tool-call markup into this structured form.
+            // Populated (and content null) when the model invokes tools.
             [JsonPropertyName("tool_calls")]
             public List<LlmToolCall> ToolCalls { get; set; }
         }
@@ -174,18 +101,27 @@ namespace Nop.Plugin.Company.Insights.Services
             public List<CompletionChoice> Choices { get; set; }
         }
 
-        /// <summary>
-        /// Posts a chat completion and returns the assistant content. Pass maxTokens=null (the default for
-        /// the agent) to leave the completion uncapped so a reasoning model can finish thinking AND answer;
-        /// a cap that truncates the think block yields empty content. Throws on HTTP error/timeout/empty.
-        /// </summary>
+        public async Task<string> GetChatCompletionAsync(string model, string systemPrompt, string userPrompt,
+            TimeSpan timeout, CancellationToken cancellationToken = default, int? maxTokens = null,
+            bool? enableThinking = null)
+        {
+            var messages = new List<LlmMessage>
+            {
+                new() { Role = "system", Content = systemPrompt },
+                new() { Role = "user", Content = userPrompt }
+            };
+
+            return await CompleteAsync(model, messages, temperature: 0.0, maxTokens, timeout, cancellationToken, enableThinking);
+        }
+
         public async Task<string> CompleteAsync(
             string model,
             IEnumerable<LlmMessage> messages,
             double temperature,
             int? maxTokens,
             TimeSpan timeout,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool? enableThinking = null)
         {
             var request = new CompletionRequest
             {
@@ -193,10 +129,10 @@ namespace Nop.Plugin.Company.Insights.Services
                 Stream = false,
                 Temperature = temperature,
                 MaxTokens = maxTokens,
-                Messages = messages.ToList()
-                // Thinking left ON (model default): richer reasoning. Long turns are safe now — the token cap
-                // is removed (the think block can't truncate the answer) and /Chat streams over SSE so slow
-                // turns don't hit Cloudflare's ~100s. To disable, set ChatTemplateKwargs { enable_thinking = false }.
+                Messages = messages.ToList(),
+                ChatTemplateKwargs = enableThinking.HasValue
+                    ? new Dictionary<string, object> { ["enable_thinking"] = enableThinking.Value }
+                    : null
             };
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -218,12 +154,6 @@ namespace Nop.Plugin.Company.Insights.Services
             throw new InvalidOperationException("KubeAI chat completion returned no content");
         }
 
-        /// <summary>
-        /// Posts a chat completion WITH native tool-calling. Returns the model's answer content and/or the
-        /// tools it wants to call (structured, parsed by vLLM's qwen3_coder tool-call parser). The caller
-        /// runs the tools, appends the results as role:"tool" messages, and calls again until the model
-        /// answers with content. Uncapped tokens (reasoning model) bounded by <paramref name="timeout"/>.
-        /// </summary>
         public async Task<LlmCompletion> CompleteWithToolsAsync(
             string model,
             IEnumerable<LlmMessage> messages,
@@ -262,22 +192,17 @@ namespace Nop.Plugin.Company.Insights.Services
             throw new InvalidOperationException("KubeAI chat completion returned neither content nor a tool call");
         }
 
-        /// <summary>
-        /// Cheap readiness probe: a 1-token completion under a short timeout. Returns true if the model
-        /// answered, false if it timed out or errored. Kept as a health check — the model is pinned
-        /// warm (minReplicas 1, no scale-to-zero), so the SPA no longer needs to warm it before chatting.
-        /// </summary>
-        public async Task<bool> ProbeAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+        public async Task<bool> IsReadyAsync(string model, TimeSpan timeout, CancellationToken cancellationToken = default)
         {
             try
             {
                 var request = new CompletionRequest
                 {
-                    Model = DefaultModel,
+                    Model = model,
                     Stream = false,
                     Temperature = 0.0,
                     MaxTokens = 1,
-                    Messages = new List<LlmMessage> { new LlmMessage { Role = "user", Content = "ping" } }
+                    Messages = new List<LlmMessage> { new() { Role = "user", Content = "ping" } }
                 };
 
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
