@@ -11,6 +11,7 @@ using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Payments;
 using Nop.Services.Catalog;
 using Nop.Services.Common;
+using Nop.Services.Helpers;
 using Nop.Services.Localization;
 using Nop.Services.Media;
 using Nop.Services.Orders;
@@ -59,6 +60,7 @@ namespace Nop.Web.Controllers.Api.Order
         IUrlRecordService urlRecordService,
         IWorkContext workContext,
         IStoreContext storeContext,
+        IDateTimeHelper dateTimeHelper,
         CatalogSettings catalogSettings)
         : BaseApiController
     {
@@ -173,9 +175,17 @@ namespace Nop.Web.Controllers.Api.Order
                 allOrders = matched;
             }
 
+            // ScheduleDate/CreatedOnUtc are stored UTC; past/today/upcoming bucketing is a
+            // user-facing day split, so compare local dates (store tz, UTC+4) - not the pod's
+            // UTC "DateTime.Now" - or an evening order lands in the wrong day's bucket.
+            var userTimeZone = await dateTimeHelper.GetCurrentTimeZoneAsync();
+            var todayLocalDate = dateTimeHelper.ConvertToUserTime(DateTime.UtcNow, TimeZoneInfo.Utc, userTimeZone).Date;
+            DateTime ScheduleLocalDate(Nop.Core.Domain.Orders.Order o) =>
+                dateTimeHelper.ConvertToUserTime(o.ScheduleDate, TimeZoneInfo.Utc, userTimeZone).Date;
+
             if (string.Equals(segment, "past", StringComparison.OrdinalIgnoreCase))
             {
-                var pastOrders = allOrders.Where(o => o.ScheduleDate.Date < DateTime.Now.Date)
+                var pastOrders = allOrders.Where(o => ScheduleLocalDate(o) < todayLocalDate)
                     .OrderByDescending(o => o.ScheduleDate).ToList();
 
                 var totalCount = pastOrders.Count;
@@ -192,11 +202,11 @@ namespace Nop.Web.Controllers.Api.Order
             // Combined initial load: upcoming + today + first page of past, each its
             // own real ScheduleDate-ordered bucket (same three buckets v1's three
             // separate get-todays/get-upcoming/get-previous-orders endpoints return).
-            var upcomingOrders = allOrders.Where(o => o.ScheduleDate.Date > DateTime.Now.Date)
+            var upcomingOrders = allOrders.Where(o => ScheduleLocalDate(o) > todayLocalDate)
                 .OrderByDescending(o => o.ScheduleDate).ToList();
-            var todayOrders = allOrders.Where(o => o.ScheduleDate.Date == DateTime.Now.Date)
+            var todayOrders = allOrders.Where(o => ScheduleLocalDate(o) == todayLocalDate)
                 .OrderByDescending(o => o.ScheduleDate).ToList();
-            var previousOrders = allOrders.Where(o => o.ScheduleDate.Date < DateTime.Now.Date)
+            var previousOrders = allOrders.Where(o => ScheduleLocalDate(o) < todayLocalDate)
                 .OrderByDescending(o => o.ScheduleDate).ToList();
 
             var upcoming = new List<OrderV2Model>();
@@ -355,17 +365,25 @@ namespace Nop.Web.Controllers.Api.Order
             // Same rule CatalogApiController.ProductReviewsAddV2 enforces server-side - kept in
             // sync here purely so the mobile UI can show/hide "Rate this product" without a
             // failed round trip; the endpoint itself is still the real source of truth.
+            // ScheduleDate is UTC, so compare against UtcNow (both UTC) - not DateTime.Now.
             var withinReviewWindow = catalogSettings.ProductReviewWindowHours <= 0 ||
-                DateTime.Now - order.ScheduleDate <= TimeSpan.FromHours(catalogSettings.ProductReviewWindowHours);
+                DateTime.UtcNow - order.ScheduleDate <= TimeSpan.FromHours(catalogSettings.ProductReviewWindowHours);
             var requiresPayment = order.PaymentStatus == PaymentStatus.Pending && order.PaymentMethodSystemName == "Payments.AmeriaVPos";
             var amountDue = requiresPayment ? order.OrderTotal : 0M;
+
+            // ScheduleDate/CreatedOnUtc are stored UTC; the client shows them as wall-clock
+            // local times, so convert to the store/customer tz (UTC+4) before formatting -
+            // raw UTC here is what made v2 display delivery hours 4h early.
+            var userTimeZone = await dateTimeHelper.GetCurrentTimeZoneAsync();
+            var scheduleLocal = dateTimeHelper.ConvertToUserTime(order.ScheduleDate, TimeZoneInfo.Utc, userTimeZone);
+            var createdLocal = dateTimeHelper.ConvertToUserTime(order.CreatedOnUtc, TimeZoneInfo.Utc, userTimeZone);
 
             var model = new OrderV2Model
             {
                 Id = order.Id,
                 CustomOrderNumber = order.CustomOrderNumber,
-                ScheduleDate = order.ScheduleDate.ToString(DateFormat),
-                CreatedOn = order.CreatedOnUtc.ToString(DateFormat),
+                ScheduleDate = scheduleLocal.ToString(DateFormat),
+                CreatedOn = createdLocal.ToString(DateFormat),
                 OrderStatus = await localizationService.GetLocalizedEnumAsync(order.OrderStatus),
                 PaymentStatus = await localizationService.GetLocalizedEnumAsync(order.PaymentStatus),
                 ShippingStatus = await localizationService.GetLocalizedEnumAsync(order.ShippingStatus),
@@ -418,10 +436,14 @@ namespace Nop.Web.Controllers.Api.Order
         // filter this replaced.
         private async Task<bool> OrderMatchesSearchAsync(Nop.Core.Domain.Orders.Order order, string search)
         {
-            if (ContainsIgnoreCase(order.ScheduleDate.ToString("MMM d", CultureInfo.InvariantCulture), search) ||
-                ContainsIgnoreCase(order.ScheduleDate.ToString("MMMM d", CultureInfo.InvariantCulture), search) ||
-                ContainsIgnoreCase(order.ScheduleDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), search) ||
-                ContainsIgnoreCase(order.ScheduleDate.ToString(DateFormat, CultureInfo.InvariantCulture), search))
+            // Match against the LOCAL delivery date the client shows (UTC+4), not raw UTC,
+            // so "if you can see it, you can search it" still holds after the tz fix.
+            var scheduleLocal = dateTimeHelper.ConvertToUserTime(
+                order.ScheduleDate, TimeZoneInfo.Utc, await dateTimeHelper.GetCurrentTimeZoneAsync());
+            if (ContainsIgnoreCase(scheduleLocal.ToString("MMM d", CultureInfo.InvariantCulture), search) ||
+                ContainsIgnoreCase(scheduleLocal.ToString("MMMM d", CultureInfo.InvariantCulture), search) ||
+                ContainsIgnoreCase(scheduleLocal.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), search) ||
+                ContainsIgnoreCase(scheduleLocal.ToString(DateFormat, CultureInfo.InvariantCulture), search))
                 return true;
 
             foreach (var orderItem in await orderService.GetOrderItemsAsync(order.Id))
