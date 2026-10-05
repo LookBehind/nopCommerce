@@ -24,9 +24,10 @@
                     @foreach (var option in Model.AvailableIngredientOptions)
                     {
                         var controlId = $"ingredient_option_{option.Id}";
+                        var isChecked = option.Checked || (Model.SelectedIngredientOptionIds?.Contains(option.Id) ?? false);
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" value="@option.Id"
-                                   id="@controlId" name="SelectedIngredientOptionIds" checked="@option.Checked" />
+                            <input class="form-check-input ingredient-option-checkbox" type="checkbox" value="@option.Id"
+                                   id="@controlId" name="SelectedIngredientOptionIds" checked="@isChecked" />
                             <label class="form-check-label" for="@controlId">
                                 @option.Name
                                 @if (option.IsAllergen)
@@ -37,8 +38,37 @@
                         </div>
                     }
                 </div>
+                <div class="form-check ingredient-none-option">
+                    <input class="form-check-input" asp-for="NoIngredients" id="ingredient_none" />
+                    <label class="form-check-label" for="ingredient_none">
+                        @T("Admin.Catalog.Products.Ingredients.Fields.NoIngredients")
+                    </label>
+                </div>
             </div>
         </div>
+        <script>
+            $(document).ready(function () {
+                var $none = $('#ingredient_none');
+                var $opts = $('.ingredient-option-checkbox');
+
+                function syncNone() {
+                    if ($none.is(':checked')) {
+                        $opts.prop('checked', false).prop('disabled', true);
+                    } else {
+                        $opts.prop('disabled', false);
+                    }
+                }
+
+                $none.on('change', syncNone);
+                $opts.on('change', function () {
+                    if ($(this).is(':checked')) {
+                        $none.prop('checked', false);
+                    }
+                });
+
+                syncNone();
+            });
+        </script>
     }
 </div>
 <style>
@@ -50,5 +80,11 @@
 
     .ingredient-option-list .badge {
         margin-left: 6px;
+    }
+
+    .ingredient-none-option {
+        margin-top: 8px;
+        padding-top: 10px;
+        border-top: 1px solid #eee;
     }
 </style>
