@@ -915,6 +915,15 @@ namespace Nop.Web.Areas.Admin.Controllers
                     await _localizationService.GetResourceAsync("Admin.Catalog.Products.Ingredients.Required"));
             }
 
+            //require a weight on new (shippable) products - existing products are
+            //grandfathered in (this check only runs on create). Gated on shipping
+            //being enabled since the Weight field is hidden otherwise.
+            if (model.IsShipEnabled && model.Weight <= decimal.Zero)
+            {
+                ModelState.AddModelError(nameof(model.Weight),
+                    await _localizationService.GetResourceAsync("Admin.Catalog.Products.Fields.Weight.Required"));
+            }
+
             if (ModelState.IsValid)
             {
                 //a vendor should have access only to his products
