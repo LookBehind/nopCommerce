@@ -17,6 +17,7 @@ using Nop.Services.Localization;
 using Nop.Services.Logging;
 using Nop.Services.Orders;
 using Nop.Services.Payments;
+using Nop.Services.Vendors;
 using Nop.Web.Framework.Mvc.Filters;
 using Nop.Web.Models.Api.Order;
 using TimeZoneConverter;
@@ -57,6 +58,8 @@ namespace Nop.Web.Controllers.Api.Order
         IShoppingCartService shoppingCartService,
         IOrderProcessingService orderProcessingService,
         ICompanyService companyService,
+        ICompanyVendorScheduleService companyVendorScheduleService,
+        IVendorService vendorService,
         ICompanyAllowancePaymentMethod companyAllowancePaymentMethod,
         IPaymentPluginManager paymentPluginManager,
         IPaymentService paymentService,
@@ -201,6 +204,28 @@ namespace Nop.Web.Controllers.Api.Order
                 });
             }
 
+            // Vendor-schedule gate: block placing an order that contains a product whose
+            // vendor is closed on the selected delivery date. v2's cart never ran the check
+            // v1 does at add-to-cart, and PlaceOrderAsync itself doesn't re-validate vendors,
+            // so without this a mobile-v2 customer can order from an unavailable vendor.
+            // Only enforced when the customer has a company (same scoping as v1/storefront).
+            // Returned as HTTP 200 + success:false + message so ConfirmOrderSheet shows the
+            // message verbatim (a non-2xx status would hide it behind a generic network toast).
+            if (company != null)
+            {
+                var unavailableVendorNames = await GetUnavailableCartVendorNamesAsync(
+                    customer, store.Id, company.Id, scheduleDateLocal);
+                if (unavailableVendorNames.Any())
+                {
+                    return Ok(new
+                    {
+                        success = false,
+                        code = (int)OrderResultCode.VendorUnavailable,
+                        message = await BuildVendorUnavailableMessageAsync(unavailableVendorNames)
+                    });
+                }
+            }
+
             if (!string.IsNullOrEmpty(model.Notes))
                 await SaveNotesAttributeAsync(customer, store, model.Notes);
 
@@ -320,6 +345,49 @@ namespace Nop.Web.Controllers.Api.Order
             return total;
         }
 
+        // Distinct names of the cart's vendors that are CLOSED on the given (company-local)
+        // delivery date, per CompanyVendorScheduleService. Mirrors the vendor-availability
+        // gate v1's OrderApiController.AddProductsToCartAsync applies at add-to-cart time -
+        // v2's cart is date-less (the date is only chosen here at checkout), so the check has
+        // to run against the selected date at checkout instead. Returns empty (no gate) when
+        // the customer has no company, matching v1 and the storefront's existing behaviour.
+        private async Task<IList<string>> GetUnavailableCartVendorNamesAsync(
+            Nop.Core.Domain.Customers.Customer customer, int storeId, int companyId, DateTime scheduleDateLocal)
+        {
+            var cart = await shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, storeId);
+            if (!cart.Any())
+                return new List<string>();
+
+            var unavailableVendorIds = await companyVendorScheduleService.GetUnavailableVendorIdsAsync(
+                companyId, scheduleDateLocal.Date);
+            if (unavailableVendorIds.Count == 0)
+                return new List<string>();
+
+            var names = new List<string>();
+            var seenVendorIds = new HashSet<int>();
+            foreach (var item in cart)
+            {
+                var vendor = await vendorService.GetVendorByProductIdAsync(item.ProductId);
+                if (vendor == null || !unavailableVendorIds.Contains(vendor.Id) || !seenVendorIds.Add(vendor.Id))
+                    continue;
+
+                names.Add(vendor.Name);
+            }
+
+            return names;
+        }
+
+        // The user-facing message for a vendor-unavailable rejection/warning: the existing
+        // localized (EN+HY) Order.VendorNotAvailableOnScheduledDate resource, with the
+        // specific vendor name(s) appended so the customer knows which line(s) to remove.
+        private async Task<string> BuildVendorUnavailableMessageAsync(IList<string> vendorNames)
+        {
+            var baseMessage = await localizationService.GetResourceAsync("Order.VendorNotAvailableOnScheduledDate");
+            return vendorNames.Count > 0
+                ? $"{baseMessage} ({string.Join(", ", vendorNames)})"
+                : baseMessage;
+        }
+
         // Mirrors OrderApiController's private BuildCheckoutWarningAsync (v1's real,
         // load-bearing checkout warning) - same allowance-vs-total decision, same
         // self-pay-aware wording, just taking an already-local-and-valid scheduleDate
@@ -332,6 +400,27 @@ namespace Nop.Web.Controllers.Api.Order
                 var company = await companyService.GetCompanyByCustomerIdAsync(customer.Id);
                 if (company == null)
                     return null;
+
+                // Vendor-unavailability takes precedence over the allowance warning: if any
+                // cart vendor is closed on this date the order can't be placed at all (see the
+                // PlaceOrder gate), so surface that instead. requiresPayment:false so the
+                // existing banner shows just the message, no pay-redirect sub-line. The extra
+                // vendorUnavailable flag is ignored by the current client and lets a future
+                // build gate the Confirm button on it.
+                var unavailableVendorNames = await GetUnavailableCartVendorNamesAsync(
+                    customer, storeId, company.Id, scheduleDateLocal);
+                if (unavailableVendorNames.Any())
+                {
+                    return new
+                    {
+                        exceedsAllowance = false,
+                        requiresPayment = false,
+                        amountDueValue = decimal.Zero,
+                        amountDueFormatted = await priceFormatter.FormatPriceAsync(decimal.Zero),
+                        vendorUnavailable = true,
+                        message = await BuildVendorUnavailableMessageAsync(unavailableVendorNames)
+                    };
+                }
 
                 var companyTimezone = TZConvert.GetTimeZoneInfo(company.TimeZone);
                 var orderDateUtc = dateTimeHelper.ConvertToUtcTime(scheduleDateLocal, companyTimezone);

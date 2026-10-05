@@ -13,6 +13,9 @@ namespace Nop.Web.Models.Api.Order
         ScheduleNotAllowed = 1000,
 
         /// <summary>Customer has no valid billing/shipping (delivery) address.</summary>
-        InvalidDeliveryAddress = 1001
+        InvalidDeliveryAddress = 1001,
+
+        /// <summary>One or more cart items belong to a vendor that is unavailable on the selected delivery date.</summary>
+        VendorUnavailable = 1002
     }
 }
