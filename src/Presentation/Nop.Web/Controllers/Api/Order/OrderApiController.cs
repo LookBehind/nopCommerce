@@ -292,6 +292,14 @@ namespace Nop.Web.Controllers.Api.Order
                     : _dateTimeHelper.ConvertToUserTime(scheduledDateUTC, TimeZoneInfo.Utc,
                         TZConvert.GetTimeZoneInfo(company.TimeZone)).Date;
 
+                // Vendors this company is scoped to. A vendor removed from Company_Vendor_Mapping
+                // is treated as permanently unavailable (same rejection as a schedule day-off).
+                // Soft gate: an empty mapping means no scoping, so nothing is excluded on that basis.
+                var mappedVendorIds = company == null
+                    ? new HashSet<int>()
+                    : (await _companyService.GetCompanyVendorsByCompanyAsync(company.Id))
+                        .Select(v => v.VendorId).ToHashSet();
+
                 foreach (var currentProductOrder in productOrderRequestApiModel.Products)
                 {
                     try
@@ -311,6 +319,20 @@ namespace Nop.Web.Controllers.Api.Order
 
                         if (company != null &&
                             !await _companyVendorScheduleService.IsVendorAvailableAsync(company.Id, product.VendorId, companyLocalScheduledDate))
+                        {
+                            errorList.Add(new CartErrorModel
+                            {
+                                Success = false,
+                                Id = currentProductOrder.ProductId,
+                                Message = await _localizationService.GetResourceAsync("Order.VendorNotAvailableOnScheduledDate")
+                            });
+
+                            continue;
+                        }
+
+                        // Vendor removed from the company's mapping = permanently unavailable.
+                        if (company != null && mappedVendorIds.Count > 0 &&
+                            !mappedVendorIds.Contains(product.VendorId))
                         {
                             errorList.Add(new CartErrorModel
                             {

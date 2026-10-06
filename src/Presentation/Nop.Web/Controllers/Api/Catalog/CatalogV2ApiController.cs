@@ -9,10 +9,12 @@ using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Services.Catalog;
+using Nop.Services.Companies;
 using Nop.Services.Media;
 using Nop.Services.Orders;
 using Nop.Services.Vendors;
 using Nop.Web.Framework.Mvc.Filters;
+using TimeZoneConverter;
 
 namespace Nop.Web.Controllers.Api.Catalog
 {
@@ -49,11 +51,14 @@ namespace Nop.Web.Controllers.Api.Catalog
     /// parallelism (the remaining per-product calls - picture, product-category mapping,
     /// product-specification mapping - are genuinely independent I/O once the shared lookups
     /// are precomputed).
-    /// Deliberately anonymous (no [Authorize]) - every action here is a pure catalog read
-    /// with no dependency on an authenticated identity (no IWorkContext/ICustomerService even
-    /// injected), and mobile browsing must not require an account (App Store Guideline
-    /// 5.1.1(v)). A guest's requests just carry no Authorization header (see mobile's
-    /// baseApiQuery) and land here the same as a logged-in customer's.
+    /// Anonymous by design (no [Authorize]) - mobile browsing must not require an account
+    /// (App Store Guideline 5.1.1(v)). BUT the catalog is now scoped OPPORTUNISTICALLY: when a
+    /// request carries a valid JWT, JwtMiddleware has already set the work-context customer, so
+    /// GetCurrentCustomerAsync resolves the logged-in customer and we scope the catalog to that
+    /// customer's company - only its mapped (Company_Vendor_Mapping), in-schedule vendors, same
+    /// as v1 CatalogApiController. A guest (no token) resolves to no company and sees the full
+    /// catalog unchanged. So removing a vendor from a company's mapping (or marking it off) hides
+    /// it from that company's authenticated users while anonymous browsing stays wide open.
     [Produces("application/json")]
     [Route("api/v2/catalog")]
     public class CatalogV2ApiController(
@@ -65,7 +70,10 @@ namespace Nop.Web.Controllers.Api.Catalog
         IOrderReportService orderReportService,
         IPriceFormatter priceFormatter,
         IStoreContext storeContext,
-        IProductAttributeService productAttributeService)
+        IProductAttributeService productAttributeService,
+        IWorkContext workContext,
+        ICompanyService companyService,
+        IDeliverySlotService deliverySlotService)
         : BaseApiController
     {
         private const string IngredientsAttributeName = "Ingredients";
@@ -220,14 +228,37 @@ namespace Nop.Web.Controllers.Api.Catalog
         private static double VendorAverageRating(VendorBriefV2Model vendor) =>
             vendor != null && vendor.TotalReviews > 0 ? (double)vendor.RatingSum / vendor.TotalReviews : 0;
 
+        // Resolves the caller's company IF the request is authenticated (JwtMiddleware set the
+        // work-context customer from a Bearer token; a guest resolves to no company). Returns the
+        // company and the earliest orderable date in its timezone, which SearchProductsAsync uses
+        // (with searchCustomerVendors:true) to scope the catalog to the company's mapped,
+        // in-schedule vendors. Null company => no scoping => full catalog (anonymous browsing).
+        private async Task<(Nop.Core.Domain.Companies.Company company, DateTime? availabilityDate)> ResolveCompanyScopeAsync(int storeId)
+        {
+            var customer = await workContext.GetCurrentCustomerAsync();
+            var company = await companyService.GetCompanyByCustomerIdAsync(customer.Id);
+            if (company == null)
+                return (null, null);
+
+            var timeZone = TZConvert.GetTimeZoneInfo(company.TimeZone);
+            var availabilityDate = await deliverySlotService.GetEarliestOrderableDateAsync(storeId, timeZone);
+            return (company, availabilityDate);
+        }
+
         private async Task<List<ProductOverviewV2Model>> BuildProductOverviewsAsync()
         {
             var store = await storeContext.GetCurrentStoreAsync();
 
+            // searchCustomerVendors:true + availabilityDate scope the list to the authenticated
+            // customer's company (mapped + in-schedule vendors). For a guest both resolve to a
+            // no-op inside SearchProductsAsync and the full catalog is returned.
+            var (_, availabilityDate) = await ResolveCompanyScopeAsync(store.Id);
             var allProducts = await productService.SearchProductsAsync(
                 storeId: store.Id,
                 visibleIndividuallyOnly: true,
-                showHidden: false);
+                showHidden: false,
+                searchCustomerVendors: true,
+                availabilityDate: availabilityDate);
 
             var vendors = await vendorService.GetAllVendorsAsync();
             var vendorsById = new Dictionary<int, VendorBriefV2Model>(vendors.Count);
@@ -265,10 +296,23 @@ namespace Nop.Web.Controllers.Api.Catalog
         [HttpGet("vendors")]
         public async Task<IActionResult> GetVendors()
         {
+            var store = await storeContext.GetCurrentStoreAsync();
+            var (company, _) = await ResolveCompanyScopeAsync(store.Id);
+
             var vendors = await vendorService.GetAllVendorsAsync();
 
-            var result = new List<VendorBriefV2Model>(vendors.Count);
-            foreach (var vendor in vendors)
+            // Scope to the authenticated customer's mapped vendors (empty mapping => no scoping,
+            // same soft-filter semantics as ProductService.SearchProductsAsync). Guests see all.
+            var mappedVendorIds = company == null
+                ? null
+                : (await companyService.GetCompanyVendorsByCompanyAsync(company.Id))
+                    .Select(v => v.VendorId).ToHashSet();
+            var scopedVendors = mappedVendorIds != null && mappedVendorIds.Count > 0
+                ? vendors.Where(v => mappedVendorIds.Contains(v.Id))
+                : vendors.AsEnumerable();
+
+            var result = new List<VendorBriefV2Model>();
+            foreach (var vendor in scopedVendors)
             {
                 result.Add(await MapVendorAsync(vendor));
             }
@@ -280,19 +324,23 @@ namespace Nop.Web.Controllers.Api.Catalog
         public async Task<IActionResult> GetCategories()
         {
             var store = await storeContext.GetCurrentStoreAsync();
+            var (_, availabilityDate) = await ResolveCompanyScopeAsync(store.Id);
             var categories = await categoryService.GetAllCategoriesAsync(storeId: store.Id, showHidden: false);
 
             var result = new List<CategoryV2Model>(categories.Count);
             foreach (var category in categories)
             {
                 // pageSize:1 just to read IPagedList.TotalCount cheaply, without
-                // materializing every product in the category.
+                // materializing every product in the category. Count reflects the same
+                // company scoping as the product list (searchCustomerVendors + availabilityDate).
                 var countPage = await productService.SearchProductsAsync(
                     pageSize: 1,
                     categoryIds: new List<int> { category.Id },
                     storeId: store.Id,
                     visibleIndividuallyOnly: true,
-                    showHidden: false);
+                    showHidden: false,
+                    searchCustomerVendors: true,
+                    availabilityDate: availabilityDate);
 
                 var pictureUrl = category.PictureId > 0
                     ? await pictureService.GetPictureUrlAsync(category.PictureId, ThumbnailSize)
