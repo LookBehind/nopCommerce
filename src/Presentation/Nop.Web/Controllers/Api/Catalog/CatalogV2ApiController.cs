@@ -73,6 +73,7 @@ namespace Nop.Web.Controllers.Api.Catalog
         IProductAttributeService productAttributeService,
         IWorkContext workContext,
         ICompanyService companyService,
+        ICompanyVendorScheduleService companyVendorScheduleService,
         IDeliverySlotService deliverySlotService)
         : BaseApiController
     {
@@ -323,7 +324,7 @@ namespace Nop.Web.Controllers.Api.Catalog
         public async Task<IActionResult> GetVendors()
         {
             var store = await storeContext.GetCurrentStoreAsync();
-            var (company, _) = await ResolveCompanyScopeAsync(store.Id);
+            var (company, availabilityDate) = await ResolveCompanyScopeAsync(store.Id);
 
             var vendors = await vendorService.GetAllVendorsAsync();
 
@@ -336,6 +337,19 @@ namespace Nop.Web.Controllers.Api.Catalog
             var scopedVendors = mappedVendorIds != null && mappedVendorIds.Count > 0
                 ? vendors.Where(v => mappedVendorIds.Contains(v.Id))
                 : vendors.AsEnumerable();
+
+            // Also hide vendors that are closed on the earliest orderable date - whether marked
+            // off for that specific date or not scheduled to work that day of week. Same date +
+            // GetUnavailableVendorIdsAsync call ProductService.SearchProductsAsync uses for the
+            // product list, so the vendor list and product list stay consistent. Guests (no
+            // company / no date) are unaffected.
+            if (company != null && availabilityDate.HasValue)
+            {
+                var unavailableVendorIds = await companyVendorScheduleService
+                    .GetUnavailableVendorIdsAsync(company.Id, availabilityDate.Value);
+                if (unavailableVendorIds.Count > 0)
+                    scopedVendors = scopedVendors.Where(v => !unavailableVendorIds.Contains(v.Id));
+            }
 
             var result = new List<VendorBriefV2Model>();
             foreach (var vendor in scopedVendors)
