@@ -345,12 +345,16 @@ namespace Nop.Web.Controllers.Api.Order
             return total;
         }
 
-        // Distinct names of the cart's vendors that are CLOSED on the given (company-local)
-        // delivery date, per CompanyVendorScheduleService. Mirrors the vendor-availability
-        // gate v1's OrderApiController.AddProductsToCartAsync applies at add-to-cart time -
-        // v2's cart is date-less (the date is only chosen here at checkout), so the check has
-        // to run against the selected date at checkout instead. Returns empty (no gate) when
-        // the customer has no company, matching v1 and the storefront's existing behaviour.
+        // Distinct names of the cart's vendors that are unavailable to this company, for two
+        // reasons: (1) CLOSED on the given (company-local) delivery date per
+        // CompanyVendorScheduleService (date-specific day-off), or (2) NOT in the company's
+        // Company_Vendor_Mapping (a vendor removed from the mapping is treated as permanently
+        // off - the "remove from mapping = vendor off, but permanent" model). The mapping gate
+        // is soft: an empty mapping means no scoping is configured, so nothing is excluded on
+        // that basis (same semantics as ProductService.SearchProductsAsync's length>0 guard).
+        // Mirrors the add-to-cart gate v1's OrderApiController.AddProductsToCartAsync applies;
+        // v2's cart is date-less so both checks run here at checkout. Returns empty when the
+        // customer has no company.
         private async Task<IList<string>> GetUnavailableCartVendorNamesAsync(
             Nop.Core.Domain.Customers.Customer customer, int storeId, int companyId, DateTime scheduleDateLocal)
         {
@@ -358,9 +362,12 @@ namespace Nop.Web.Controllers.Api.Order
             if (!cart.Any())
                 return new List<string>();
 
-            var unavailableVendorIds = await companyVendorScheduleService.GetUnavailableVendorIdsAsync(
+            var scheduleOffVendorIds = await companyVendorScheduleService.GetUnavailableVendorIdsAsync(
                 companyId, scheduleDateLocal.Date);
-            if (unavailableVendorIds.Count == 0)
+            var mappedVendorIds = (await companyService.GetCompanyVendorsByCompanyAsync(companyId))
+                .Select(v => v.VendorId).ToHashSet();
+
+            if (scheduleOffVendorIds.Count == 0 && mappedVendorIds.Count == 0)
                 return new List<string>();
 
             var names = new List<string>();
@@ -368,10 +375,16 @@ namespace Nop.Web.Controllers.Api.Order
             foreach (var item in cart)
             {
                 var vendor = await vendorService.GetVendorByProductIdAsync(item.ProductId);
-                if (vendor == null || !unavailableVendorIds.Contains(vendor.Id) || !seenVendorIds.Add(vendor.Id))
+                if (vendor == null)
                     continue;
 
-                names.Add(vendor.Name);
+                var scheduledOff = scheduleOffVendorIds.Contains(vendor.Id);
+                var notMapped = mappedVendorIds.Count > 0 && !mappedVendorIds.Contains(vendor.Id);
+                if (!scheduledOff && !notMapped)
+                    continue;
+
+                if (seenVendorIds.Add(vendor.Id))
+                    names.Add(vendor.Name);
             }
 
             return names;
