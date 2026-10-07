@@ -81,6 +81,9 @@ namespace Nop.Web.Controllers.Api.Catalog
         // Bounds how many products are mapped concurrently - unbounded Task.WhenAll over
         // 1000+ products would open that many simultaneous DB connections/requests at once.
         private const int ProductMapConcurrency = 32;
+        // Max items per GetCuratedProducts() row (new/trending/toprated).
+        private const int CuratedSectionSize = 10;
+        private const int TrendingWindowDays = 14;
 
         public class ProductOverviewV2Model
         {
@@ -115,12 +118,16 @@ namespace Nop.Web.Controllers.Api.Catalog
             public DateTime CreatedOnUtc { get; set; }
             public int RatingSum { get; set; }
             public int TotalReviews { get; set; }
-            // Real order-driven signal (total quantity sold, per vendor's bestsellers
-            // report) - not a fabricated "trending" flag. Backs Discover's "Getting
-            // popular" curated row; will be genuinely flat/tied on a tenant with little
-            // or no real order history yet, which is an honest reflection of that, not
-            // a bug in this endpoint.
+            // Real order-driven signal (total quantity sold, all-time, per vendor's
+            // bestsellers report) - not a fabricated "trending" flag.
             public int PopularityCount { get; set; }
+            // Same signal as PopularityCount but windowed to the trailing 14 days -
+            // this, not the all-time PopularityCount, is what actually backs
+            // Discover's "Getting popular"/"trending" curated row (see
+            // GetCuratedProducts). Will be genuinely flat/tied (mostly 0) on a tenant
+            // with little or no recent order history, which is an honest reflection
+            // of that, not a bug in this endpoint.
+            public int TrendingCount { get; set; }
             public VendorBriefV2Model Vendor { get; set; }
             public string Description { get; set; }
             public IList<string> SpecificationLabels { get; set; } = new List<string>();
@@ -213,9 +220,20 @@ namespace Nop.Web.Controllers.Api.Catalog
                 // RibbonText is free text, not reliably "new") rather than a real "just
                 // added" signal. CreatedOnUtc is the actual, always-accurate timestamp
                 // every product already has, so this needs no admin action at all.
-                "new" => products.OrderByDescending(p => p.CreatedOnUtc).Take(20),
-                "trending" => products.OrderByDescending(p => p.PopularityCount).Take(8),
-                "toprated" => products.OrderByDescending(p => VendorAverageRating(p.Vendor)).Take(4),
+                "new" => products.OrderByDescending(p => p.CreatedOnUtc).Take(CuratedSectionSize),
+                // Trailing-14-day order volume (TrendingCount), not PopularityCount's
+                // all-time total - a product with zero orders in that window shouldn't
+                // show up just because Take() needs to fill 10 slots.
+                "trending" => products.Where(p => p.TrendingCount > 0)
+                    .OrderByDescending(p => p.TrendingCount).Take(CuratedSectionSize),
+                // The product's OWN rating (sum of star ratings across its approved
+                // reviews), not the vendor's aggregate across every product it sells -
+                // that was the bug that let zero-review products appear here (see
+                // VendorAverageRating, removed). Same zero-guard as trending: a product
+                // with no reviews at all has RatingSum 0 and must not fill a slot just
+                // because fewer than 10 products qualify.
+                "toprated" => products.Where(p => p.TotalReviews > 0)
+                    .OrderByDescending(p => p.RatingSum).Take(CuratedSectionSize),
                 _ => null
             };
 
@@ -224,9 +242,6 @@ namespace Nop.Web.Controllers.Api.Catalog
 
             return Ok(curated.ToList());
         }
-
-        private static double VendorAverageRating(VendorBriefV2Model vendor) =>
-            vendor != null && vendor.TotalReviews > 0 ? (double)vendor.RatingSum / vendor.TotalReviews : 0;
 
         // Resolves the caller's company IF the request is authenticated (JwtMiddleware set the
         // work-context customer from a Bearer token; a guest resolves to no company). Returns the
@@ -263,11 +278,16 @@ namespace Nop.Web.Controllers.Api.Catalog
             var vendors = await vendorService.GetAllVendorsAsync();
             var vendorsById = new Dictionary<int, VendorBriefV2Model>(vendors.Count);
             var popularityByVendor = new Dictionary<int, Dictionary<int, int>>(vendors.Count);
+            var trendingByVendor = new Dictionary<int, Dictionary<int, int>>(vendors.Count);
+            var trendingSinceUtc = DateTime.UtcNow.AddDays(-TrendingWindowDays);
             foreach (var vendor in vendors)
             {
                 vendorsById[vendor.Id] = await MapVendorAsync(vendor);
                 var bestsellers = await orderReportService.BestSellersReportAsync(vendorId: vendor.Id, showHidden: true);
                 popularityByVendor[vendor.Id] = bestsellers.ToDictionary(l => l.ProductId, l => l.TotalQuantity);
+                var trending = await orderReportService.BestSellersReportAsync(
+                    vendorId: vendor.Id, showHidden: true, createdFromUtc: trendingSinceUtc);
+                trendingByVendor[vendor.Id] = trending.ToDictionary(l => l.ProductId, l => l.TotalQuantity);
             }
 
             var categoryNameById = (await categoryService.GetAllCategoriesAsync(storeId: store.Id, showHidden: true))
@@ -286,7 +306,7 @@ namespace Nop.Web.Controllers.Api.Catalog
             foreach (var batch in products.Chunk(ProductMapConcurrency))
             {
                 var mapped = await Task.WhenAll(batch.Select(p =>
-                    MapProductAsync(p, vendorsById, popularityByVendor, categoryNameById, ingredientOptionNames)));
+                    MapProductAsync(p, vendorsById, popularityByVendor, trendingByVendor, categoryNameById, ingredientOptionNames)));
                 result.AddRange(mapped);
             }
 
@@ -457,6 +477,7 @@ namespace Nop.Web.Controllers.Api.Catalog
             Product product,
             IReadOnlyDictionary<int, VendorBriefV2Model> vendorsById,
             IReadOnlyDictionary<int, Dictionary<int, int>> popularityByVendor,
+            IReadOnlyDictionary<int, Dictionary<int, int>> trendingByVendor,
             IReadOnlyDictionary<int, string> categoryNameById,
             IReadOnlyDictionary<int, string> ingredientOptionNames)
         {
@@ -484,6 +505,9 @@ namespace Nop.Web.Controllers.Api.Catalog
             var popularityCount = 0;
             if (popularityByVendor.TryGetValue(product.VendorId, out var popularityByProductId))
                 popularityByProductId.TryGetValue(product.Id, out popularityCount);
+            var trendingCount = 0;
+            if (trendingByVendor.TryGetValue(product.VendorId, out var trendingByProductId))
+                trendingByProductId.TryGetValue(product.Id, out trendingCount);
 
             var priceFormatted = await priceFormatter.FormatPriceAsync(product.Price);
 
@@ -502,6 +526,7 @@ namespace Nop.Web.Controllers.Api.Catalog
                 RatingSum = product.ApprovedRatingSum,
                 TotalReviews = product.ApprovedTotalReviews,
                 PopularityCount = popularityCount,
+                TrendingCount = trendingCount,
                 Vendor = vendorModel,
                 Description = PlainTextFromHtml(product.ShortDescription),
                 SpecificationLabels = specificationLabels,
