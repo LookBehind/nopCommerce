@@ -101,6 +101,12 @@ namespace Nop.Web.Controllers.Api.Catalog
             // math with it (cart totals, etc).
             public string Price { get; set; }
             public string ImageUrl { get; set; }
+            // Unresized original (targetSize:0 - see GetPictureUrlAsync) for the product
+            // details screen's hero image and full-screen zoom viewer - ImageUrl's 300px
+            // is correctly sized for a ~100-120px card thumbnail but visibly blurs when
+            // upscaled to a full-width hero or a full-screen pinch-zoom view. Null under
+            // the same condition ImageUrl is (no picture at all).
+            public string FullImageUrl { get; set; }
             // Nullable - a product can be uncategorized (productCategories empty).
             // CategoryName alone isn't a stable identifier to route/filter by: it's
             // admin-authored per-language text (LocalizedProperty), so the exact
@@ -485,6 +491,12 @@ namespace Nop.Web.Controllers.Api.Catalog
             var imageUrl = pictures.Count > 0
                 ? (await pictureService.GetPictureUrlAsync(pictures[0], ThumbnailSize)).Url
                 : null;
+            // targetSize:0 skips ImageResize entirely and serves the original upload
+            // unresized (see GetPictureUrlAsync) - deliberately not reusing the 300px
+            // ImageUrl above for the details screen's hero/zoom view.
+            var fullImageUrl = pictures.Count > 0
+                ? (await pictureService.GetPictureUrlAsync(pictures[0], 0)).Url
+                : null;
 
             var productCategories = await categoryService.GetProductCategoriesByProductIdAsync(product.Id);
             var categoryId = productCategories.Count > 0 ? productCategories[0].CategoryId : (int?)null;
@@ -518,6 +530,7 @@ namespace Nop.Web.Controllers.Api.Catalog
                 PriceValue = product.Price,
                 Price = priceFormatted,
                 ImageUrl = imageUrl,
+                FullImageUrl = fullImageUrl,
                 CategoryId = categoryId,
                 CategoryName = categoryName,
                 RibbonEnable = product.RibbonEnable,
