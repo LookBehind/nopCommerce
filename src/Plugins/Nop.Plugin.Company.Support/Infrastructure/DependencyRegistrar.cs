@@ -13,6 +13,8 @@ namespace Nop.Plugin.Company.Support.Infrastructure
         {
             services.AddScoped<ISupportCaseService, SupportCaseService>();
             services.AddScoped<ISupportCaseModelFactory, SupportCaseModelFactory>();
+            services.AddScoped<ISupportCaseTokenProvider, SupportCaseTokenProvider>();
+            services.AddScoped<ISupportCaseNotificationService, SupportCaseNotificationService>();
         }
 
         public int Order => 3;

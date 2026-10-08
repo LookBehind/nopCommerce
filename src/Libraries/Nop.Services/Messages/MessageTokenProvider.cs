@@ -263,6 +263,7 @@ namespace Nop.Services.Messages
                     "%Order.Product(s)%",
                     "%Order.CreatedOn%",
                     "%Order.OrderURLForCustomer%",
+                    "%Order.SelfUrl%",
                     "%Order.PickupInStore%",
                     "%Order.OrderId%"
                 });
@@ -387,7 +388,8 @@ namespace Nop.Services.Messages
                     "%ProductReview.IsApproved%",
                     "%ProductReview.ReviewText%",
                     "%ProductReview.ReplyText%",
-                    "%ProductReview.Rating%"
+                    "%ProductReview.Rating%",
+                    "%ProductReview.SelfUrl%"
                 });
 
                 //attribute combination tokens
@@ -1034,6 +1036,9 @@ namespace Nop.Services.Messages
             var orderUrl = await RouteUrlAsync(order.StoreId, "OrderDetails", new { orderId = order.Id });
             tokens.Add(new Token("Order.OrderURLForCustomer", orderUrl, true));
 
+            var orderAdminUrl = await RouteUrlAsync(order.StoreId, "areaRoute", new { area = "Admin", controller = "Order", action = "Edit", id = order.Id });
+            tokens.Add(new Token("Order.SelfUrl", orderAdminUrl, true));
+
             //event notification
             await _eventPublisher.EntityTokensAddedAsync(order, vendor, tokens);
         }
@@ -1278,6 +1283,9 @@ namespace Nop.Services.Messages
             tokens.Add(new Token("ProductReview.ReviewText", productReview.ReviewText));
             tokens.Add(new Token("ProductReview.ReplyText", productReview.ReplyText));
             tokens.Add(new Token("ProductReview.Rating", productReview.Rating));
+
+            var reviewAdminUrl = await RouteUrlAsync(productReview.StoreId, "areaRoute", new { area = "Admin", controller = "ProductReview", action = "Edit", id = productReview.Id });
+            tokens.Add(new Token("ProductReview.SelfUrl", reviewAdminUrl, true));
 
             //event notification
             await _eventPublisher.EntityTokensAddedAsync(productReview, tokens);

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
+using Nop.Core.Domain.Localization;
 using Nop.Plugin.Company.Support.Domain;
 using Nop.Plugin.Company.Support.Services;
 using Nop.Services.Vendors;
@@ -22,9 +23,11 @@ namespace Nop.Plugin.Company.Support.Controllers
     [Authorize]
     public class SupportV2ApiController(
         ISupportCaseService supportCaseService,
+        ISupportCaseNotificationService supportCaseNotificationService,
         IVendorService vendorService,
         IWorkContext workContext,
-        IStoreContext storeContext)
+        IStoreContext storeContext,
+        LocalizationSettings localizationSettings)
         : BaseApiController
     {
         public class SupportCaseV2Model
@@ -132,6 +135,9 @@ namespace Nop.Plugin.Company.Support.Controllers
                 Description = model.Description.Trim()
             });
 
+            await supportCaseNotificationService.SendNewSupportCaseStoreOwnerNotificationAsync(
+                supportCase, localizationSettings.DefaultAdminLanguageId);
+
             return Ok(new { success = true, supportCase = await MapAsync(supportCase) });
         }
 
@@ -146,7 +152,11 @@ namespace Nop.Plugin.Company.Support.Controllers
             if (string.IsNullOrWhiteSpace(model?.Body))
                 return Ok(new { success = false, message = "Message can't be empty." });
 
-            await supportCaseService.AddMessageAsync(id, customer.Id, isStaff: false, model.Body.Trim());
+            var messageBody = model.Body.Trim();
+            await supportCaseService.AddMessageAsync(id, customer.Id, isStaff: false, messageBody);
+
+            await supportCaseNotificationService.SendSupportCaseCustomerRepliedStoreOwnerNotificationAsync(
+                supportCase, messageBody, localizationSettings.DefaultAdminLanguageId);
 
             return Ok(new { success = true, supportCase = await MapAsync(supportCase) });
         }
