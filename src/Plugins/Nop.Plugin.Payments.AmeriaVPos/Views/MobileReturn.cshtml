@@ -1,6 +1,8 @@
 @model int
 @{
     Layout = null;
+    // Scheme matches the app's registered mysnacks:// (reverted from a transient
+    // mysnacksv2:// during the v1/v2 merge - see mysnacks-mobile's linking.ts).
     var deepLinkUrl = $"mysnacks://payment-callback?orderId={Model}";
 }
 <!DOCTYPE html>
