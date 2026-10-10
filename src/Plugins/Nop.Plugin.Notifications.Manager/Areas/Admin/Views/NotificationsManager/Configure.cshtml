@@ -156,6 +156,35 @@
             </form>
         </div>
     </div>
+
+    <div class="card card-default">
+        <div class="card-header">
+            Product Change Telegram Feed
+        </div>
+        <div class="card-body">
+            <p>
+                Posts a message to this chat every time a product is edited (admin panel or integration API),
+                listing who changed what and the old and new values (price, name, published, stock, ...).
+                Sent with the same bot as the weekly report above, so set its Bot token first.
+                Leave Chat ID blank to keep it disabled.
+            </p>
+            <form asp-controller="NotificationsManager" asp-action="ConfigureProductChanges" method="post">
+                <div class="form-group row">
+                    <div class="col-md-3">
+                        <label asp-for="ProductChangeTelegramChatId">Chat ID</label>
+                    </div>
+                    <div class="col-md-9">
+                        <input asp-for="ProductChangeTelegramChatId" class="form-control" placeholder="-1001234567890" />
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <div class="col-md-9 offset-md-3">
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <script>

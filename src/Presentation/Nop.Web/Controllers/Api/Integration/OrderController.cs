@@ -52,6 +52,7 @@ namespace Nop.Web.Controllers.Integration
         private readonly IVendorService _vendorService;
         private readonly ILogger _logger;
         private readonly IAddressService _addressService;
+        private readonly IProductChangeLogger _productChangeLogger;
 
         private async Task<IEnumerable<Product>> UpsertProducts(int storeId,
             int vendorId,
@@ -93,6 +94,7 @@ namespace Nop.Web.Controllers.Integration
                 else
                 {
                     var updated = false;
+                    var previousSnapshot = ProductChangeTracker.Snapshot(existingProduct);
                     if (!string.Equals(existingProduct.Name, externalProduct.Name, StringComparison.OrdinalIgnoreCase))
                     {
                         existingProduct.Name = externalProduct.Name;
@@ -113,7 +115,11 @@ namespace Nop.Web.Controllers.Integration
                     }
 
                     if (updated)
+                    {
                         await _productService.UpdateProductAsync(existingProduct);
+
+                        await _productChangeLogger.LogEditAsync(existingProduct, previousSnapshot, "integration API");
+                    }
 
                     results.Add(existingProduct);
                 }
@@ -337,7 +343,8 @@ namespace Nop.Web.Controllers.Integration
             IShoppingCartService shoppingCartService, 
             IProductService productService, 
             IVendorService vendorService, 
-            ILogger logger, IAddressService addressService)
+            ILogger logger, IAddressService addressService,
+            IProductChangeLogger productChangeLogger)
         {
             _customer = customer;
             _order = order;
@@ -354,6 +361,7 @@ namespace Nop.Web.Controllers.Integration
             _vendorService = vendorService;
             _logger = logger;
             _addressService = addressService;
+            _productChangeLogger = productChangeLogger;
         }
     }
 }

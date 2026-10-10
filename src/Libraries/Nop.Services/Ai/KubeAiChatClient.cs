@@ -23,7 +23,7 @@ namespace Nop.Services.Ai
         /// Default model served by KubeAI (see the Model CRs in gpu-mgmt). Every per-use-case model
         /// id in <see cref="AiSettings"/> defaults to this - admin-configurable from there, not here.
         /// </summary>
-        public const string DefaultModel = "qwen3-8-27b-awq";
+        public const string DefaultModel = "qwen3-8-flash-next";
 
         private readonly HttpClient _httpClient;
 

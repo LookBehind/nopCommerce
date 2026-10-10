@@ -45,4 +45,11 @@ public class NotificationManagerSettings : ISettings
     /// "company name" setting here.
     /// </summary>
     public string TelegramReportChatId { get; set; }
+
+    /// <summary>
+    /// Telegram chat id that receives a message for every product edit (who changed what, old -> new -
+    /// see <see cref="EventConsumer.ProductChangeTelegramConsumer"/>). Posted via the same bot as the weekly report
+    /// (<see cref="TelegramReportBotToken"/>), so that token must be set too. Blank = disabled.
+    /// </summary>
+    public string ProductChangeTelegramChatId { get; set; }
 }

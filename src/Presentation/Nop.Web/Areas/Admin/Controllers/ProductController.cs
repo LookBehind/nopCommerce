@@ -67,6 +67,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         private readonly IProductAttributeFormatter _productAttributeFormatter;
         private readonly IProductModelFactory _productModelFactory;
         private readonly IProductService _productService;
+        private readonly IProductChangeLogger _productChangeLogger;
         private readonly IProductTagService _productTagService;
         private readonly ISettingService _settingService;
         private readonly IShippingService _shippingService;
@@ -106,6 +107,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             IProductAttributeFormatter productAttributeFormatter,
             IProductModelFactory productModelFactory,
             IProductService productService,
+            IProductChangeLogger productChangeLogger,
             IProductTagService productTagService,
             ISettingService settingService,
             IShippingService shippingService,
@@ -141,6 +143,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             _productAttributeFormatter = productAttributeFormatter;
             _productModelFactory = productModelFactory;
             _productService = productService;
+            _productChangeLogger = productChangeLogger;
             _productTagService = productTagService;
             _settingService = settingService;
             _shippingService = shippingService;
@@ -1056,6 +1059,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 var previousStockQuantity = product.StockQuantity;
                 var previousWarehouseId = product.WarehouseId;
                 var previousProductType = product.ProductType;
+                var previousSnapshot = ProductChangeTracker.Snapshot(product);
 
                 //product
                 product = model.ToEntity(product);
@@ -1173,8 +1177,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 }
 
                 //activity log
-                await _customerActivityService.InsertActivityAsync("EditProduct",
-                    string.Format(await _localizationService.GetResourceAsync("ActivityLog.EditProduct"), product.Name), product);
+                await _productChangeLogger.LogEditAsync(product, previousSnapshot, "admin");
 
                 _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Catalog.Products.Updated"));
 
