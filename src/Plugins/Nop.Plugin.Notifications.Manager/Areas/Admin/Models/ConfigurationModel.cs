@@ -15,4 +15,5 @@ public partial record ConfigurationModel : BaseNopModel
 
     public string TelegramReportBotToken { get; set; }
     public string TelegramReportChatId { get; set; }
+    public string ProductChangeTelegramChatId { get; set; }
 }

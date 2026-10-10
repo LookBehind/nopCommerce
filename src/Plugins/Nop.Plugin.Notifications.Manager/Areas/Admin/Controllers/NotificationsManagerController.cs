@@ -89,6 +89,7 @@ public class NotificationsManagerController : BaseAdminController
 
         model.TelegramReportBotToken = _notificationManagerSettings.TelegramReportBotToken;
         model.TelegramReportChatId = _notificationManagerSettings.TelegramReportChatId;
+        model.ProductChangeTelegramChatId = _notificationManagerSettings.ProductChangeTelegramChatId;
 
         return View("~/Plugins/Notifications.Manager/Areas/Admin/Views/NotificationsManager/Configure.cshtml", model);
     }
@@ -104,6 +105,20 @@ public class NotificationsManagerController : BaseAdminController
 
         await _settingService.SaveSettingAsync(_notificationManagerSettings, x => x.TelegramReportBotToken);
         await _settingService.SaveSettingAsync(_notificationManagerSettings, x => x.TelegramReportChatId);
+
+        _notificationService.SuccessNotification("Settings updated.");
+
+        return RedirectToAction("Configure");
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> ConfigureProductChanges(ConfigurationModel model)
+    {
+        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManagePlugins))
+            return AccessDeniedView();
+
+        _notificationManagerSettings.ProductChangeTelegramChatId = model.ProductChangeTelegramChatId?.Trim();
+        await _settingService.SaveSettingAsync(_notificationManagerSettings, x => x.ProductChangeTelegramChatId);
 
         _notificationService.SuccessNotification("Settings updated.");
 

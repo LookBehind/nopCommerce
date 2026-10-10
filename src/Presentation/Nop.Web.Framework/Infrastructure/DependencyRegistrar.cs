@@ -209,6 +209,7 @@ namespace Nop.Web.Framework.Infrastructure
             services.AddScoped<ITaxService, TaxService>();
             services.AddScoped<ILogger, DefaultLogger>();
             services.AddScoped<ICustomerActivityService, CustomerActivityService>();
+            services.AddScoped<IProductChangeLogger, ProductChangeLogger>();
             services.AddScoped<IForumService, ForumService>();
             services.AddScoped<IGdprService, GdprService>();
             services.AddScoped<IPollService, PollService>();
