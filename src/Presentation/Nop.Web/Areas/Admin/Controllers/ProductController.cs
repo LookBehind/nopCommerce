@@ -30,6 +30,7 @@ using Nop.Services.Orders;
 using Nop.Services.Security;
 using Nop.Services.Seo;
 using Nop.Services.Shipping;
+using Nop.Services.Vendors;
 using Nop.Web.Areas.Admin.Factories;
 using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Catalog;
@@ -76,6 +77,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         private readonly IStoreContext _storeContext;
         private readonly IUrlRecordService _urlRecordService;
         private readonly IGenericAttributeService _genericAttributeService;
+        private readonly IVendorService _vendorService;
         private readonly IWorkContext _workContext;
         private readonly VendorSettings _vendorSettings;
 
@@ -116,6 +118,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             IStoreContext storeContext,
             IUrlRecordService urlRecordService,
             IGenericAttributeService genericAttributeService,
+            IVendorService vendorService,
             IWorkContext workContext,
             VendorSettings vendorSettings)
         {
@@ -152,6 +155,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             _storeContext = storeContext;
             _urlRecordService = urlRecordService;
             _genericAttributeService = genericAttributeService;
+            _vendorService = vendorService;
             _workContext = workContext;
             _vendorSettings = vendorSettings;
         }
@@ -159,6 +163,35 @@ namespace Nop.Web.Areas.Admin.Controllers
         #endregion
 
         #region Utilities
+
+        /// <summary>
+        /// Builds the fallback SKU for a product created without one:
+        /// "{sanitized vendor name}-{product id}" (e.g. "srtants-11627"), where the vendor name is
+        /// lowercased and whitespace-stripped. Must be called after the product is inserted — the
+        /// product id is database-assigned. On the rare collision with an existing product's SKU
+        /// (e.g. a vendor renamed after its products were generated), a numeric suffix is appended.
+        /// </summary>
+        /// <param name="product">Product (already inserted)</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        protected virtual async Task<string> GenerateSkuAsync(Product product)
+        {
+            var vendor = product.VendorId > 0 ? await _vendorService.GetVendorByIdAsync(product.VendorId) : null;
+            var prefix = ProductSkuGenerator.SanitizeVendorName(vendor?.Name);
+
+            // Admin-owned products (no vendor) have no name to derive a prefix from — the id alone
+            // is unique and keeps the SKU non-empty.
+            var sku = prefix == null ? product.Id.ToString() : $"{prefix}-{product.Id}";
+
+            var candidate = sku;
+            var suffix = 1;
+            while (await _productService.GetProductBySkuAsync(candidate) != null)
+            {
+                suffix++;
+                candidate = $"{sku}-{suffix}";
+            }
+
+            return candidate;
+        }
 
         /// <returns>A task that represents the asynchronous operation</returns>
         protected virtual async Task UpdateLocalesAsync(Product product, ProductModel model)
@@ -942,6 +975,17 @@ namespace Nop.Web.Areas.Admin.Controllers
                 product.CreatedOnUtc = DateTime.UtcNow;
                 product.UpdatedOnUtc = DateTime.UtcNow;
                 await _productService.InsertProductAsync(product);
+
+                //Import/export deduplicates products by SKU, so every product created here must
+                //carry one. When the form left it blank we stamp the deterministic
+                //"{sanitized vendor name}-{product id}" form (e.g. "srtants-11627"). It embeds the
+                //product id, which the database only assigns during the insert, so this runs right
+                //afterwards.
+                if (string.IsNullOrWhiteSpace(product.Sku))
+                {
+                    product.Sku = await GenerateSkuAsync(product);
+                    await _productService.UpdateProductAsync(product);
+                }
 
                 //search engine name
                 model.SeName = await _urlRecordService.ValidateSeNameAsync(product, model.SeName, product.Name, true);
