@@ -10,6 +10,7 @@ using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Companies;
 using Nop.Core.Domain.Orders;
+using Nop.Core.Domain.Payments;
 using Nop.Core.Domain.Vendors;
 using Nop.Data;
 using Nop.Services.Companies;
@@ -115,7 +116,7 @@ public class VendorWeeklyTelegramReportTask : IScheduleTask
             join p in _productRepository.Table on oi.ProductId equals p.Id
             join v in _vendorRepository.Table on p.VendorId equals v.Id
             where !o.Deleted && o.OrderStatusId != 40 && !v.Deleted && o.CreatedOnUtc >= createdCutoffUtc && o.CompanyId != null
-            select new { CompanyId = o.CompanyId.Value, VendorName = v.Name, oi.PriceInclTax, o.ScheduleDate, o.PaymentMethodSystemName };
+            select new { CompanyId = o.CompanyId.Value, VendorName = v.Name, oi.PriceInclTax, o.ScheduleDate, o.PaymentMethodSystemName, o.PaymentStatusId };
 
         var rows = await query.ToListAsync();
         var rowsByCompany = rows.ToLookup(r => r.CompanyId);
@@ -148,6 +149,16 @@ public class VendorWeeklyTelegramReportTask : IScheduleTask
                     continue;
 
                 var methodKey = string.IsNullOrWhiteSpace(row.PaymentMethodSystemName) ? string.Empty : row.PaymentMethodSystemName;
+
+                // Card/self-pay methods: only count orders the customer actually paid. A pending card
+                // order is a checkout in flight - AmeriaVPosReconciliationTask deletes it as abandoned
+                // when the customer never completes the hosted pay page, but until then it would show
+                // in the CSV as money that never moved (cf. order 355336, ghost 4500 AMD report of
+                // 2026-10-13). Allowance orders legitimately sit at PaymentStatus.Pending (the company
+                // is invoiced later), so this gate applies to non-allowance methods only.
+                if (!string.Equals(methodKey, MAIN_PAYMENT_METHOD, StringComparison.OrdinalIgnoreCase)
+                    && row.PaymentStatusId != (int)PaymentStatus.Paid)
+                    continue;
 
                 if (!totalsByMethod.TryGetValue(methodKey, out var totals))
                 {
